@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "./app/monacoWorkers";
+import "./app/monacoSetup";
 import App from "./app/App";
 import { AppErrorBoundary } from "./app/AppErrorBoundary";
 import "./styles/index.css";
