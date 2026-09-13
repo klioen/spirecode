@@ -42,17 +42,88 @@ button:focus-visible {
 }
 .workbench {
   height: 100%;
+  position: relative;
   display: grid;
-  grid-template-columns: 220px minmax(340px, 1fr) 292px;
-  grid-template-rows: 46px minmax(220px, 1fr) 226px;
+  grid-template-columns: var(--projects-width, 220px) minmax(340px, 1fr) var(
+      --right-panel-width,
+      292px
+    );
+  grid-template-rows: 46px minmax(220px, 1fr) var(--terminal-height, 226px);
   grid-template-areas: "rail top top" "rail center right" "rail bottom right";
   background: var(--bg);
 }
 .workbench.right-collapsed {
-  grid-template-columns: 220px minmax(340px, 1fr) 0;
+  grid-template-columns: var(--projects-width, 220px) minmax(340px, 1fr) 0;
 }
 .workbench.terminal-collapsed {
   grid-template-rows: 46px minmax(220px, 1fr) 32px;
+}
+.panel-resize-handle {
+  position: absolute;
+  z-index: 20;
+  border: 0;
+  outline: none;
+  touch-action: none;
+  background: transparent;
+}
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after,
+.panel-resize-handle.dragging::after {
+  background: var(--accent);
+}
+.panel-resize-handle.vertical {
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+.panel-resize-handle.vertical::after {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+}
+.panel-resize-handle.projects {
+  left: calc(var(--projects-width, 220px) - 4px);
+}
+.panel-resize-handle.right {
+  right: calc(var(--right-panel-width, 292px) - 4px);
+}
+.panel-resize-handle.horizontal {
+  right: var(--right-panel-width, 292px);
+  left: var(--projects-width, 220px);
+  height: 8px;
+  cursor: row-resize;
+}
+.panel-resize-handle.horizontal::after {
+  right: 0;
+  bottom: 3px;
+  left: 0;
+  height: 2px;
+}
+.panel-resize-handle.terminal {
+  bottom: calc(var(--terminal-height, 226px) - 4px);
+}
+.workbench.right-collapsed .panel-resize-handle.horizontal {
+  right: 0;
+}
+body.panel-resizing,
+body.panel-resizing * {
+  user-select: none !important;
+}
+body.panel-resizing-vertical,
+body.panel-resizing-vertical * {
+  cursor: col-resize !important;
+}
+body.panel-resizing-horizontal,
+body.panel-resizing-horizontal * {
+  cursor: row-resize !important;
 }
 .project-rail {
   grid-area: rail;
