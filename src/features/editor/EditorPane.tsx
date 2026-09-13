@@ -1,0 +1,251 @@
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  RiCloseLine,
+  RiCodeSSlashLine,
+  RiFileCodeLine,
+  RiGitCommitLine,
+} from "@remixicon/react";
+import {
+  commands,
+  type CommandError,
+  type FileContent,
+  type GitDiff,
+} from "../../bindings";
+import { commandError } from "../../lib/errors";
+import { ResourceCache } from "../../lib/resourceCache";
+import { useChangesStore } from "../changes/changesStore";
+import { useEditorStore, type ResourceTab } from "./editorStore";
+
+const MonacoEditor = lazy(() =>
+  import("@monaco-editor/react").then((module) => ({
+    default: module.default,
+  })),
+);
+const MonacoDiffEditor = lazy(() =>
+  import("@monaco-editor/react").then((module) => ({
+    default: module.DiffEditor,
+  })),
+);
+const cache = new ResourceCache<FileContent | GitDiff>();
+type LoadState =
+  | { status: "loading" }
+  | { status: "ready"; value: FileContent | GitDiff }
+  | { status: "error"; error: CommandError };
+
+function ResourceView({ tab }: { tab: ResourceTab }) {
+  const [state, setState] = useState<LoadState>(() => {
+    const value = cache.get(tab.id);
+    return value ? { status: "ready", value } : { status: "loading" };
+  });
+  const navigationGeneration = useEditorStore(
+    (store) => store.navigationGeneration,
+  );
+  const fileGeneration = useEditorStore(
+    (store) => store.resourceGenerationByProject[tab.projectId] ?? 0,
+  );
+  const diffGeneration = useEditorStore(
+    (store) => store.diffGenerationByProject[tab.projectId] ?? 0,
+  );
+  const resourceGeneration =
+    tab.type === "file" ? fileGeneration : diffGeneration;
+  useEffect(() => {
+    if (resourceGeneration > 0)
+      cache.deletePrefix(`${tab.type}:${tab.projectId}:`);
+    const cached = cache.get(tab.id);
+    if (cached) {
+      setState({ status: "ready", value: cached });
+      return;
+    }
+    setState({ status: "loading" });
+    const request =
+      tab.type === "file"
+        ? commands.fsReadFile(tab.projectId, tab.relativePath)
+        : commands.gitDiffFile(tab.projectId, tab.relativePath, tab.scope);
+    void request.then(
+      (value) => {
+        const latest = useEditorStore.getState();
+        const latestGeneration =
+          tab.type === "file"
+            ? (latest.resourceGenerationByProject[tab.projectId] ?? 0)
+            : (latest.diffGenerationByProject[tab.projectId] ?? 0);
+        const resourceIsCurrent = latestGeneration === resourceGeneration;
+        if (resourceIsCurrent) cache.set(tab.id, value);
+        if (
+          latest.navigationGeneration === navigationGeneration &&
+          resourceIsCurrent
+        )
+          setState({ status: "ready", value });
+      },
+      (error) => {
+        const latest = useEditorStore.getState();
+        if (
+          latest.navigationGeneration === navigationGeneration &&
+          (tab.type === "file"
+            ? (latest.resourceGenerationByProject[tab.projectId] ?? 0)
+            : (latest.diffGenerationByProject[tab.projectId] ?? 0)) ===
+            resourceGeneration
+        )
+          setState({ status: "error", error: commandError(error) });
+      },
+    );
+  }, [navigationGeneration, resourceGeneration, tab]);
+  if (state.status === "loading")
+    return (
+      <div className="viewer-state">
+        <span className="spinner" />
+        Loading resource…
+      </div>
+    );
+  if (state.status === "error")
+    return (
+      <div className="viewer-state error">
+        <RiFileCodeLine size={28} />
+        <b>{state.error.code}</b>
+        <span>{state.error.message}</span>
+      </div>
+    );
+  const language =
+    "language" in state.value ? (state.value.language ?? undefined) : undefined;
+  if (tab.type === "diff" && "scope" in state.value)
+    return <DiffView diff={state.value} />;
+  const content = "content" in state.value ? state.value.content : "";
+  return (
+    <Suspense fallback={<div className="viewer-state">Loading editor…</div>}>
+      <MonacoEditor
+        value={content}
+        language={language}
+        theme="vs-dark"
+        options={{
+          readOnly: true,
+          domReadOnly: true,
+          minimap: { enabled: false },
+          fontSize: 13,
+          padding: { top: 16 },
+        }}
+      />
+    </Suspense>
+  );
+}
+
+function languageForPath(path: string): string | undefined {
+  const extension = path.split(".").pop()?.toLowerCase();
+  return {
+    css: "css",
+    html: "html",
+    js: "javascript",
+    json: "json",
+    jsx: "javascript",
+    md: "markdown",
+    py: "python",
+    rs: "rust",
+    ts: "typescript",
+    tsx: "typescript",
+  }[extension ?? ""];
+}
+
+function DiffView({ diff }: { diff: GitDiff }) {
+  const diffMode = useChangesStore((store) => store.diffMode);
+  const setDiffMode = useChangesStore((store) => store.setDiffMode);
+  return (
+    <div className="diff-source-view">
+      <div className="diff-source-note">
+        <span>File comparison</span>
+        <div className="diff-mode-toggle" role="group" aria-label="Diff layout">
+          <button
+            className={diffMode === "unified" ? "active" : ""}
+            onClick={() => setDiffMode("unified")}
+          >
+            Inline
+          </button>
+          <button
+            className={diffMode === "split" ? "active" : ""}
+            onClick={() => setDiffMode("split")}
+          >
+            Split
+          </button>
+        </div>
+      </div>
+      <Suspense
+        fallback={<div className="viewer-state">Loading diff viewer…</div>}
+      >
+        <MonacoDiffEditor
+          original={diff.original ?? ""}
+          modified={diff.modified ?? ""}
+          originalLanguage={languageForPath(diff.path)}
+          modifiedLanguage={languageForPath(diff.path)}
+          theme="vs-dark"
+          options={{
+            readOnly: true,
+            renderSideBySide: diffMode === "split",
+            minimap: { enabled: false },
+            fontSize: 13,
+          }}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+export function EditorPane({ projectId }: { projectId: string }) {
+  const view = useEditorStore((state) => state.views[projectId]);
+  const active = useMemo(
+    () => view?.tabs.find((tab) => tab.id === view.activeTabId),
+    [view],
+  );
+  return (
+    <main className="editor-pane">
+      <div className="editor-tabs">
+        {(view?.tabs ?? []).map((tab) => (
+          <button
+            className={`editor-tab ${tab.id === view.activeTabId ? "active" : ""}`}
+            key={tab.id}
+            onClick={() => {
+              useEditorStore.getState().beginNavigation();
+              useEditorStore.getState().activate(projectId, tab.id);
+            }}
+            onDoubleClick={() =>
+              useEditorStore.getState().keep(projectId, tab.id)
+            }
+          >
+            {tab.type === "diff" ? (
+              <RiGitCommitLine size={14} />
+            ) : (
+              <RiFileCodeLine size={14} />
+            )}
+            <span className={tab.preview ? "preview-label" : ""}>
+              {tab.relativePath.split("/").slice(-1)[0]}
+            </span>
+            <span
+              className="tab-close"
+              onClick={(event) => {
+                event.stopPropagation();
+                useEditorStore.getState().close(projectId, tab.id);
+              }}
+            >
+              <RiCloseLine size={14} />
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="editor-content">
+        {active ? (
+          <ResourceView key={active.id} tab={active} />
+        ) : (
+          <div className="editor-empty">
+            <RiCodeSSlashLine size={42} />
+            <h2>Your code, in focus.</h2>
+            <p>Select a file or change to open a read-only preview.</p>
+            <div>
+              <kbd>⌘ P</kbd>
+              <span>Quick open</span>
+            </div>
+            <div>
+              <kbd>⌘ J</kbd>
+              <span>Toggle terminal</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
