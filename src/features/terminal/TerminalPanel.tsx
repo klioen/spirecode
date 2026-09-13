@@ -3,11 +3,11 @@ import { commands } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { TerminalInstance } from "./TerminalInstance";
 import { terminalStream } from "./terminalStream";
-import { useTerminalStore } from "./terminalStore";
+import { selectTerminalTabs, useTerminalStore } from "./terminalStore";
 
 export function TerminalPanel({ projectId }: { projectId: string }) {
-  const tabs = useTerminalStore(
-    (state) => state.tabsByProject[projectId] ?? [],
+  const tabs = useTerminalStore((state) =>
+    selectTerminalTabs(state, projectId),
   );
   const active = useTerminalStore((state) => state.activeByProject[projectId]);
   const createTerminal = async () => {

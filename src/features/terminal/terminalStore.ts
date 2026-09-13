@@ -18,6 +18,11 @@ interface TerminalState {
     status: TerminalTab["status"],
   ) => void;
 }
+const EMPTY_TERMINAL_TABS: TerminalTab[] = [];
+
+export const selectTerminalTabs = (state: TerminalState, projectId: string) =>
+  state.tabsByProject[projectId] ?? EMPTY_TERMINAL_TABS;
+
 export const useTerminalStore = create<TerminalState>((set) => ({
   tabsByProject: {},
   activeByProject: {},
