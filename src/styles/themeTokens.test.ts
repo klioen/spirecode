@@ -32,6 +32,7 @@ const required = [
   "warning",
   "success",
   "shadow",
+  "modal-overlay",
 ];
 
 describe("theme tokens", () => {
@@ -45,6 +46,18 @@ describe("theme tokens", () => {
       for (const token of required) expect(block).toContain(`--${token}:`);
     },
   );
+
+  it("does not reference undefined color tokens", () => {
+    const declared = new Set(
+      [...css.matchAll(/--([a-z0-9-]+)\s*:/gi)].map((match) => match[1]),
+    );
+    const usedWithoutFallback = [
+      ...css.matchAll(/var\(--([a-z0-9-]+)\)/gi),
+    ].map((match) => match[1]);
+    expect(usedWithoutFallback.filter((token) => !declared.has(token))).toEqual(
+      [],
+    );
+  });
 
   it("keeps raw colors inside the theme declarations", () => {
     const componentCss = css.slice(css.indexOf("* {"));

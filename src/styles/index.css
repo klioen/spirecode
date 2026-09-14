@@ -27,7 +27,7 @@
   --danger-border: #704148;
   --warning-soft: #342a19;
   --accent-glow: rgb(155 215 166 / 30%);
-  --modal-backdrop: rgb(0 0 0 / 45%);
+  --modal-overlay: rgb(0 0 0 / 45%);
   font-family:
     Inter,
     ui-sans-serif,
@@ -69,7 +69,7 @@
   --danger-border: #dfb5b8;
   --warning-soft: #f8edd9;
   --accent-glow: rgb(47 127 131 / 20%);
-  --modal-backdrop: rgb(31 64 67 / 35%);
+  --modal-overlay: rgb(31 64 67 / 35%);
 }
 
 [data-theme="dark"] {
@@ -101,7 +101,7 @@
   --danger-border: #704148;
   --warning-soft: #342a19;
   --accent-glow: rgb(155 215 166 / 30%);
-  --modal-backdrop: rgb(0 0 0 / 45%);
+  --modal-overlay: rgb(0 0 0 / 45%);
 }
 * {
   box-sizing: border-box;
@@ -356,7 +356,7 @@ body.panel-resizing-vertical * {
   padding: 4px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: var(--panel-bg);
+  background: var(--elevated-bg);
   box-shadow: 0 8px 24px var(--shadow);
 }
 .worktree-menu button {
@@ -413,14 +413,14 @@ body.panel-resizing-vertical * {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: var(--modal-backdrop);
+  background: var(--modal-overlay);
 }
 .worktree-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 20px;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: var(--panel-bg);
+  background: var(--elevated-bg);
   box-shadow: 0 18px 60px var(--shadow);
 }
 .worktree-dialog h2 {
@@ -440,7 +440,7 @@ body.panel-resizing-vertical * {
   padding: 0 9px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: var(--input-bg, var(--editor-bg));
+  background: var(--control-bg);
   color: var(--text-default);
 }
 .field-error,
