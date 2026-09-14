@@ -1,4 +1,6 @@
 # Spec: Rust + Node sidecar 的 pi Agent Chat
+
+> Historical transport design: the Chat product behavior remains authoritative, but the Rust/sidecar architecture is superseded by `docs/electron-migration/spec.md`, which runs pi SDK directly in Electron Main.
 Status: accepted。 Implements: `docs/pi-agent-chat/intent.md`。
 
 ## 1. Scope

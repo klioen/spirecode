@@ -1,5 +1,7 @@
 # Plan: Rust + Node sidecar 的 pi Agent Chat（from `docs/pi-agent-chat/spec.md` 2026-09-15）
 
+> Historical implementation plan: sidecar and Tauri steps are superseded by `docs/electron-migration/plan.md`; Chat UX and event semantics remain applicable.
+
 ## Approval and baseline
 
 - `docs/pi-agent-chat/intent.md` and `docs/pi-agent-chat/spec.md` were accepted by the user on 2026-09-15.

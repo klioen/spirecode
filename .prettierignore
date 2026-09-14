@@ -1,6 +1,7 @@
 dist
-src-tauri/target
-src-tauri/gen
+dist-electron
+release
+scripts/*.sh
 pnpm-lock.yaml
 docs
 AGENTS.md

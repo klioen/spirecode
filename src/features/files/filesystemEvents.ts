@@ -1,4 +1,6 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { subscribeHostEvent } from "../../bindings";
+
+type UnlistenFn = () => void;
 import { useEditorStore } from "../editor/editorStore";
 import { useProjectsStore } from "../projects/projectsStore";
 import { useFileTreeStore } from "./fileTreeStore";
@@ -19,10 +21,8 @@ export function handleFilesystemChanged(
 }
 
 export function subscribeToFilesystemChanges(): Promise<UnlistenFn> {
-  return listen<FilesystemChangedPayload>(
+  return subscribeHostEvent<FilesystemChangedPayload>(
     "filesystem://changed",
-    ({ payload }) => {
-      handleFilesystemChanged(payload);
-    },
+    handleFilesystemChanged,
   );
 }

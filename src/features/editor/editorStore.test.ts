@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  chatResourceId,
   fileResourceId,
   terminalResourceId,
   useEditorStore,
@@ -27,7 +28,9 @@ describe("preview and keep tabs", () => {
     expect(
       useEditorStore
         .getState()
-        .views.p1.tabs.filter((item) => item.type !== "terminal")
+        .views.p1.tabs.filter(
+          (item) => item.type === "file" || item.type === "diff",
+        )
         .map((item) => item.relativePath),
     ).toEqual(["b.ts"]);
   });
@@ -39,7 +42,9 @@ describe("preview and keep tabs", () => {
     expect(tabs).toHaveLength(2);
     expect(
       tabs.find(
-        (item) => item.type !== "terminal" && item.relativePath === "a.ts",
+        (item) =>
+          (item.type === "file" || item.type === "diff") &&
+          item.relativePath === "a.ts",
       )?.preview,
     ).toBe(false);
   });
@@ -60,6 +65,26 @@ describe("preview and keep tabs", () => {
     expect(
       useEditorStore.getState().views.p1.tabs.map((item) => item.type),
     ).toEqual(["file", "terminal"]);
+  });
+
+  it("opens and deduplicates chat tabs without replacing previews", () => {
+    useEditorStore.getState().open(tab("a.ts"));
+    const first = useEditorStore
+      .getState()
+      .openChat("p1", "session-a", "Chat A");
+    const reopened = useEditorStore
+      .getState()
+      .openChat("p1", "session-a", "Renamed");
+
+    expect(first).toMatchObject({
+      id: chatResourceId("p1", "session-a"),
+      type: "chat",
+      title: "Chat A",
+      preview: false,
+    });
+    expect(reopened.id).toBe(first.id);
+    expect(useEditorStore.getState().views.p1.tabs).toHaveLength(2);
+    expect(useEditorStore.getState().views.p1.activeTabId).toBe(first.id);
   });
 
   it("tracks terminal exit status in the central resource tab", () => {

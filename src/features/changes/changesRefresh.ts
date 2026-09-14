@@ -1,5 +1,6 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { commands } from "../../bindings";
+import { commands, subscribeHostEvent } from "../../bindings";
+
+type UnlistenFn = () => void;
 import { commandError } from "../../lib/errors";
 import { useEditorStore } from "../editor/editorStore";
 import { useProjectsStore } from "../projects/projectsStore";
@@ -32,7 +33,8 @@ export function handleGitChanged(payload: GitChangedPayload): void {
 }
 
 export function subscribeToGitChanges(): Promise<UnlistenFn> {
-  return listen<GitChangedPayload>("git://changed", ({ payload }) =>
-    handleGitChanged(payload),
+  return subscribeHostEvent<GitChangedPayload>(
+    "git://changed",
+    handleGitChanged,
   );
 }

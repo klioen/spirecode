@@ -1,4 +1,6 @@
 # Spec: 基于 Tauri 的 spirecode macOS 客户端
+
+> Historical baseline: Tauri/Rust implementation details are superseded by `docs/electron-migration/spec.md`; product requirements not explicitly changed there remain applicable.
 Status: draft。 Implements: `docs/spirecode/intent.md`。
 
 ## 1. 产品范围
@@ -30,7 +32,7 @@ Status: draft。 Implements: `docs/spirecode/intent.md`。
 
 ### 1.2 V1 不包含
 
-- Chat 或 pi agent 集成。
+- 原始 V1 不包含 Chat 或 pi agent 集成；后续已批准的 `docs/pi-agent-chat/spec.md` 覆盖该排除项。
 - 文件编辑、保存、autosave、dirty buffer、冲突处理。
 - Tree-sitter、LSP、DAP、代码补全。
 - stage、unstage、discard、commit、push、pull、branch mutation、Git graph。

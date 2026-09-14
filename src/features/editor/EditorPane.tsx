@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
+  RiChatNewLine,
+  RiChatHistoryLine,
   RiCloseLine,
   RiCodeSSlashLine,
   RiFileCodeLine,
@@ -14,6 +16,7 @@ import {
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
+import { ChatHistory, ChatView, hostChatApi } from "../chat";
 import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
 import { defineMonacoTheme, monacoThemeName } from "../theme/themeColors";
@@ -38,7 +41,7 @@ type LoadState =
   | { status: "ready"; value: FileContent | GitDiff }
   | { status: "error"; error: CommandError };
 
-type DocumentTab = Exclude<ResourceTab, { type: "terminal" }>;
+type DocumentTab = Extract<ResourceTab, { type: "file" | "diff" }>;
 
 function ResourceView({ tab }: { tab: DocumentTab }) {
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
@@ -200,6 +203,19 @@ function DiffView({ diff }: { diff: GitDiff }) {
 
 export function EditorPane({ worktreeId }: { worktreeId: string }) {
   const view = useEditorStore((state) => state.views[worktreeId]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const createChat = async () => {
+    const navigation = useEditorStore.getState().beginNavigation();
+    try {
+      const session = await hostChatApi.create(worktreeId);
+      if (useEditorStore.getState().navigationGeneration === navigation)
+        useEditorStore
+          .getState()
+          .openChat(worktreeId, session.sessionId, session.title);
+    } catch (error) {
+      useProjectsStore.getState().setError(commandError(error));
+    }
+  };
   const createTerminal = async () => {
     let terminalId: string | null = null;
     try {
@@ -256,11 +272,13 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 <RiGitCommitLine size={14} />
               ) : tab.type === "terminal" ? (
                 <RiTerminalBoxLine size={14} />
+              ) : tab.type === "chat" ? (
+                <RiChatNewLine size={14} />
               ) : (
                 <RiFileCodeLine size={14} />
               )}
               <span className={tab.preview ? "preview-label" : ""}>
-                {tab.type === "terminal"
+                {tab.type === "terminal" || tab.type === "chat"
                   ? tab.title
                   : tab.relativePath.split("/").slice(-1)[0]}
               </span>
@@ -268,7 +286,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 className="tab-close"
                 role="button"
                 aria-label={`Close ${
-                  tab.type === "terminal"
+                  tab.type === "terminal" || tab.type === "chat"
                     ? tab.title
                     : tab.relativePath.split("/").slice(-1)[0]
                 }`}
@@ -282,22 +300,59 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
             </button>
           ))}
         </div>
-        <button
-          className="editor-new-terminal"
-          title="New terminal"
-          aria-label="New terminal"
-          onClick={() => void createTerminal()}
-        >
-          <RiTerminalBoxLine size={16} />
-        </button>
+        <div className="editor-resource-actions">
+          <button
+            title="Chat history"
+            aria-label="Chat history"
+            onClick={() => setHistoryOpen((open) => !open)}
+          >
+            <RiChatHistoryLine size={16} />
+          </button>
+          <button
+            title="New chat"
+            aria-label="New chat"
+            onClick={() => void createChat()}
+          >
+            <RiChatNewLine size={16} />
+          </button>
+          <button
+            title="New terminal"
+            aria-label="New terminal"
+            onClick={() => void createTerminal()}
+          >
+            <RiTerminalBoxLine size={16} />
+          </button>
+        </div>
       </div>
       <div className="editor-content">
+        {historyOpen && (
+          <ChatHistory
+            worktreeId={worktreeId}
+            api={hostChatApi}
+            onOpen={(session) => {
+              useEditorStore
+                .getState()
+                .openChat(worktreeId, session.sessionId, session.title);
+              setHistoryOpen(false);
+            }}
+          />
+        )}
         {active ? (
           active.type === "terminal" ? (
             <TerminalInstance
               key={active.id}
               worktreeId={worktreeId}
               terminalId={active.terminalId}
+            />
+          ) : active.type === "chat" ? (
+            <ChatView
+              key={active.id}
+              worktreeId={worktreeId}
+              sessionId={active.sessionId}
+              api={hostChatApi}
+              onError={(error) =>
+                useProjectsStore.getState().setError(commandError(error))
+              }
             />
           ) : (
             <ResourceView key={active.id} tab={active} />

@@ -11,6 +11,14 @@ export type ErrorCode =
   | "TERMINAL_FAILED"
   | "WORKTREE_DIRTY"
   | "WORKTREE_BUSY"
+  | "CHAT_SIDECAR_UNAVAILABLE"
+  | "CHAT_SIDECAR_CRASHED"
+  | "CHAT_PROTOCOL_ERROR"
+  | "CHAT_SESSION_NOT_FOUND"
+  | "CHAT_SESSION_BUSY"
+  | "CHAT_AUTH_REQUIRED"
+  | "CHAT_MODEL_UNAVAILABLE"
+  | "CHAT_FAILED"
   | "INVALID_ARGUMENT";
 
 export interface CommandError {
@@ -122,3 +130,32 @@ export type TerminalMessage =
   | { type: "output"; terminalId: string; data: TerminalOutput }
   | { type: "exit"; terminalId: string; exitCode?: number | null }
   | { type: "error"; terminalId: string; error: string };
+
+export interface ChatSessionSummary {
+  sessionId: string;
+  worktreeId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChatSnapshot {
+  sessionId: string;
+  worktreeId: string;
+  sequence: number;
+  status: "idle" | "streaming" | "failed" | "auth-required";
+  items: unknown[];
+  queue: unknown[];
+  error?: { code: string; message: string; details?: unknown } | null;
+}
+
+export interface ChatEvent {
+  sessionId: string;
+  sequence: number;
+  event: unknown;
+}
+
+export interface ChatAccepted {
+  accepted: boolean;
+  restored?: string[];
+}

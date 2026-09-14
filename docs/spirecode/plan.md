@@ -1,5 +1,7 @@
 # Plan: 基于 Tauri 的 spirecode macOS 客户端（from `docs/spirecode/spec.md` 2026-09-13）
 
+> Historical implementation plan: superseded by `docs/electron-migration/plan.md` for desktop host, backend, testing, and packaging work.
+
 ## 1. 交付策略
 
 按可独立验证的纵向阶段实现，每一阶段都保持仓库可格式化、可测试、可构建。先建立 Tauri/WKWebView 最小闭环，再依次加入 Projects、Files、Git Changes 和 Terminal；不先搭建未被当前需求使用的通用框架。
@@ -470,4 +472,4 @@ UI 交付额外提供主要页面截图：空状态、已打开项目、文件 v
 
 ## 8. Approval boundary
 
-本计划获批后才开始创建脚手架和应用代码。实施允许在不改变产品范围和架构边界的前提下调整生成文件名；任何新增业务范围、通用 Dock、文件写入、Git mutation 或 Chat 都需要先更新 `intent.md`、`spec.md` 和本计划。
+本计划获批后才开始创建脚手架和应用代码。实施允许在不改变产品范围和架构边界的前提下调整生成文件名；任何新增业务范围、通用 Dock、文件写入或 Git mutation 都需要先更新相应 SDLC artifacts。Chat 已由独立且获批的 `docs/pi-agent-chat/{intent,spec,plan}.md` 变更接续实现。

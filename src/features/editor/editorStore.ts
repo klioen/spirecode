@@ -25,6 +25,14 @@ export type ResourceTab =
       title: string;
       status: "running" | "exited" | "error";
       preview: false;
+    }
+  | {
+      id: string;
+      worktreeId: string;
+      type: "chat";
+      sessionId: string;
+      title: string;
+      preview: false;
     };
 
 export const fileResourceId = (worktreeId: string, relativePath: string) =>
@@ -36,6 +44,8 @@ export const diffResourceId = (
 ) => `diff:${worktreeId}:${scope}:${relativePath}`;
 export const terminalResourceId = (worktreeId: string, terminalId: string) =>
   `terminal:${worktreeId}:${terminalId}`;
+export const chatResourceId = (worktreeId: string, sessionId: string) =>
+  `chat:${worktreeId}:${sessionId}`;
 
 interface WorktreeEditorView {
   tabs: ResourceTab[];
@@ -49,6 +59,11 @@ interface EditorState {
   terminalSequenceByWorktree: Record<string, number>;
   open: (tab: ResourceTab, keep?: boolean) => void;
   openTerminal: (worktreeId: string, terminalId: string) => ResourceTab;
+  openChat: (
+    worktreeId: string,
+    sessionId: string,
+    title?: string,
+  ) => ResourceTab;
   setTerminalStatus: (
     worktreeId: string,
     terminalId: string,
@@ -79,7 +94,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         tabs = view.tabs.map((tab) =>
           tab.id === incoming.id && keep ? { ...tab, preview: false } : tab,
         );
-      } else if (incoming.type === "terminal") {
+      } else if (incoming.type === "terminal" || incoming.type === "chat") {
         tabs = [...view.tabs, incoming];
       } else {
         const next: ResourceTab = { ...incoming, preview: !keep };
@@ -122,6 +137,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     });
     return terminal;
+  },
+  openChat: (worktreeId, sessionId, title = "New chat") => {
+    const chat: ResourceTab = {
+      id: chatResourceId(worktreeId, sessionId),
+      worktreeId,
+      type: "chat",
+      sessionId,
+      title,
+      preview: false,
+    };
+    get().open(chat, true);
+    return chat;
   },
   setTerminalStatus: (worktreeId, terminalId, status) =>
     set((state) => {

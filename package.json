@@ -4,43 +4,50 @@
   "version": "0.1.0",
   "description": "Fast Lightweight GUI Code Agent",
   "type": "module",
+  "main": "dist-electron/main.js",
   "packageManager": "pnpm@10.29.2",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "node scripts/electron-dev.mjs",
+    "dev:renderer": "vite",
+    "dev:main": "tsup --watch",
+    "dev:electron": "wait-on tcp:1420 dist-electron/main.js && electron .",
+    "build": "pnpm typecheck && pnpm build:renderer && pnpm build:main",
+    "build:renderer": "vite build",
+    "build:main": "tsup",
     "preview": "vite preview",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "brand:check": "node scripts/check-brand.mjs",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.electron.json --noEmit",
     "test": "vitest run",
-    "check": "pnpm format:check && pnpm brand:check && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml --all --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
-    "bundle": "pnpm tauri build --bundles app && ./scripts/sign-app.sh && ./scripts/build-dmg.sh && ./scripts/smoke-app.sh && ./scripts/smoke-dmg.sh",
-    "tauri": "tauri"
+    "check": "pnpm format:check && pnpm brand:check && pnpm lint && pnpm typecheck && pnpm test",
+    "smoke:app": "./scripts/smoke-app.sh",
+    "smoke:dmg": "./scripts/smoke-dmg.sh",
+    "bundle": "node scripts/package-electron.mjs"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.4",
     "@monaco-editor/react": "4.7.0",
     "@radix-ui/react-context-menu": "2.3.7",
     "@radix-ui/react-dialog": "1.1.23",
     "@remixicon/react": "4.9.0",
-    "@tauri-apps/api": "2.11.1",
-    "@tauri-apps/plugin-clipboard-manager": "2.3.3",
-    "@tauri-apps/plugin-dialog": "2.7.3",
-    "@tauri-apps/plugin-opener": "2.5.5",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
+    "chokidar": "4.0.3",
     "clsx": "2.1.1",
+    "ignore": "7.0.5",
     "monaco-editor": "0.56.0",
+    "node-pty": "1.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tailwind-merge": "3.7.0",
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@eslint/js": "10.0.1",
     "@tailwindcss/vite": "4.3.3",
-    "@tauri-apps/cli": "2.11.4",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
@@ -48,14 +55,56 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "concurrently": "10.0.5",
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
     "eslint": "10.10.0",
     "globals": "17.12.0",
     "jsdom": "30.0.1",
     "prettier": "3.9.6",
     "tailwindcss": "4.3.3",
+    "tsup": "8.5.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",
     "vite": "8.3.0",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "wait-on": "9.1.0"
+  },
+  "build": {
+    "appId": "com.bytedance.spirecode.dev",
+    "productName": "SpireCode",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.test.*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "node-pty"
+    ]
   }
 }

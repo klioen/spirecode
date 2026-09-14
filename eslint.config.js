@@ -3,7 +3,9 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "src-tauri/target", "src/bindings/generated.ts"] },
+  {
+    ignores: ["dist", "dist-electron", "release", "src/bindings/generated.ts"],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -23,6 +25,17 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-explicit-any": "error",
+    },
+  },
+  {
+    files: ["electron/**/*.ts"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: globals.node,
+      parserOptions: {
+        project: "./tsconfig.electron.json",
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
   },
 );

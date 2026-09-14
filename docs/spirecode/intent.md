@@ -1,4 +1,6 @@
 # Intent: 基于 Tauri 的 spirecode macOS 客户端
+
+> Historical baseline: desktop host architecture is superseded by `docs/electron-migration/`; product behavior remains applicable.
 Author: keliangliang。 Status: accepted。
 
 ## Problem
@@ -12,7 +14,7 @@ Author: keliangliang。 Status: accepted。
 - 使用 Tauri 2 打包为 `.app` 和 `.dmg`，复用 macOS 系统 WKWebView，不内置 Chromium。
 - 前端采用 ThinkRail 同类技术栈与交互：React、TypeScript、Zustand、Tailwind CSS、Radix/shadcn、Monaco、xterm.js。
 - 后端使用 Rust，负责项目目录、文件读取与监听、Git 状态与 diff、PTY 和本地持久化。
-- V1 提供 Projects、Files、Git Changes、Terminal 四个功能面；Chat 不实现。
+- 原始 V1 提供 Projects、Files、Git Changes、Terminal 四个功能面；后续已批准的 `docs/pi-agent-chat/` 变更在此基线上增加 Chat。
 - V1 文件区域是只读源码查看器，不包含保存、dirty buffer、LSP 或完整 IDE 编辑能力。
 - 产物可在本机安装、启动并打开本地 Git 项目。
 
@@ -33,7 +35,7 @@ Author: keliangliang。 Status: accepted。
 - 文件访问必须限制在已打开 project 的 canonical root 内，并防止 symlink 逃逸。
 - Git 参数必须通过 `std::process::Command` 参数数组传递，不经过 shell 拼接。
 - V1 优先支持 Apple Silicon 和 macOS 13+。
-- Chat、文件写入、LSP、Git mutation、managed worktree、远程访问不在 V1 范围。
+- 原始 V1 不包含 Chat、文件写入、LSP、Git mutation、managed worktree、远程访问；其中 Chat 后续由 `docs/pi-agent-chat/` 单独批准并实现。
 
 ## Open questions
 

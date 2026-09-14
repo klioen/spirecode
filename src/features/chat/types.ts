@@ -1,0 +1,138 @@
+export type ChatErrorCode =
+  | "CHAT_SIDECAR_UNAVAILABLE"
+  | "CHAT_SIDECAR_CRASHED"
+  | "CHAT_PROTOCOL_ERROR"
+  | "CHAT_SESSION_NOT_FOUND"
+  | "CHAT_SESSION_BUSY"
+  | "CHAT_AUTH_REQUIRED"
+  | "CHAT_MODEL_UNAVAILABLE"
+  | "CHAT_FAILED";
+
+export interface ChatError {
+  code: ChatErrorCode;
+  message: string;
+  details?: unknown;
+}
+
+export type ChatRunStatus =
+  | "loading"
+  | "idle"
+  | "streaming"
+  | "reconnecting"
+  | "failed"
+  | "auth-required";
+
+export interface ChatSessionSummary {
+  sessionId: string;
+  worktreeId: string;
+  title: string;
+  createdAt?: number;
+  updatedAt?: number;
+  status?: ChatRunStatus;
+}
+
+export interface ChatMessageModel {
+  id: string;
+  role: "user" | "assistant" | "system" | "error";
+  content: string;
+  status: "streaming" | "complete" | "error";
+  createdAt?: number;
+}
+
+export interface ChatThinkingModel {
+  id: string;
+  content: string;
+  status: "streaming" | "complete";
+}
+
+export interface ChatToolModel {
+  toolCallId: string;
+  name: string;
+  arguments?: unknown;
+  result?: unknown;
+  error?: string;
+  status: "running" | "done" | "error";
+}
+
+export interface ChatNoticeModel {
+  id: string;
+  kind: "retry" | "compaction" | "error";
+  text: string;
+  active: boolean;
+}
+
+export type ChatTimelineItem =
+  | ({ type: "message" } & ChatMessageModel)
+  | ({ type: "thinking" } & ChatThinkingModel)
+  | ({ type: "tool" } & ChatToolModel)
+  | ({ type: "notice" } & ChatNoticeModel);
+
+export interface ChatQueuedInput {
+  id: string;
+  text: string;
+}
+
+export interface ChatSessionState {
+  sessionId: string;
+  worktreeId: string;
+  sequence: number;
+  status: ChatRunStatus;
+  items: ChatTimelineItem[];
+  queue: ChatQueuedInput[];
+  error: ChatError | null;
+}
+
+export interface ChatSnapshot {
+  sessionId: string;
+  worktreeId: string;
+  sequence: number;
+  status: Exclude<ChatRunStatus, "loading" | "reconnecting">;
+  items: ChatTimelineItem[];
+  queue: ChatQueuedInput[];
+  error?: ChatError | null;
+}
+
+export type ChatSessionEvent =
+  | { type: "agent_start" }
+  | { type: "agent_end" }
+  | { type: "agent_settled" }
+  | { type: "message_start"; message: ChatMessageModel }
+  | { type: "message_update"; message: ChatMessageModel }
+  | { type: "message_end"; message: ChatMessageModel }
+  | { type: "thinking_start"; thinking: ChatThinkingModel }
+  | { type: "thinking_update"; thinking: ChatThinkingModel }
+  | { type: "thinking_end"; thinking: ChatThinkingModel }
+  | {
+      type: "tool_execution_start";
+      toolCallId: string;
+      toolName: string;
+      arguments?: unknown;
+    }
+  | {
+      type: "tool_execution_update";
+      toolCallId: string;
+      partialResult?: unknown;
+    }
+  | {
+      type: "tool_execution_end";
+      toolCallId: string;
+      result?: unknown;
+      error?: string;
+    }
+  | { type: "queue_update"; queue: ChatQueuedInput[] }
+  | { type: "compaction_start"; message?: string }
+  | { type: "compaction_end"; message?: string }
+  | { type: "auto_retry_start"; message?: string }
+  | { type: "auto_retry_end"; message?: string }
+  | { type: "session_error"; error: ChatError };
+
+export interface ChatEventEnvelope {
+  sessionId: string;
+  sequence: number;
+  event: ChatSessionEvent;
+}
+
+export interface ChatAccepted {
+  accepted: boolean;
+  restored?: string[];
+}
