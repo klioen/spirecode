@@ -12,7 +12,7 @@ interface Args {
   [key: string]: unknown;
 }
 
-const text = (args: Args, key: string): string => {
+const text = (args: Args, key: string, allowEmpty = false): string => {
   const value = args[key];
   if (typeof value !== "string") throw new TypeError(`${key} must be a string`);
   const limits: Record<string, number> = {
@@ -27,7 +27,10 @@ const text = (args: Args, key: string): string => {
     sessionId: 256,
     subscriptionId: 128,
   };
-  if (!value || Buffer.byteLength(value, "utf8") > (limits[key] ?? 4 * 1024))
+  if (
+    (!allowEmpty && !value) ||
+    Buffer.byteLength(value, "utf8") > (limits[key] ?? 4 * 1024)
+  )
     throw new TypeError(`${key} is empty or too large`);
   return value;
 };
@@ -65,7 +68,7 @@ export function registerIpc(
       )
         throw new TypeError("IPC sender is not allowed");
       const args = isArgs(rawArgs) ? rawArgs : {};
-      validateFields(rawCommand, args);
+      validateCommandArgs(rawCommand, args);
       return {
         ok: true,
         value: await invoke(
@@ -109,7 +112,7 @@ async function invoke(
     case "fs_read_dir":
       return state.filesystem.readDir(
         text(args, "worktreeId"),
-        text(args, "relativePath"),
+        text(args, "relativePath", true),
       );
     case "fs_read_file":
       return state.filesystem.readFile(
@@ -274,10 +277,17 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
 };
 
-function validateFields(command: CommandName, args: Args): void {
+export function validateCommandArgs(command: CommandName, args: Args): Args {
   const allowed = new Set(ALLOWED_FIELDS[command]);
   for (const key of Object.keys(args))
     if (!allowed.has(key)) throw new TypeError(`Unexpected argument: ${key}`);
+
+  for (const key of allowed) {
+    if (key === "cols" || key === "rows") number(args, key);
+    else if (key === "force") boolean(args, key);
+    else text(args, key, command === "fs_read_dir" && key === "relativePath");
+  }
+  return args;
 }
 
 function isArgs(value: unknown): value is Args {

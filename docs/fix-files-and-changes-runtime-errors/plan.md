@@ -25,7 +25,8 @@
 
 ## Proof
 
-- 新增测试先红后绿。
-- `pnpm vitest run electron/ipc.test.ts electron/domains/filesystem/watcher.test.ts electron/domains/filesystem/filesystem.test.ts electron/domains/git/git.test.ts`
-- `pnpm check`
-- `pnpm bundle`，安装后用 `lsof -p <main-pid>` 确认 FD 保持在常量级，并手动确认文件树与 Changes 正常加载。
+- 新增测试先红（3 个预期失败）后绿（4/4 通过）。
+- 针对性 Electron 测试：5 个文件、19 个测试通过。
+- `pnpm check`：35 个文件、126 个测试通过，format、brand、lint、typecheck 全部通过。
+- `pnpm bundle`：应用与 DMG 构建、签名验证、smoke 全部通过。
+- 使用独立 `user-data-dir` 启动新构建并加载 3 个持久化项目：Main 进程 114 个 FD、仓库相关 FD 21 个，日志无 `spawn EBADF`；旧安装版现场为约 10,700 个 FD。

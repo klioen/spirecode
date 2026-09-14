@@ -1,5 +1,5 @@
 # Intent: 修复文件树空路径和 Changes spawn EBADF
-Author: keliangliang。 Status: draft。
+Author: keliangliang。 Status: accepted。
 
 ## Problem
 

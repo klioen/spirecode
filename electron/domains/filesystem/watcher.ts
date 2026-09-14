@@ -1,6 +1,7 @@
+import { watch, type FSWatcher as NativeFSWatcher } from "node:fs";
 import { realpath } from "node:fs/promises";
-import { relative, sep } from "node:path";
-import chokidar, { type FSWatcher } from "chokidar";
+import { join, relative, sep } from "node:path";
+import chokidar from "chokidar";
 import { CommandError } from "../../core/errors.js";
 
 const BATCH_MS = 120;
@@ -17,8 +18,15 @@ export type WatchEvent =
   | { topic: "git://changed"; payload: { worktreeId: string } };
 
 interface WatchSession {
-  watcher: FSWatcher;
   stop: () => Promise<void>;
+}
+
+export type WatcherBackend = "native-recursive" | "chokidar";
+
+export function watcherBackendForPlatform(
+  platform: NodeJS.Platform,
+): WatcherBackend {
+  return platform === "darwin" ? "native-recursive" : "chokidar";
 }
 
 export class WatcherRegistry {
@@ -91,48 +99,35 @@ export class WatcherRegistry {
       schedule();
     };
 
-    let watcher: FSWatcher | undefined;
+    let stopWatcher: (() => Promise<void>) | undefined;
+    const handleError = () => {
+      truncated = true;
+      gitChanged = true;
+      schedule();
+    };
     try {
-      const created = chokidar.watch(watchPaths, {
-        ignoreInitial: true,
-        persistent: true,
-      });
-      watcher = created;
-      created.on("all", (_event, path) => collect(path));
-      created.on("error", () => {
-        truncated = true;
-        gitChanged = true;
-        schedule();
-      });
-      await new Promise<void>((resolve, reject) => {
-        created.once("ready", resolve);
-        created.once("error", reject);
-      });
+      stopWatcher =
+        watcherBackendForPlatform(process.platform) === "native-recursive"
+          ? createNativeRecursiveWatcher(watchPaths, collect, handleError)
+          : await createChokidarWatcher(watchPaths, collect, handleError);
     } catch (error) {
       closed = true;
       if (timer) clearTimeout(timer);
-      await watcher?.close();
+      await stopWatcher?.();
       throw new CommandError(
         "INVALID_ARGUMENT",
         `filesystem watcher failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const activeWatcher = watcher;
-    if (!activeWatcher)
-      throw new CommandError(
-        "INVALID_ARGUMENT",
-        "filesystem watcher failed to initialize",
-      );
     if (this.sessions.has(worktreeId)) {
-      await activeWatcher.close();
+      await stopWatcher();
       return;
     }
     this.sessions.set(worktreeId, {
-      watcher: activeWatcher,
       stop: async () => {
         closed = true;
         if (timer) clearTimeout(timer);
-        await activeWatcher.close();
+        await stopWatcher();
       },
     });
   }
@@ -147,6 +142,57 @@ export class WatcherRegistry {
   async dispose(): Promise<void> {
     await Promise.all([...this.sessions].map(([id]) => this.close(id)));
   }
+}
+
+function createNativeRecursiveWatcher(
+  paths: readonly string[],
+  collect: (path: string) => void,
+  handleError: () => void,
+): () => Promise<void> {
+  const watchers: NativeFSWatcher[] = [];
+  try {
+    for (const target of paths) {
+      const watcher = watch(
+        target,
+        { persistent: true, recursive: true },
+        (_event, filename) => {
+          if (filename) collect(join(target, filename.toString()));
+          else handleError();
+        },
+      );
+      watcher.on("error", handleError);
+      watchers.push(watcher);
+    }
+  } catch (error) {
+    for (const watcher of watchers) watcher.close();
+    throw error;
+  }
+  return async () => {
+    for (const watcher of watchers) watcher.close();
+  };
+}
+
+async function createChokidarWatcher(
+  paths: readonly string[],
+  collect: (path: string) => void,
+  handleError: () => void,
+): Promise<() => Promise<void>> {
+  const watcher = chokidar.watch([...paths], {
+    ignoreInitial: true,
+    persistent: true,
+  });
+  watcher.on("all", (_event, path) => collect(path));
+  watcher.on("error", handleError);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      watcher.once("ready", resolve);
+      watcher.once("error", reject);
+    });
+  } catch (error) {
+    await watcher.close();
+    throw error;
+  }
+  return () => watcher.close();
 }
 
 function isWithin(root: string, candidate: string): boolean {

@@ -1,5 +1,5 @@
 # Spec: 修复文件展示与 Changes 运行时错误
-Status: draft。 Implements: `docs/fix-files-and-changes-runtime-errors/intent.md`。
+Status: accepted。 Implements: `docs/fix-files-and-changes-runtime-errors/intent.md`。
 
 ## Requirements
 
