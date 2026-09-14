@@ -7,52 +7,69 @@ export interface DirectoryState {
   error?: CommandError;
 }
 interface FileTreeState {
-  expandedByProject: Record<string, string[]>;
+  expandedByWorktree: Record<string, string[]>;
   directories: Record<string, DirectoryState>;
-  generationByProject: Record<string, number>;
-  toggle: (projectId: string, path: string) => void;
+  generationByWorktree: Record<string, number>;
+  toggle: (worktreeId: string, path: string) => void;
   setDirectory: (
-    projectId: string,
+    worktreeId: string,
     key: string,
     generation: number,
     directory: DirectoryState,
   ) => void;
-  invalidateProject: (projectId: string) => void;
+  invalidateWorktree: (worktreeId: string) => void;
+  clearWorktree: (worktreeId: string) => void;
 }
-export const directoryKey = (projectId: string, path: string) =>
-  `${projectId}:${path}`;
+export const directoryKey = (worktreeId: string, path: string) =>
+  `${worktreeId}:${path}`;
 export const useFileTreeStore = create<FileTreeState>((set) => ({
-  expandedByProject: {},
+  expandedByWorktree: {},
   directories: {},
-  generationByProject: {},
-  toggle: (projectId, path) =>
+  generationByWorktree: {},
+  toggle: (worktreeId, path) =>
     set((state) => {
-      const expanded = state.expandedByProject[projectId] ?? [];
+      const expanded = state.expandedByWorktree[worktreeId] ?? [];
       return {
-        expandedByProject: {
-          ...state.expandedByProject,
-          [projectId]: expanded.includes(path)
+        expandedByWorktree: {
+          ...state.expandedByWorktree,
+          [worktreeId]: expanded.includes(path)
             ? expanded.filter((value) => value !== path)
             : [...expanded, path],
         },
       };
     }),
-  setDirectory: (projectId, key, generation, directory) =>
+  setDirectory: (worktreeId, key, generation, directory) =>
     set((state) =>
-      (state.generationByProject[projectId] ?? 0) === generation
+      (state.generationByWorktree[worktreeId] ?? 0) === generation
         ? { directories: { ...state.directories, [key]: directory } }
         : state,
     ),
-  invalidateProject: (projectId) =>
+  invalidateWorktree: (worktreeId) =>
     set((state) => ({
       directories: Object.fromEntries(
         Object.entries(state.directories).filter(
-          ([key]) => !key.startsWith(`${projectId}:`),
+          ([key]) => !key.startsWith(`${worktreeId}:`),
         ),
       ),
-      generationByProject: {
-        ...state.generationByProject,
-        [projectId]: (state.generationByProject[projectId] ?? 0) + 1,
+      generationByWorktree: {
+        ...state.generationByWorktree,
+        [worktreeId]: (state.generationByWorktree[worktreeId] ?? 0) + 1,
       },
     })),
+  clearWorktree: (worktreeId) =>
+    set((state) => {
+      const expandedByWorktree = { ...state.expandedByWorktree };
+      const generationByWorktree = { ...state.generationByWorktree };
+      delete expandedByWorktree[worktreeId];
+      delete generationByWorktree[worktreeId];
+      return {
+        expandedByWorktree,
+        generationByWorktree,
+        directories: Object.fromEntries(
+          Object.entries(state.directories).filter(
+            ([key]) => !key.startsWith(`${worktreeId}:`),
+          ),
+        ),
+      };
+    }),
 }));

@@ -11,13 +11,13 @@ import { refreshChanges } from "./changesRefresh";
 import { useChangesStore } from "./changesStore";
 
 function ChangeGroup({
-  projectId,
+  worktreeId,
   title,
   changes,
   scope,
   activeTabId,
 }: {
-  projectId: string;
+  worktreeId: string;
   title: string;
   changes: GitChange[];
   scope: DiffScope;
@@ -32,14 +32,14 @@ function ChangeGroup({
         <b>{changes.length}</b>
       </div>
       {changes.map((change) => {
-        const resourceId = diffResourceId(projectId, scope, change.path);
+        const resourceId = diffResourceId(worktreeId, scope, change.path);
         const active = activeTabId === resourceId;
         const open = (keep: boolean) => {
           useEditorStore.getState().beginNavigation();
           useEditorStore.getState().open(
             {
               id: resourceId,
-              projectId,
+              worktreeId,
               type: "diff",
               scope,
               relativePath: change.path,
@@ -76,14 +76,14 @@ function ChangeGroup({
   );
 }
 
-export function ChangesPanel({ projectId }: { projectId: string }) {
-  const state = useChangesStore((store) => store.byProject[projectId]);
+export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
+  const state = useChangesStore((store) => store.byWorktree[worktreeId]);
   const activeTabId = useEditorStore(
-    (editor) => editor.views[projectId]?.activeTabId ?? null,
+    (editor) => editor.views[worktreeId]?.activeTabId ?? null,
   );
   useEffect(() => {
-    void refreshChanges(projectId);
-  }, [projectId]);
+    void refreshChanges(worktreeId);
+  }, [worktreeId]);
   const snapshot = state?.snapshot;
   const staged = snapshot?.changes.filter((change) => change.staged) ?? [];
   const unstaged =
@@ -101,7 +101,7 @@ export function ChangesPanel({ projectId }: { projectId: string }) {
         </span>
         <button
           title="Refresh changes"
-          onClick={() => void refreshChanges(projectId)}
+          onClick={() => void refreshChanges(worktreeId)}
         >
           <RiRefreshLine className={state?.loading ? "spin" : ""} size={15} />
         </button>
@@ -126,21 +126,21 @@ export function ChangesPanel({ projectId }: { projectId: string }) {
       {snapshot && (
         <>
           <ChangeGroup
-            projectId={projectId}
+            worktreeId={worktreeId}
             title="STAGED"
             changes={staged}
             scope="staged"
             activeTabId={activeTabId}
           />
           <ChangeGroup
-            projectId={projectId}
+            worktreeId={worktreeId}
             title="CHANGES"
             changes={unstaged}
             scope="unstaged"
             activeTabId={activeTabId}
           />
           <ChangeGroup
-            projectId={projectId}
+            worktreeId={worktreeId}
             title="UNTRACKED"
             changes={untracked}
             scope="untracked"

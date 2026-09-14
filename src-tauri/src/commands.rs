@@ -3,8 +3,9 @@ use crate::{
     error::{CommandError, CommandResult},
     filesystem::{self, FileContent, FileEntry},
     git::{GitDiff, GitStatus},
-    projects::ProjectSummary,
+    projects::{ProjectCatalog, ProjectSummary, WorktreeSummary},
     terminal::{TerminalEvent, TerminalSummary},
+    worktrees::{DeleteInspection, DeleteResult, OriginBranches},
 };
 use std::path::PathBuf;
 use tauri::{ipc::Channel, AppHandle, Manager};
@@ -34,6 +35,11 @@ pub fn project_list(app: AppHandle) -> CommandResult<Vec<ProjectSummary>> {
 }
 
 #[tauri::command]
+pub fn project_catalog(app: AppHandle) -> CommandResult<ProjectCatalog> {
+    app.state::<AppState>().projects.catalog()
+}
+
+#[tauri::command]
 pub async fn project_open_path(path: String, app: AppHandle) -> CommandResult<ProjectSummary> {
     run_blocking(move || app.state::<AppState>().open_project(&PathBuf::from(path))).await
 }
@@ -59,7 +65,7 @@ pub async fn project_close(project_id: Uuid, app: AppHandle) -> CommandResult<Pr
 
 #[tauri::command]
 pub fn project_reveal(project_id: Uuid, app: AppHandle) -> CommandResult<()> {
-    let root = app.state::<AppState>().projects.root(project_id)?;
+    let root = PathBuf::from(app.state::<AppState>().projects.project(project_id)?.path);
     app.opener()
         .reveal_item_in_dir(root)
         .map_err(|error| CommandError::new("INVALID_ARGUMENT", error.to_string()))
@@ -67,7 +73,7 @@ pub fn project_reveal(project_id: Uuid, app: AppHandle) -> CommandResult<()> {
 
 #[tauri::command]
 pub fn project_copy_path(project_id: Uuid, app: AppHandle) -> CommandResult<()> {
-    let root = app.state::<AppState>().projects.root(project_id)?;
+    let root = PathBuf::from(app.state::<AppState>().projects.project(project_id)?.path);
     app.clipboard()
         .write_text(root.to_string_lossy())
         .map_err(|error| CommandError::new("INVALID_ARGUMENT", error.to_string()))
@@ -75,42 +81,42 @@ pub fn project_copy_path(project_id: Uuid, app: AppHandle) -> CommandResult<()> 
 
 #[tauri::command]
 pub async fn fs_read_dir(
-    project_id: Uuid,
+    worktree_id: Uuid,
     relative_path: String,
     app: AppHandle,
 ) -> CommandResult<Vec<FileEntry>> {
     run_blocking(move || {
         let state = app.state::<AppState>();
-        filesystem::read_dir(&state.projects, project_id, &relative_path)
+        filesystem::read_dir(&state.projects, worktree_id, &relative_path)
     })
     .await
 }
 
 #[tauri::command]
 pub async fn fs_read_file(
-    project_id: Uuid,
+    worktree_id: Uuid,
     relative_path: String,
     app: AppHandle,
 ) -> CommandResult<FileContent> {
     run_blocking(move || {
         let state = app.state::<AppState>();
-        filesystem::read_file(&state.projects, project_id, &relative_path)
+        filesystem::read_file(&state.projects, worktree_id, &relative_path)
     })
     .await
 }
 
 #[tauri::command]
-pub async fn git_status(project_id: Uuid, app: AppHandle) -> CommandResult<GitStatus> {
+pub async fn git_status(worktree_id: Uuid, app: AppHandle) -> CommandResult<GitStatus> {
     run_blocking(move || {
         let state = app.state::<AppState>();
-        state.git.status(&state.projects, project_id)
+        state.git.status(&state.projects, worktree_id)
     })
     .await
 }
 
 #[tauri::command]
 pub async fn git_diff_file(
-    project_id: Uuid,
+    worktree_id: Uuid,
     relative_path: String,
     scope: String,
     app: AppHandle,
@@ -119,22 +125,22 @@ pub async fn git_diff_file(
         let state = app.state::<AppState>();
         state
             .git
-            .diff_file(&state.projects, project_id, &relative_path, &scope)
+            .diff_file(&state.projects, worktree_id, &relative_path, &scope)
     })
     .await
 }
 
 #[tauri::command]
 pub async fn terminal_create(
-    project_id: Uuid,
+    worktree_id: Uuid,
     cols: u16,
     rows: u16,
     app: AppHandle,
 ) -> CommandResult<TerminalSummary> {
     run_blocking(move || {
         let state = app.state::<AppState>();
-        let root = state.projects.root(project_id)?;
-        state.terminals.create(project_id, &root, cols, rows)
+        let root = state.projects.root(worktree_id)?;
+        state.terminals.create(worktree_id, &root, cols, rows)
     })
     .await
 }
@@ -174,10 +180,88 @@ pub async fn terminal_close(terminal_id: Uuid, force: bool, app: AppHandle) -> C
 
 #[tauri::command]
 pub fn terminal_list(
-    project_id: Option<Uuid>,
+    worktree_id: Option<Uuid>,
     app: AppHandle,
 ) -> CommandResult<Vec<TerminalSummary>> {
-    app.state::<AppState>().terminals.list(project_id)
+    app.state::<AppState>().terminals.list(worktree_id)
+}
+
+#[tauri::command]
+pub fn worktree_list(project_id: Uuid, app: AppHandle) -> CommandResult<Vec<WorktreeSummary>> {
+    app.state::<AppState>().projects.worktrees(project_id)
+}
+
+#[tauri::command]
+pub fn worktree_select(worktree_id: Uuid, app: AppHandle) -> CommandResult<WorktreeSummary> {
+    app.state::<AppState>().projects.select(worktree_id)
+}
+
+#[tauri::command]
+pub fn worktree_reveal(worktree_id: Uuid, app: AppHandle) -> CommandResult<()> {
+    let root = app.state::<AppState>().projects.root(worktree_id)?;
+    app.opener()
+        .reveal_item_in_dir(root)
+        .map_err(|error| CommandError::new("INVALID_ARGUMENT", error.to_string()))
+}
+
+#[tauri::command]
+pub async fn git_list_origin_branches(
+    project_id: Uuid,
+    app: AppHandle,
+) -> CommandResult<OriginBranches> {
+    run_blocking(move || {
+        let state = app.state::<AppState>();
+        state
+            .worktrees
+            .list_origin_branches(&state.projects, project_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn worktree_create(
+    project_id: Uuid,
+    name: String,
+    base_ref: String,
+    app: AppHandle,
+) -> CommandResult<WorktreeSummary> {
+    run_blocking(move || {
+        app.state::<AppState>()
+            .create_worktree(project_id, name, base_ref)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn worktree_rename(
+    worktree_id: Uuid,
+    name: String,
+    app: AppHandle,
+) -> CommandResult<WorktreeSummary> {
+    run_blocking(move || app.state::<AppState>().rename_worktree(worktree_id, name)).await
+}
+
+#[tauri::command]
+pub async fn worktree_inspect_delete(
+    worktree_id: Uuid,
+    app: AppHandle,
+) -> CommandResult<DeleteInspection> {
+    run_blocking(move || {
+        let state = app.state::<AppState>();
+        state
+            .worktrees
+            .inspect_delete(&state.projects, &state.terminals, worktree_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn worktree_delete(
+    worktree_id: Uuid,
+    force: bool,
+    app: AppHandle,
+) -> CommandResult<DeleteResult> {
+    run_blocking(move || app.state::<AppState>().delete_worktree(worktree_id, force)).await
 }
 
 #[cfg(test)]

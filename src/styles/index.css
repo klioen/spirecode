@@ -27,6 +27,7 @@
   --danger-border: #704148;
   --warning-soft: #342a19;
   --accent-glow: rgb(155 215 166 / 30%);
+  --modal-backdrop: rgb(0 0 0 / 45%);
   font-family:
     Inter,
     ui-sans-serif,
@@ -68,6 +69,7 @@
   --danger-border: #dfb5b8;
   --warning-soft: #f8edd9;
   --accent-glow: rgb(47 127 131 / 20%);
+  --modal-backdrop: rgb(31 64 67 / 35%);
 }
 
 [data-theme="dark"] {
@@ -99,6 +101,7 @@
   --danger-border: #704148;
   --warning-soft: #342a19;
   --accent-glow: rgb(155 215 166 / 30%);
+  --modal-backdrop: rgb(0 0 0 / 45%);
 }
 * {
   box-sizing: border-box;
@@ -249,7 +252,11 @@ body.panel-resizing-vertical * {
   gap: 2px;
   overflow-y: auto;
 }
-.project-row {
+.project-group {
+  min-width: 0;
+}
+.project-heading,
+.worktree-row {
   min-width: 0;
   height: 30px;
   display: flex;
@@ -258,24 +265,16 @@ body.panel-resizing-vertical * {
   position: relative;
   color: var(--text-muted);
 }
-.project-row:hover {
+.project-heading {
+  color: var(--text-default);
+  font-weight: 600;
+}
+.project-heading:hover,
+.worktree-row:hover {
   background: var(--control-hover);
 }
-.project-row.active {
-  background: var(--control-selected);
-  color: var(--text-default);
-  box-shadow: inset 0 0 0 1px var(--accent-muted);
-}
-.project-row.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  width: 3px;
-  height: 20px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.project-name {
+.project-name,
+.worktree-name {
   min-width: 0;
   height: 100%;
   flex: 1;
@@ -286,22 +285,102 @@ body.panel-resizing-vertical * {
   gap: 7px;
   background: transparent;
   color: inherit;
-  cursor: pointer;
   text-align: left;
 }
-.project-name svg {
+.worktree-name {
+  padding-left: 24px;
+  cursor: pointer;
+  font-weight: 400;
+}
+.project-name svg,
+.worktree-name svg {
   flex: 0 0 auto;
   color: var(--text-muted);
 }
-.project-row.active .project-name svg {
-  color: var(--accent);
-}
-.project-name span {
+.project-name span,
+.worktree-name span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+}
+.worktree-row.active {
+  background: var(--control-selected);
+  color: var(--text-default);
+  box-shadow: inset 0 0 0 1px var(--accent-muted);
+}
+.worktree-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.worktree-row.active .worktree-name svg {
+  color: var(--accent);
+}
+.worktree-add,
+.worktree-menu-button {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.worktree-add:hover,
+.worktree-menu-button:hover {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.worktree-menu-button {
+  opacity: 0;
+}
+.worktree-row:hover .worktree-menu-button,
+.worktree-menu-button:focus {
+  opacity: 1;
+}
+.worktree-menu {
+  position: absolute;
+  right: 2px;
+  top: 27px;
+  z-index: 20;
+  min-width: 110px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.worktree-menu button {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-default);
+  text-align: left;
+  cursor: pointer;
+}
+.worktree-menu button:hover {
+  background: var(--control-hover);
+}
+.danger-text {
+  color: var(--danger) !important;
+}
+.worktree-progress {
+  padding: 6px 12px 6px 24px;
+  color: var(--text-muted);
+  font-size: 11px;
+  display: flex;
+  gap: 7px;
 }
 .project-empty {
   min-height: 110px;
@@ -327,6 +406,85 @@ body.panel-resizing-vertical * {
 .project-empty small {
   font-size: 10px;
   color: var(--text-subtle);
+}
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--modal-backdrop);
+}
+.worktree-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  box-shadow: 0 18px 60px var(--shadow);
+}
+.worktree-dialog h2 {
+  margin: 0 0 18px;
+  font-size: 17px;
+}
+.worktree-dialog label {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.worktree-dialog input,
+.worktree-dialog select {
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--input-bg, var(--editor-bg));
+  color: var(--text-default);
+}
+.field-error,
+.dialog-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 11px;
+}
+.destructive-warning {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.dialog-actions button {
+  min-width: 76px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-default);
+  cursor: pointer;
+}
+.dialog-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dialog-actions .primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.dialog-actions .danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: white;
 }
 .topbar {
   grid-area: top;

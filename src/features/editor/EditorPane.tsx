@@ -50,16 +50,16 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
     (store) => store.navigationGeneration,
   );
   const fileGeneration = useEditorStore(
-    (store) => store.resourceGenerationByProject[tab.projectId] ?? 0,
+    (store) => store.resourceGenerationByWorktree[tab.worktreeId] ?? 0,
   );
   const diffGeneration = useEditorStore(
-    (store) => store.diffGenerationByProject[tab.projectId] ?? 0,
+    (store) => store.diffGenerationByWorktree[tab.worktreeId] ?? 0,
   );
   const resourceGeneration =
     tab.type === "file" ? fileGeneration : diffGeneration;
   useEffect(() => {
     if (resourceGeneration > 0)
-      cache.deletePrefix(`${tab.type}:${tab.projectId}:`);
+      cache.deletePrefix(`${tab.type}:${tab.worktreeId}:`);
     const cached = cache.get(tab.id);
     if (cached) {
       setState({ status: "ready", value: cached });
@@ -68,15 +68,15 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
     setState({ status: "loading" });
     const request =
       tab.type === "file"
-        ? commands.fsReadFile(tab.projectId, tab.relativePath)
-        : commands.gitDiffFile(tab.projectId, tab.relativePath, tab.scope);
+        ? commands.fsReadFile(tab.worktreeId, tab.relativePath)
+        : commands.gitDiffFile(tab.worktreeId, tab.relativePath, tab.scope);
     void request.then(
       (value) => {
         const latest = useEditorStore.getState();
         const latestGeneration =
           tab.type === "file"
-            ? (latest.resourceGenerationByProject[tab.projectId] ?? 0)
-            : (latest.diffGenerationByProject[tab.projectId] ?? 0);
+            ? (latest.resourceGenerationByWorktree[tab.worktreeId] ?? 0)
+            : (latest.diffGenerationByWorktree[tab.worktreeId] ?? 0);
         const resourceIsCurrent = latestGeneration === resourceGeneration;
         if (resourceIsCurrent) cache.set(tab.id, value);
         if (
@@ -90,8 +90,8 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
         if (
           latest.navigationGeneration === navigationGeneration &&
           (tab.type === "file"
-            ? (latest.resourceGenerationByProject[tab.projectId] ?? 0)
-            : (latest.diffGenerationByProject[tab.projectId] ?? 0)) ===
+            ? (latest.resourceGenerationByWorktree[tab.worktreeId] ?? 0)
+            : (latest.diffGenerationByWorktree[tab.worktreeId] ?? 0)) ===
             resourceGeneration
         )
           setState({ status: "error", error: commandError(error) });
@@ -198,15 +198,15 @@ function DiffView({ diff }: { diff: GitDiff }) {
   );
 }
 
-export function EditorPane({ projectId }: { projectId: string }) {
-  const view = useEditorStore((state) => state.views[projectId]);
+export function EditorPane({ worktreeId }: { worktreeId: string }) {
+  const view = useEditorStore((state) => state.views[worktreeId]);
   const createTerminal = async () => {
     let terminalId: string | null = null;
     try {
-      const terminal = await commands.terminalCreate(projectId);
+      const terminal = await commands.terminalCreate(worktreeId);
       terminalId = terminal.terminalId;
       await commands.terminalAttach(terminal.terminalId, terminalStream.push);
-      useEditorStore.getState().openTerminal(projectId, terminal.terminalId);
+      useEditorStore.getState().openTerminal(worktreeId, terminal.terminalId);
     } catch (error) {
       if (terminalId) {
         await commands.terminalClose(terminalId, true).catch(() => undefined);
@@ -217,7 +217,7 @@ export function EditorPane({ projectId }: { projectId: string }) {
   };
   const closeTab = async (tab: ResourceTab) => {
     if (tab.type !== "terminal") {
-      useEditorStore.getState().close(projectId, tab.id);
+      useEditorStore.getState().close(worktreeId, tab.id);
       return;
     }
     try {
@@ -230,7 +230,7 @@ export function EditorPane({ projectId }: { projectId: string }) {
       }
     }
     terminalStream.close(tab.terminalId);
-    useEditorStore.getState().close(projectId, tab.id);
+    useEditorStore.getState().close(worktreeId, tab.id);
   };
   const active = useMemo(
     () => view?.tabs.find((tab) => tab.id === view.activeTabId),
@@ -246,10 +246,10 @@ export function EditorPane({ projectId }: { projectId: string }) {
               key={tab.id}
               onClick={() => {
                 useEditorStore.getState().beginNavigation();
-                useEditorStore.getState().activate(projectId, tab.id);
+                useEditorStore.getState().activate(worktreeId, tab.id);
               }}
               onDoubleClick={() =>
-                useEditorStore.getState().keep(projectId, tab.id)
+                useEditorStore.getState().keep(worktreeId, tab.id)
               }
             >
               {tab.type === "diff" ? (
@@ -296,7 +296,7 @@ export function EditorPane({ projectId }: { projectId: string }) {
           active.type === "terminal" ? (
             <TerminalInstance
               key={active.id}
-              projectId={projectId}
+              worktreeId={worktreeId}
               terminalId={active.terminalId}
             />
           ) : (

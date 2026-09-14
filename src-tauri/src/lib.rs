@@ -6,6 +6,7 @@ mod git;
 mod persistence;
 mod projects;
 mod terminal;
+mod worktrees;
 
 use app_state::AppState;
 use filesystem::watcher::{EventSink, WatchEvent};
@@ -36,6 +37,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::project_list,
+            commands::project_catalog,
             commands::project_open_dialog,
             commands::project_open_path,
             commands::project_close,
@@ -45,6 +47,14 @@ pub fn run() {
             commands::fs_read_file,
             commands::git_status,
             commands::git_diff_file,
+            commands::git_list_origin_branches,
+            commands::worktree_create,
+            commands::worktree_select,
+            commands::worktree_list,
+            commands::worktree_reveal,
+            commands::worktree_rename,
+            commands::worktree_inspect_delete,
+            commands::worktree_delete,
             commands::terminal_create,
             commands::terminal_attach,
             commands::terminal_write,

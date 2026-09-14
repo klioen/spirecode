@@ -32,9 +32,9 @@ beforeEach(() => {
   useEditorStore.setState({
     views: {},
     navigationGeneration: 0,
-    resourceGenerationByProject: {},
-    diffGenerationByProject: {},
-    terminalSequenceByProject: {},
+    resourceGenerationByWorktree: {},
+    diffGenerationByWorktree: {},
+    terminalSequenceByWorktree: {},
   });
   useProjectsStore.setState({ error: null });
 });
@@ -43,13 +43,13 @@ describe("EditorPane terminals", () => {
   it("creates, attaches, and opens a numbered central terminal tab", async () => {
     vi.mocked(commands.terminalCreate).mockResolvedValue({
       terminalId: "terminal-a",
-      projectId: "p1",
+      worktreeId: "p1",
       cols: 80,
       rows: 24,
     });
     vi.mocked(commands.terminalAttach).mockResolvedValue();
 
-    render(<EditorPane projectId="p1" />);
+    render(<EditorPane worktreeId="p1" />);
     fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
 
     expect(await screen.findByText("Terminal1")).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("EditorPane terminals", () => {
   it("closes a newly created PTY when attach fails", async () => {
     vi.mocked(commands.terminalCreate).mockResolvedValue({
       terminalId: "terminal-a",
-      projectId: "p1",
+      worktreeId: "p1",
       cols: 80,
       rows: 24,
     });
@@ -74,7 +74,7 @@ describe("EditorPane terminals", () => {
     });
     vi.mocked(commands.terminalClose).mockResolvedValue();
 
-    render(<EditorPane projectId="p1" />);
+    render(<EditorPane worktreeId="p1" />);
     fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
 
     await waitFor(() =>
@@ -87,7 +87,7 @@ describe("EditorPane terminals", () => {
   it("closes the PTY before removing its central tab", async () => {
     vi.mocked(commands.terminalClose).mockResolvedValue();
     useEditorStore.getState().openTerminal("p1", "terminal-a");
-    render(<EditorPane projectId="p1" />);
+    render(<EditorPane worktreeId="p1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Close Terminal1" }));
 
@@ -103,7 +103,7 @@ describe("EditorPane terminals", () => {
       message: "terminal not found",
     });
     useEditorStore.getState().openTerminal("p1", "terminal-a");
-    render(<EditorPane projectId="p1" />);
+    render(<EditorPane worktreeId="p1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Close Terminal1" }));
 

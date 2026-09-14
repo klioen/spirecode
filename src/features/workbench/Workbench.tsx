@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   RiArrowDownSLine,
   RiCommandLine,
@@ -42,9 +42,17 @@ export function Workbench() {
     window.addEventListener("resize", updateViewport);
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
-  const project = useProjectsStore((state) =>
-    state.projects.find(({ id }) => id === state.activeProjectId),
-  );
+  const projects = useProjectsStore((state) => state.projects);
+  const activeWorktreeId = useProjectsStore((state) => state.activeWorktreeId);
+  const active = useMemo(() => {
+    for (const project of projects) {
+      const worktree = project.worktrees.find(
+        ({ id }) => id === activeWorktreeId,
+      );
+      if (worktree) return { project, worktree };
+    }
+    return null;
+  }, [activeWorktreeId, projects]);
   const error = useProjectsStore((state) => state.error);
   const workbench = useWorkbenchStore();
   const resizeProjects = (width: number) => {
@@ -107,11 +115,12 @@ export function Workbench() {
       <header className="topbar">
         <div className="project-crumb">
           <span className="traffic-spacer" />
-          {project ? (
+          {active ? (
             <>
-              <b>{project.name}</b>
+              <b>{active.project.name}</b>
               <RiArrowDownSLine size={15} />
-              <span className="branch">Git repository</span>
+              <span>{active.worktree.name}</span>
+              <span className="branch">· {active.worktree.branch}</span>
             </>
           ) : (
             <span>No project open</span>
@@ -141,7 +150,11 @@ export function Workbench() {
         </div>
       </header>
       <div className="workspace-center">
-        {project ? <EditorPane projectId={project.id} /> : <EmptyWorkbench />}
+        {active ? (
+          <EditorPane worktreeId={active.worktree.id} />
+        ) : (
+          <EmptyWorkbench />
+        )}
       </div>
       {!workbench.rightCollapsed && (
         <PanelResizeHandle
@@ -170,11 +183,11 @@ export function Workbench() {
             CHANGES
           </button>
         </div>
-        {project ? (
+        {active ? (
           workbench.rightView === "files" ? (
-            <FileTree projectId={project.id} />
+            <FileTree worktreeId={active.worktree.id} />
           ) : (
-            <ChangesPanel projectId={project.id} />
+            <ChangesPanel worktreeId={active.worktree.id} />
           )
         ) : (
           <div className="tree-state">Open a project to browse</div>

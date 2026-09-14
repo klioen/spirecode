@@ -24,9 +24,11 @@ export default function App() {
           unlistenFilesystem = stopFilesystem;
           unlistenGit = stopGit;
         }
-        return projectsApi.list();
+        return projectsApi.catalog();
       })
-      .then(store.setProjects, (error) => store.setError(commandError(error)))
+      .then(store.hydrateCatalog, (error) =>
+        store.setError(commandError(error)),
+      )
       .finally(() => store.setLoading(false));
     return () => {
       disposed = true;

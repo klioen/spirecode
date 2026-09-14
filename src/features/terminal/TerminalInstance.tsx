@@ -8,10 +8,10 @@ import { terminalRegistry } from "./terminalRegistry";
 import { decodeTerminalOutput, terminalStream } from "./terminalStream";
 
 export function TerminalInstance({
-  projectId,
+  worktreeId,
   terminalId,
 }: {
-  projectId: string;
+  worktreeId: string;
   terminalId: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -49,7 +49,7 @@ export function TerminalInstance({
               useEditorStore
                 .getState()
                 .setTerminalStatus(
-                  projectId,
+                  worktreeId,
                   terminalId,
                   message.type === "exit" ? "exited" : "error",
                 );

@@ -7,7 +7,7 @@ import { directoryKey, useFileTreeStore } from "./fileTreeStore";
 beforeEach(() => {
   useProjectsStore.setState({
     projects: [],
-    activeProjectId: "current",
+    activeWorktreeId: "current",
     loading: false,
     error: null,
   });
@@ -16,16 +16,16 @@ beforeEach(() => {
       [directoryKey("current", "")]: { status: "ready", entries: [] },
       [directoryKey("other", "")]: { status: "ready", entries: [] },
     },
-    generationByProject: {},
-    expandedByProject: {},
+    generationByWorktree: {},
+    expandedByWorktree: {},
   });
-  useEditorStore.setState({ resourceGenerationByProject: {} });
+  useEditorStore.setState({ resourceGenerationByWorktree: {} });
 });
 
 describe("filesystem invalidation", () => {
   it("invalidates the active project tree and open-file generation", () => {
     handleFilesystemChanged({
-      projectId: "current",
+      worktreeId: "current",
       paths: ["src/a.ts"],
       truncated: false,
     });
@@ -35,25 +35,29 @@ describe("filesystem invalidation", () => {
     expect(
       useFileTreeStore.getState().directories[directoryKey("other", "")],
     ).toBeDefined();
-    expect(useFileTreeStore.getState().generationByProject.current).toBe(1);
-    expect(useEditorStore.getState().resourceGenerationByProject.current).toBe(
+    expect(useFileTreeStore.getState().generationByWorktree.current).toBe(1);
+    expect(useEditorStore.getState().resourceGenerationByWorktree.current).toBe(
       1,
     );
   });
 
   it("ignores events for a background project", () => {
-    handleFilesystemChanged({ projectId: "other", paths: [], truncated: true });
+    handleFilesystemChanged({
+      worktreeId: "other",
+      paths: [],
+      truncated: true,
+    });
     expect(
-      useFileTreeStore.getState().generationByProject.other,
+      useFileTreeStore.getState().generationByWorktree.other,
     ).toBeUndefined();
     expect(
-      useEditorStore.getState().resourceGenerationByProject.other,
+      useEditorStore.getState().resourceGenerationByWorktree.other,
     ).toBeUndefined();
   });
 
   it("rejects a stale directory response after invalidation", () => {
     const store = useFileTreeStore.getState();
-    store.invalidateProject("current");
+    store.invalidateWorktree("current");
     store.setDirectory("current", directoryKey("current", ""), 0, {
       status: "ready",
       entries: [],

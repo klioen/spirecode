@@ -464,8 +464,8 @@ mod tests {
             .unwrap()
             .success());
         let projects = ProjectService::load(root.join("app/state.json")).unwrap();
-        let project_id = projects.open_path(&root).unwrap().id;
-        (root, projects, project_id)
+        let worktree_id = projects.open_path(&root).unwrap().worktrees[0].id;
+        (root, projects, worktree_id)
     }
 
     #[test]

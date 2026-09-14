@@ -8,23 +8,24 @@ interface SnapshotState {
   generation: number;
 }
 interface ChangesState {
-  byProject: Record<string, SnapshotState>;
+  byWorktree: Record<string, SnapshotState>;
   mode: "list" | "tree";
   diffMode: "unified" | "split";
   setMode: (mode: "list" | "tree") => void;
   setDiffMode: (mode: "unified" | "split") => void;
-  startRefresh: (projectId: string) => number;
-  invalidate: (projectId: string) => number;
+  startRefresh: (worktreeId: string) => number;
+  invalidate: (worktreeId: string) => number;
   refreshSucceeded: (
-    projectId: string,
+    worktreeId: string,
     generation: number,
     snapshot: GitStatus,
   ) => void;
   refreshFailed: (
-    projectId: string,
+    worktreeId: string,
     generation: number,
     error: CommandError,
   ) => void;
+  clearWorktree: (worktreeId: string) => void;
 }
 const blank: SnapshotState = {
   snapshot: null,
@@ -33,18 +34,18 @@ const blank: SnapshotState = {
   generation: 0,
 };
 export const useChangesStore = create<ChangesState>((set, get) => ({
-  byProject: {},
+  byWorktree: {},
   mode: "list",
   diffMode: "unified",
   setMode: (mode) => set({ mode }),
   setDiffMode: (diffMode) => set({ diffMode }),
-  startRefresh: (projectId) => {
-    const generation = (get().byProject[projectId]?.generation ?? 0) + 1;
+  startRefresh: (worktreeId) => {
+    const generation = (get().byWorktree[worktreeId]?.generation ?? 0) + 1;
     set((state) => ({
-      byProject: {
-        ...state.byProject,
-        [projectId]: {
-          ...(state.byProject[projectId] ?? blank),
+      byWorktree: {
+        ...state.byWorktree,
+        [worktreeId]: {
+          ...(state.byWorktree[worktreeId] ?? blank),
           loading: true,
           generation,
         },
@@ -52,23 +53,26 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
     }));
     return generation;
   },
-  invalidate: (projectId) => {
-    const generation = (get().byProject[projectId]?.generation ?? 0) + 1;
+  invalidate: (worktreeId) => {
+    const generation = (get().byWorktree[worktreeId]?.generation ?? 0) + 1;
     set((state) => ({
-      byProject: {
-        ...state.byProject,
-        [projectId]: { ...(state.byProject[projectId] ?? blank), generation },
+      byWorktree: {
+        ...state.byWorktree,
+        [worktreeId]: {
+          ...(state.byWorktree[worktreeId] ?? blank),
+          generation,
+        },
       },
     }));
     return generation;
   },
-  refreshSucceeded: (projectId, generation, snapshot) =>
+  refreshSucceeded: (worktreeId, generation, snapshot) =>
     set((state) =>
-      state.byProject[projectId]?.generation === generation
+      state.byWorktree[worktreeId]?.generation === generation
         ? {
-            byProject: {
-              ...state.byProject,
-              [projectId]: {
+            byWorktree: {
+              ...state.byWorktree,
+              [worktreeId]: {
                 snapshot,
                 loading: false,
                 staleError: null,
@@ -78,14 +82,14 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
           }
         : state,
     ),
-  refreshFailed: (projectId, generation, staleError) =>
+  refreshFailed: (worktreeId, generation, staleError) =>
     set((state) =>
-      state.byProject[projectId]?.generation === generation
+      state.byWorktree[worktreeId]?.generation === generation
         ? {
-            byProject: {
-              ...state.byProject,
-              [projectId]: {
-                ...(state.byProject[projectId] ?? blank),
+            byWorktree: {
+              ...state.byWorktree,
+              [worktreeId]: {
+                ...(state.byWorktree[worktreeId] ?? blank),
                 loading: false,
                 staleError,
                 generation,
@@ -94,4 +98,10 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
           }
         : state,
     ),
+  clearWorktree: (worktreeId) =>
+    set((state) => {
+      const byWorktree = { ...state.byWorktree };
+      delete byWorktree[worktreeId];
+      return { byWorktree };
+    }),
 }));

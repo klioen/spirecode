@@ -14,20 +14,20 @@ const status = {
 };
 
 beforeEach(() => {
-  useProjectsStore.setState({ activeProjectId: "p1" });
-  useChangesStore.setState({ byProject: {} });
-  useEditorStore.setState({ diffGenerationByProject: {} });
+  useProjectsStore.setState({ activeWorktreeId: "p1" });
+  useChangesStore.setState({ byWorktree: {} });
+  useEditorStore.setState({ diffGenerationByWorktree: {} });
   vi.restoreAllMocks();
 });
 
 describe("Git invalidation", () => {
   it("refreshes status and invalidates open diffs for the active project", async () => {
     vi.spyOn(commands, "gitStatus").mockResolvedValue(status);
-    handleGitChanged({ projectId: "p1" });
+    handleGitChanged({ worktreeId: "p1" });
     await vi.waitFor(() =>
-      expect(useChangesStore.getState().byProject.p1.snapshot).toEqual(status),
+      expect(useChangesStore.getState().byWorktree.p1.snapshot).toEqual(status),
     );
-    expect(useEditorStore.getState().diffGenerationByProject.p1).toBe(1);
+    expect(useEditorStore.getState().diffGenerationByWorktree.p1).toBe(1);
   });
 
   it("prevents a slower manual refresh from overwriting a newer one", async () => {
@@ -43,7 +43,7 @@ describe("Git invalidation", () => {
     await refreshChanges("p1");
     resolveOlder({ ...status, branch: "old" });
     await older;
-    expect(useChangesStore.getState().byProject.p1.snapshot?.branch).toBe(
+    expect(useChangesStore.getState().byWorktree.p1.snapshot?.branch).toBe(
       "new",
     );
   });

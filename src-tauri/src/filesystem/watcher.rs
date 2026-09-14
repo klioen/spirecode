@@ -16,7 +16,7 @@ const MAX_PATHS: usize = 256;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FilesystemChanged {
-    pub project_id: Uuid,
+    pub worktree_id: Uuid,
     pub paths: Vec<String>,
     pub truncated: bool,
 }
@@ -24,7 +24,7 @@ pub struct FilesystemChanged {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitChanged {
-    pub project_id: Uuid,
+    pub worktree_id: Uuid,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,12 +56,19 @@ pub struct WatcherRegistry {
 }
 
 impl WatcherRegistry {
-    pub fn ensure(&self, project_id: Uuid, root: PathBuf, sink: EventSink) -> CommandResult<()> {
+    pub fn ensure(
+        &self,
+        worktree_id: Uuid,
+        root: PathBuf,
+        git_dir: PathBuf,
+        sink: EventSink,
+    ) -> CommandResult<()> {
         let mut sessions = self.lock()?;
-        if sessions.contains_key(&project_id) {
+        if sessions.contains_key(&worktree_id) {
             return Ok(());
         }
         let root = root.canonicalize().map_err(CommandError::io)?;
+        let git_dir = git_dir.canonicalize().unwrap_or(git_dir);
         let (event_tx, event_rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |event| {
             let _ = event_tx.send(event);
@@ -70,10 +77,15 @@ impl WatcherRegistry {
         watcher
             .watch(&root, RecursiveMode::Recursive)
             .map_err(watcher_error)?;
+        if git_dir.exists() && !git_dir.starts_with(&root) {
+            watcher
+                .watch(&git_dir, RecursiveMode::Recursive)
+                .map_err(watcher_error)?;
+        }
         let (stop_tx, stop_rx) = mpsc::channel();
-        let worker = thread::spawn(move || worker_loop(project_id, root, event_rx, stop_rx, sink));
+        let worker = thread::spawn(move || worker_loop(worktree_id, root, event_rx, stop_rx, sink));
         sessions.insert(
-            project_id,
+            worktree_id,
             WatchSession {
                 _watcher: watcher,
                 stop: stop_tx,
@@ -83,8 +95,8 @@ impl WatcherRegistry {
         Ok(())
     }
 
-    pub fn close(&self, project_id: Uuid) -> CommandResult<()> {
-        if let Some(session) = self.lock()?.remove(&project_id) {
+    pub fn close(&self, worktree_id: Uuid) -> CommandResult<()> {
+        if let Some(session) = self.lock()?.remove(&worktree_id) {
             session.stop();
         }
         Ok(())
@@ -150,7 +162,9 @@ fn worker_loop(
             sink(WatchEvent::Filesystem(payload));
         }
         if git_changed {
-            sink(WatchEvent::Git(GitChanged { project_id }));
+            sink(WatchEvent::Git(GitChanged {
+                worktree_id: project_id,
+            }));
         }
     }
 }
@@ -174,6 +188,7 @@ fn build_events(
         };
         for path in event.paths {
             let Ok(relative) = path.strip_prefix(root) else {
+                git_changed = true;
                 continue;
             };
             if is_git_path(relative) {
@@ -199,7 +214,7 @@ fn build_events(
         let mut paths: Vec<_> = paths.into_iter().collect();
         paths.sort();
         Some(FilesystemChanged {
-            project_id,
+            worktree_id: project_id,
             paths,
             truncated,
         })
@@ -298,12 +313,15 @@ mod tests {
             .ensure(
                 id,
                 root.clone(),
+                root.join(".git"),
                 Arc::new(move |payload| {
                     let _ = tx.send(payload);
                 }),
             )
             .unwrap();
-        registry.ensure(id, root.clone(), Arc::new(|_| {})).unwrap();
+        registry
+            .ensure(id, root.clone(), root.join(".git"), Arc::new(|_| {}))
+            .unwrap();
         assert!(registry.contains(id));
         fs::write(root.join("one.txt"), "one").unwrap();
         fs::write(root.join("two.txt"), "two").unwrap();

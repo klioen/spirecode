@@ -4,7 +4,7 @@ import { useProjectsStore } from "../projects/projectsStore";
 import { useFileTreeStore } from "./fileTreeStore";
 
 export interface FilesystemChangedPayload {
-  projectId: string;
+  worktreeId: string;
   paths: string[];
   truncated: boolean;
 }
@@ -12,9 +12,10 @@ export interface FilesystemChangedPayload {
 export function handleFilesystemChanged(
   payload: FilesystemChangedPayload,
 ): void {
-  if (useProjectsStore.getState().activeProjectId !== payload.projectId) return;
-  useFileTreeStore.getState().invalidateProject(payload.projectId);
-  useEditorStore.getState().invalidateFiles(payload.projectId);
+  if (useProjectsStore.getState().activeWorktreeId !== payload.worktreeId)
+    return;
+  useFileTreeStore.getState().invalidateWorktree(payload.worktreeId);
+  useEditorStore.getState().invalidateFiles(payload.worktreeId);
 }
 
 export function subscribeToFilesystemChanges(): Promise<UnlistenFn> {

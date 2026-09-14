@@ -228,18 +228,9 @@ fn natural_key(value: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::fs;
     fn temp() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "pi-app-fs-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ))
+        std::env::temp_dir().join(format!("pi-app-fs-{}", Uuid::new_v4()))
     }
     #[test]
     fn rejects_traversal_git_binary_and_oversized_files() {
@@ -255,6 +246,7 @@ mod tests {
         let state = root.join("app/state.json");
         let projects = ProjectService::load(state).unwrap();
         let project = projects.open_path(&root).unwrap();
+        let worktree_id = project.worktrees[0].id;
         assert_eq!(
             resolve(&root, "../secret", true).unwrap_err().code,
             "OUTSIDE_PROJECT"
@@ -268,13 +260,13 @@ mod tests {
             root.canonicalize().unwrap().join("missing/nested/file.txt")
         );
         assert_eq!(
-            read_file(&projects, project.id, "bin").unwrap_err().code,
+            read_file(&projects, worktree_id, "bin").unwrap_err().code,
             "UNSUPPORTED_FILE"
         );
         let large = fs::File::create(root.join("large")).unwrap();
         large.set_len(MAX_TEXT_BYTES + 1).unwrap();
         assert_eq!(
-            read_file(&projects, project.id, "large").unwrap_err().code,
+            read_file(&projects, worktree_id, "large").unwrap_err().code,
             "FILE_TOO_LARGE"
         );
         fs::remove_dir_all(root).unwrap();

@@ -6,28 +6,29 @@ import { useProjectsStore } from "../projects/projectsStore";
 import { useChangesStore } from "./changesStore";
 
 export interface GitChangedPayload {
-  projectId: string;
+  worktreeId: string;
 }
 
-export async function refreshChanges(projectId: string): Promise<void> {
-  const generation = useChangesStore.getState().startRefresh(projectId);
+export async function refreshChanges(worktreeId: string): Promise<void> {
+  const generation = useChangesStore.getState().startRefresh(worktreeId);
   try {
-    const snapshot = await commands.gitStatus(projectId);
+    const snapshot = await commands.gitStatus(worktreeId);
     useChangesStore
       .getState()
-      .refreshSucceeded(projectId, generation, snapshot);
+      .refreshSucceeded(worktreeId, generation, snapshot);
   } catch (error) {
     useChangesStore
       .getState()
-      .refreshFailed(projectId, generation, commandError(error));
+      .refreshFailed(worktreeId, generation, commandError(error));
   }
 }
 
 export function handleGitChanged(payload: GitChangedPayload): void {
-  if (useProjectsStore.getState().activeProjectId !== payload.projectId) return;
-  useChangesStore.getState().invalidate(payload.projectId);
-  useEditorStore.getState().invalidateDiffs(payload.projectId);
-  void refreshChanges(payload.projectId);
+  if (useProjectsStore.getState().activeWorktreeId !== payload.worktreeId)
+    return;
+  useChangesStore.getState().invalidate(payload.worktreeId);
+  useEditorStore.getState().invalidateDiffs(payload.worktreeId);
+  void refreshChanges(payload.worktreeId);
 }
 
 export function subscribeToGitChanges(): Promise<UnlistenFn> {

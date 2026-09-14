@@ -1,7 +1,10 @@
 use crate::error::{CommandError, CommandResult};
-use serde::{de::DeserializeOwned, Serialize};
+#[cfg(test)]
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::{fs, io::Write, path::Path};
 
+#[cfg(test)]
 pub fn load_or_default<T: DeserializeOwned + Default>(path: &Path) -> CommandResult<T> {
     match fs::read(path) {
         Ok(bytes) => match serde_json::from_slice(&bytes) {

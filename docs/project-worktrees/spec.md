@@ -23,12 +23,12 @@ interface WorktreeSummary {
   path: string;
   branch: string;
   baseRef: string;
-  kind: "main" | "managed";
+  kind: "main" | "managed" | "external";
   lastOpenedAt: number;
 }
 ```
 
-主 checkout 也作为一个 `WorktreeSummary(kind:"main")` 暴露，ID 为现有 V1 Project ID，以保持现有 resource/cache identity。Repository-level Project 获得新的稳定 UUID，只在 catalog 和 rail 分组使用。
+主 checkout 也作为一个 `WorktreeSummary(kind:"main")` 暴露，ID 为现有 V1 Project ID，以保持现有 resource/cache identity。Repository-level Project 获得新的稳定 UUID，只在 catalog 和 rail 分组使用。V1 中用户曾直接打开的 linked worktree 迁移为 `kind:"external"`：可选择和 Reveal，但绝不授予 managed Rename/Delete 权限。
 
 ## Persistence migration
 

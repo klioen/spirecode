@@ -19,9 +19,29 @@ beforeEach(() => {
   localStorage.clear();
   resetWorkbenchStore();
   useProjectsStore.setState({
-    projects: [{ id: "p1", name: "Project", path: "/repo", lastOpenedAt: 1 }],
-    activeProjectId: "p1",
+    projects: [
+      {
+        id: "p1",
+        name: "Project",
+        path: "/repo",
+        lastOpenedAt: 1,
+        worktrees: [
+          {
+            id: "w1",
+            projectId: "p1",
+            name: "main",
+            path: "/repo",
+            branch: "main",
+            baseRef: "origin/main",
+            kind: "main",
+            lastOpenedAt: 1,
+          },
+        ],
+      },
+    ],
+    activeWorktreeId: "w1",
     loading: false,
+    creatingProjectId: null,
     error: null,
   });
 });

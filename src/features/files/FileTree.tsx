@@ -21,42 +21,42 @@ const sortEntries = (entries: FileEntry[]) =>
   });
 
 function Directory({
-  projectId,
+  worktreeId,
   path = "",
   depth = 0,
 }: {
-  projectId: string;
+  worktreeId: string;
   path?: string;
   depth?: number;
 }) {
   const tree = useFileTreeStore();
-  const state = tree.directories[directoryKey(projectId, path)];
-  const expanded = tree.expandedByProject[projectId] ?? [];
-  const generation = tree.generationByProject[projectId] ?? 0;
+  const state = tree.directories[directoryKey(worktreeId, path)];
+  const expanded = tree.expandedByWorktree[worktreeId] ?? [];
+  const generation = tree.generationByWorktree[worktreeId] ?? 0;
   const activeTabId = useEditorStore(
-    (editor) => editor.views[projectId]?.activeTabId,
+    (editor) => editor.views[worktreeId]?.activeTabId,
   );
   useEffect(() => {
-    const key = directoryKey(projectId, path);
+    const key = directoryKey(worktreeId, path);
     if (state) return;
-    tree.setDirectory(projectId, key, generation, {
+    tree.setDirectory(worktreeId, key, generation, {
       status: "loading",
       entries: [],
     });
-    void commands.fsReadDir(projectId, path).then(
+    void commands.fsReadDir(worktreeId, path).then(
       (entries) =>
-        tree.setDirectory(projectId, key, generation, {
+        tree.setDirectory(worktreeId, key, generation, {
           status: "ready",
           entries: sortEntries(entries),
         }),
       (error) =>
-        tree.setDirectory(projectId, key, generation, {
+        tree.setDirectory(worktreeId, key, generation, {
           status: "error",
           entries: [],
           error: commandError(error),
         }),
     );
-  }, [generation, path, projectId, state, tree]);
+  }, [generation, path, worktreeId, state, tree]);
 
   if (!state || state.status === "loading")
     return <div className="tree-state">Loading…</div>;
@@ -71,13 +71,13 @@ function Directory({
         const isOpen = expanded.includes(entry.relativePath);
         const isActive =
           !isDirectory &&
-          activeTabId === fileResourceId(projectId, entry.relativePath);
+          activeTabId === fileResourceId(worktreeId, entry.relativePath);
         const openFile = (keep: boolean) => {
           useEditorStore.getState().beginNavigation();
           useEditorStore.getState().open(
             {
-              id: fileResourceId(projectId, entry.relativePath),
-              projectId,
+              id: fileResourceId(worktreeId, entry.relativePath),
+              worktreeId,
               type: "file",
               relativePath: entry.relativePath,
               preview: !keep,
@@ -93,7 +93,7 @@ function Directory({
               style={{ paddingLeft: 12 + depth * 14 }}
               onClick={() =>
                 isDirectory
-                  ? tree.toggle(projectId, entry.relativePath)
+                  ? tree.toggle(worktreeId, entry.relativePath)
                   : openFile(false)
               }
               onDoubleClick={() => !isDirectory && openFile(true)}
@@ -119,7 +119,7 @@ function Directory({
             </button>
             {isDirectory && isOpen && (
               <Directory
-                projectId={projectId}
+                worktreeId={worktreeId}
                 path={entry.relativePath}
                 depth={depth + 1}
               />
@@ -131,10 +131,10 @@ function Directory({
   );
 }
 
-export function FileTree({ projectId }: { projectId: string }) {
+export function FileTree({ worktreeId }: { worktreeId: string }) {
   return (
     <div className="file-tree">
-      <Directory projectId={projectId} />
+      <Directory worktreeId={worktreeId} />
     </div>
   );
 }

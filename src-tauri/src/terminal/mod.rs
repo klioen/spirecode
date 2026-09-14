@@ -21,7 +21,7 @@ const BATCH_WINDOW: Duration = Duration::from_millis(6);
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSummary {
     pub terminal_id: Uuid,
-    pub project_id: Uuid,
+    pub worktree_id: Uuid,
     pub cols: u16,
     pub rows: u16,
 }
@@ -63,7 +63,7 @@ pub struct TerminalRegistry {
 impl TerminalRegistry {
     pub fn create(
         &self,
-        project_id: Uuid,
+        worktree_id: Uuid,
         cwd: &Path,
         cols: u16,
         rows: u16,
@@ -86,7 +86,7 @@ impl TerminalRegistry {
         let terminal_id = Uuid::new_v4();
         let summary = TerminalSummary {
             terminal_id,
-            project_id,
+            worktree_id,
             cols,
             rows,
         };
@@ -174,27 +174,41 @@ impl TerminalRegistry {
         }
         Ok(())
     }
-    pub fn list(&self, project_id: Option<Uuid>) -> CommandResult<Vec<TerminalSummary>> {
+    pub fn list(&self, worktree_id: Option<Uuid>) -> CommandResult<Vec<TerminalSummary>> {
         Ok(self
             .lock()?
             .values()
-            .filter(|session| project_id.is_none_or(|id| session.summary.project_id == id))
+            .filter(|session| worktree_id.is_none_or(|id| session.summary.worktree_id == id))
             .map(|session| session.summary.clone())
             .collect())
     }
-    pub fn close_project(&self, project_id: Uuid) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            let ids: Vec<_> = sessions
-                .iter()
-                .filter(|(_, session)| session.summary.project_id == project_id)
-                .map(|(id, _)| *id)
-                .collect();
-            for id in ids {
-                if let Some(mut session) = sessions.remove(&id) {
-                    let _ = session.child.kill();
+    pub fn count_worktree(&self, worktree_id: Uuid) -> CommandResult<usize> {
+        let mut sessions = self.lock()?;
+        let mut count = 0;
+        for session in sessions.values_mut() {
+            if session.summary.worktree_id == worktree_id
+                && session.child.try_wait().map_err(terminal_error)?.is_none()
+            {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+    pub fn close_worktree(&self, worktree_id: Uuid) -> CommandResult<()> {
+        let mut sessions = self.lock()?;
+        let ids: Vec<_> = sessions
+            .iter()
+            .filter(|(_, session)| session.summary.worktree_id == worktree_id)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            if let Some(mut session) = sessions.remove(&id) {
+                if session.child.try_wait().map_err(terminal_error)?.is_none() {
+                    session.child.kill().map_err(terminal_error)?;
                 }
             }
         }
+        Ok(())
     }
     fn lock(&self) -> CommandResult<MutexGuard<'_, HashMap<Uuid, Session>>> {
         self.sessions

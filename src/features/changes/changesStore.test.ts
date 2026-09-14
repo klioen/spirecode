@@ -19,7 +19,7 @@ const snapshot: GitStatus = {
 };
 beforeEach(() =>
   useChangesStore.setState({
-    byProject: {},
+    byWorktree: {},
     mode: "list",
     diffMode: "unified",
   }),
@@ -35,8 +35,8 @@ describe("changes snapshot", () => {
       code: "GIT_FAILED",
       message: "git failed",
     });
-    expect(useChangesStore.getState().byProject.p1.snapshot).toBe(snapshot);
-    expect(useChangesStore.getState().byProject.p1.staleError?.code).toBe(
+    expect(useChangesStore.getState().byWorktree.p1.snapshot).toBe(snapshot);
+    expect(useChangesStore.getState().byWorktree.p1.staleError?.code).toBe(
       "GIT_FAILED",
     );
   });
@@ -50,8 +50,8 @@ describe("changes snapshot", () => {
       code: "GIT_FAILED",
       message: "old failure",
     });
-    expect(useChangesStore.getState().byProject.p1.snapshot).toBe(snapshot);
-    expect(useChangesStore.getState().byProject.p1.staleError).toBeNull();
+    expect(useChangesStore.getState().byWorktree.p1.snapshot).toBe(snapshot);
+    expect(useChangesStore.getState().byWorktree.p1.staleError).toBeNull();
   });
 
   it("stores the diff layout in the changes store", () => {

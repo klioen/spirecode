@@ -9,6 +9,8 @@ export type ErrorCode =
   | "GIT_TIMED_OUT"
   | "TERMINAL_NOT_FOUND"
   | "TERMINAL_FAILED"
+  | "WORKTREE_DIRTY"
+  | "WORKTREE_BUSY"
   | "INVALID_ARGUMENT";
 
 export interface CommandError {
@@ -22,6 +24,46 @@ export interface ProjectSummary {
   name: string;
   path: string;
   lastOpenedAt: number;
+  worktrees: WorktreeSummary[];
+  nextWorktreeSequence?: number;
+}
+
+export interface ProjectCatalog {
+  version: number;
+  projects: ProjectSummary[];
+  activeWorktreeId: string | null;
+}
+
+export interface WorktreeSummary {
+  id: string;
+  projectId: string;
+  name: string;
+  path: string;
+  branch: string;
+  baseRef: string;
+  kind: "main" | "managed" | "external";
+  lastOpenedAt: number;
+}
+
+export interface OriginBranch {
+  ref: string;
+  name: string;
+}
+
+export interface OriginBranchCatalog {
+  branches: OriginBranch[];
+  defaultRef: string | null;
+  nextName: string;
+}
+
+export interface WorktreeDeleteInspection {
+  dirty: boolean;
+  terminalCount: number;
+  branch: string;
+}
+
+export interface OkResponse {
+  ok: boolean;
 }
 
 export interface FileEntry {
@@ -68,7 +110,7 @@ export interface GitDiff {
 
 export interface TerminalSummary {
   terminalId: string;
-  projectId: string;
+  worktreeId: string;
   cols: number;
   rows: number;
 }

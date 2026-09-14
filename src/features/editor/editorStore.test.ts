@@ -7,7 +7,7 @@ import {
 
 const tab = (path: string) => ({
   id: fileResourceId("p1", path),
-  projectId: "p1",
+  worktreeId: "p1",
   type: "file" as const,
   relativePath: path,
   preview: true,
@@ -16,7 +16,7 @@ beforeEach(() =>
   useEditorStore.setState({
     views: {},
     navigationGeneration: 0,
-    terminalSequenceByProject: {},
+    terminalSequenceByWorktree: {},
   }),
 );
 
