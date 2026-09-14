@@ -1,7 +1,8 @@
 {
-  "name": "pi-app",
+  "name": "spirecode",
   "private": true,
   "version": "0.1.0",
+  "description": "Fast Lightweight GUI Code Agent",
   "type": "module",
   "packageManager": "pnpm@10.29.2",
   "scripts": {
@@ -10,10 +11,11 @@
     "preview": "vite preview",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "brand:check": "node scripts/check-brand.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml --all --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "pnpm format:check && pnpm brand:check && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml --all --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "bundle": "pnpm tauri build --bundles app && ./scripts/sign-app.sh && ./scripts/build-dmg.sh && ./scripts/smoke-app.sh && ./scripts/smoke-dmg.sh",
     "tauri": "tauri"
   },

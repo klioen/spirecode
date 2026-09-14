@@ -24,8 +24,9 @@ function EmptyWorkbench() {
       ?.click();
   return (
     <div className="empty-workbench">
-      <div className="empty-logo">π</div>
-      <h1>Build without the noise.</h1>
+      <div className="empty-logo">S</div>
+      <h1>SpireCode</h1>
+      <p className="product-slogan">Fast Lightweight GUI Code Agent</p>
       <p>
         Open a Git repository to explore files, review changes, and run
         commands.

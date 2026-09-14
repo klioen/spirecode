@@ -1,4 +1,4 @@
-# Plan: Pi App 双主题视觉系统（from `docs/visual-theme-refresh/spec.md` 2026-09-14）
+# Plan: SpireCode 双主题视觉系统（from `docs/visual-theme-refresh/spec.md` 2026-09-14）
 
 ## Files that change
 

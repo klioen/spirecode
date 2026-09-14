@@ -421,7 +421,7 @@ mod tests {
 
     fn temp() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "pi-app-git-{}",
+            "spirecode-git-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

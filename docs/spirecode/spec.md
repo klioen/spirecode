@@ -1,5 +1,5 @@
-# Spec: 基于 Tauri 的 pi-app macOS 客户端
-Status: draft。 Implements: `docs/pi-app/intent.md`。
+# Spec: 基于 Tauri 的 spirecode macOS 客户端
+Status: draft。 Implements: `docs/spirecode/intent.md`。
 
 ## 1. 产品范围
 
@@ -356,8 +356,8 @@ logs/                  bounded application logs
 开发默认值：
 
 ```text
-Product: Pi App
-Bundle identifier: com.bytedance.pi-app.dev
+Product: SpireCode
+Bundle identifier: com.bytedance.spirecode.dev
 Minimum macOS: 13.0
 Target: aarch64-apple-darwin
 ```

@@ -1,4 +1,4 @@
-# Plan: 基于 Tauri 的 pi-app macOS 客户端（from `docs/pi-app/spec.md` 2026-09-13）
+# Plan: 基于 Tauri 的 spirecode macOS 客户端（from `docs/spirecode/spec.md` 2026-09-13）
 
 ## 1. 交付策略
 
@@ -187,7 +187,7 @@ src-tauri/src/contracts.rs
 
 - 初始化 Tauri、受限 capabilities、应用状态、日志和 command 注册。
 - 定义 serde/Specta DTO、统一错误结构与 TypeScript 生成测试。
-- 默认产品名 `Pi App`、开发 bundle id `com.bytedance.pi-app.dev`、macOS 13+。
+- 默认产品名 `SpireCode`、开发 bundle id `com.bytedance.spirecode.dev`、macOS 13+。
 
 ### 2.10 Rust Projects 与持久化
 

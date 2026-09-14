@@ -3,7 +3,7 @@ Author: keliangliang。 Status: accepted。
 
 ## Problem
 
-Pi App 启动加载 project catalog 后，会自动选择 Rust catalog 中保存的 active worktree，或在无有效选择时自动选择列表中的第一个 main worktree。用户希望应用启动后只展示 Projects 列表，不自动进入任何 Project。
+SpireCode 启动加载 project catalog 后，会自动选择 Rust catalog 中保存的 active worktree，或在无有效选择时自动选择列表中的第一个 main worktree。用户希望应用启动后只展示 Projects 列表，不自动进入任何 Project。
 
 ## Proposed outcome
 

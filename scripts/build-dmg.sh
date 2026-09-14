@@ -2,10 +2,10 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-app="$root/src-tauri/target/release/bundle/macos/Pi App.app"
+app="$root/src-tauri/target/release/bundle/macos/SpireCode.app"
 out_dir="$root/src-tauri/target/release/bundle/dmg"
-out="$out_dir/Pi App_0.1.0_aarch64.dmg"
-staging="$(mktemp -d "${TMPDIR:-/tmp}/pi-app-dmg.XXXXXX")"
+out="$out_dir/SpireCode_0.1.0_aarch64.dmg"
+staging="$(mktemp -d "${TMPDIR:-/tmp}/spirecode-dmg.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 
 [[ -d "$app" ]] || {
@@ -17,6 +17,6 @@ cp -R "$app" "$staging/"
 ln -s /Applications "$staging/Applications"
 mkdir -p "$out_dir"
 rm -f "$out"
-hdiutil create -quiet -volname "Pi App" -srcfolder "$staging" -ov -format UDZO "$out"
+hdiutil create -quiet -volname "SpireCode" -srcfolder "$staging" -ov -format UDZO "$out"
 
 echo "DMG built: $out"

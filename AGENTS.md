@@ -1,10 +1,10 @@
-# Pi App Engineering Guide
+# SpireCode Engineering Guide
 
 ## Architecture
 - Tauri 2 desktop application: React runs in the system WebView; Rust owns projects, filesystem access, Git, PTYs, and durable state.
 - Frontend feature modules live under `src/features/`; backend domain modules live under `src-tauri/src/`.
 - WebView code never receives generic filesystem or shell permissions. Every path is `projectId + relativePath` and is validated in Rust.
-- Full design and scope: `docs/pi-app/{intent,spec,plan}.md`.
+- Full design and scope: `docs/spirecode/{intent,spec,plan}.md`.
 
 ## Commands
 - `pnpm check` — formatting, lint, typecheck, frontend tests, Rust fmt/clippy/tests. Healthy result: every command exits 0.

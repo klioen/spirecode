@@ -15,4 +15,4 @@ async command 通过 `AppHandle` 在 `tauri::async_runtime::spawn_blocking` clos
 
 ## Proof
 
-增加源码边界回归测试，固定所有已知阻塞 command 必须声明为 async 并通过 blocking helper 调度。运行 Rust/前端完整测试、bundle smoke，并覆盖安装 `/Applications/Pi App.app`。
+增加源码边界回归测试，固定所有已知阻塞 command 必须声明为 async 并通过 blocking helper 调度。运行 Rust/前端完整测试、bundle smoke，并覆盖安装 `/Applications/SpireCode.app`。

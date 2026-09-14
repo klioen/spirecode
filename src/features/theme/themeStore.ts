@@ -10,13 +10,21 @@ interface ThemeState {
   cycle: () => void;
 }
 
-const STORAGE_KEY = "pi-app.appearance.v1";
+const STORAGE_KEY = "spirecode.appearance.v1";
+const LEGACY_STORAGE_KEY = "pi-app.appearance.v1";
 const modes: ThemeMode[] = ["system", "light", "dark"];
 
 const storedMode = (): ThemeMode => {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    return modes.includes(value as ThemeMode) ? (value as ThemeMode) : "system";
+    const current = localStorage.getItem(STORAGE_KEY);
+    if (modes.includes(current as ThemeMode)) return current as ThemeMode;
+
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!modes.includes(legacy as ThemeMode)) return "system";
+
+    localStorage.setItem(STORAGE_KEY, legacy as ThemeMode);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return legacy as ThemeMode;
   } catch {
     return "system";
   }

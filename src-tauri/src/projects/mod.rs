@@ -474,7 +474,7 @@ mod tests {
     use super::*;
 
     fn temp() -> PathBuf {
-        std::env::temp_dir().join(format!("pi-app-project-{}", Uuid::new_v4()))
+        std::env::temp_dir().join(format!("spirecode-project-{}", Uuid::new_v4()))
     }
 
     fn init(root: &Path) {
@@ -549,7 +549,7 @@ mod tests {
         assert!(Command::new("git")
             .args([
                 "-c",
-                "user.name=Pi App",
+                "user.name=SpireCode",
                 "-c",
                 "user.email=pi@example.invalid",
                 "commit",

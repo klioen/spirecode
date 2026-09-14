@@ -17,6 +17,22 @@ const media = (dark: boolean) => {
 describe("theme controller", () => {
   beforeEach(() => localStorage.clear());
 
+  it("migrates the legacy appearance setting", () => {
+    const legacyKey = ["pi", "app.appearance.v1"].join("-");
+    localStorage.setItem(legacyKey, "dark");
+
+    const controller = createThemeController(
+      media(false) as unknown as MediaQueryList,
+    );
+
+    expect(controller.getState()).toMatchObject({
+      mode: "dark",
+      resolved: "dark",
+    });
+    expect(localStorage.getItem("spirecode.appearance.v1")).toBe("dark");
+    expect(localStorage.getItem(legacyKey)).toBeNull();
+  });
+
   it("follows system appearance and persists explicit modes", () => {
     const query = media(true);
     const controller = createThemeController(
@@ -32,7 +48,7 @@ describe("theme controller", () => {
       mode: "light",
       resolved: "light",
     });
-    expect(localStorage.getItem("pi-app.appearance.v1")).toBe("light");
+    expect(localStorage.getItem("spirecode.appearance.v1")).toBe("light");
   });
 
   it("reacts to system changes only while mode is system", () => {

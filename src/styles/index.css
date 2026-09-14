@@ -213,7 +213,8 @@ body.panel-resizing-vertical * {
 }
 .brand-mark {
   color: var(--accent);
-  font: 700 23px Georgia;
+  font-size: 20px;
+  font-weight: 800;
 }
 .project-rail-heading {
   height: 30px;
@@ -946,8 +947,9 @@ body.panel-resizing-vertical * {
   );
 }
 .empty-logo {
-  font: 700 64px Georgia;
   color: var(--accent);
+  font-size: 64px;
+  font-weight: 800;
   text-shadow: 0 0 40px var(--accent-glow);
 }
 .empty-workbench h1 {
@@ -958,6 +960,14 @@ body.panel-resizing-vertical * {
 .empty-workbench p {
   font-size: 12px;
   margin: 0 0 20px;
+}
+.empty-workbench .product-slogan {
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+  text-transform: uppercase;
 }
 .empty-workbench button,
 .fatal-error button {

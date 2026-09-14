@@ -20,7 +20,7 @@ beforeEach(() => {
     projects: [
       {
         id: "project-1",
-        name: "pi-ide-client",
+        name: "spirecode-client",
         path: "/repo",
         lastOpenedAt: 1,
         worktrees: [
@@ -57,14 +57,16 @@ beforeEach(() => {
 describe("ProjectRail", () => {
   it("renders nested checkout rows and a project-scoped create button", () => {
     render(<ProjectRail />);
-    expect(screen.getByText("pi-ide-client")).toBeInTheDocument();
+    expect(screen.getByText("spirecode-client")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "main" })).toHaveAttribute(
       "aria-current",
       "page",
     );
     expect(screen.getByRole("button", { name: "feature" })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Create worktree for pi-ide-client" }),
+      screen.getByRole("button", {
+        name: "Create worktree for spirecode-client",
+      }),
     ).toBeInTheDocument();
   });
 

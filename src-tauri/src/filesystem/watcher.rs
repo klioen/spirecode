@@ -251,7 +251,7 @@ mod tests {
 
     fn temp() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "pi-app-watcher-{}",
+            "spirecode-watcher-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

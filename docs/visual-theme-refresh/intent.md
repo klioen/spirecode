@@ -1,4 +1,4 @@
-# Intent: Pi App 视觉主题与层级优化
+# Intent: SpireCode 视觉主题与层级优化
 Author: keliangliang。 Status: accepted。
 
 ## Problem

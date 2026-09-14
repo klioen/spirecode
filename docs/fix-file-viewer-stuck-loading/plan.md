@@ -11,7 +11,7 @@
 1. 添加本地 loader 配置测试并确认缺少初始化模块。
 2. 创建 setup 模块并绑定 bundle 内 Monaco。
 3. 运行目标测试、完整检查和 production bundle。
-4. 覆盖安装 `/Applications/Pi App.app`。
+4. 覆盖安装 `/Applications/SpireCode.app`。
 
 ## Risks
 

@@ -12,7 +12,8 @@ export const PANEL_LIMITS = {
   right: { min: 220, max: 520 },
 } as const;
 
-const STORAGE_KEY = "pi-app.workbench.v1";
+const STORAGE_KEY = "spirecode.workbench.v1";
+const LEGACY_STORAGE_KEY = "pi-app.workbench.v1";
 
 interface PersistedWorkbench {
   projectsWidth: number;
@@ -58,12 +59,21 @@ const normalized = (
   rightCollapsed: value?.rightCollapsed === true,
 });
 
-const load = (): PersistedWorkbench => {
+export const loadPersistedWorkbench = (): PersistedWorkbench => {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    return value
-      ? normalized(JSON.parse(value) as Partial<PersistedWorkbench>)
-      : defaults();
+    const current = localStorage.getItem(STORAGE_KEY);
+    if (current)
+      return normalized(JSON.parse(current) as Partial<PersistedWorkbench>);
+
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!legacy) return defaults();
+
+    const migrated = normalized(
+      JSON.parse(legacy) as Partial<PersistedWorkbench>,
+    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return migrated;
   } catch {
     return defaults();
   }
@@ -85,7 +95,7 @@ const persisted = (state: WorkbenchState): PersistedWorkbench => ({
 });
 
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
-  ...load(),
+  ...loadPersistedWorkbench(),
   rightView: "files",
   setRightView: (rightView) => set({ rightView }),
   setProjectsWidth: (projectsWidth) =>

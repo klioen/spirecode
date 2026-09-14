@@ -55,8 +55,8 @@ export function ProjectRail() {
   return (
     <aside className="project-rail" aria-label="Projects">
       <div className="brand">
-        <span className="brand-mark">π</span>
-        <span>PI APP</span>
+        <span className="brand-mark">S</span>
+        <span>SPIRECODE</span>
       </div>
       <div className="project-rail-heading">
         <span>PROJECTS</span>

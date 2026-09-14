@@ -3,7 +3,7 @@ Author: keliangliang。 Status: accepted。
 
 ## Problem
 
-Pi App 当前一个 Project 只对应一个本地 Git working tree，无法从项目导航中基于远端分支创建隔离工作目录，也无法在应用内管理 worktree 的重命名和删除生命周期。
+SpireCode 当前一个 Project 只对应一个本地 Git working tree，无法从项目导航中基于远端分支创建隔离工作目录，也无法在应用内管理 worktree 的重命名和删除生命周期。
 
 ## Proposed outcome
 

@@ -47,6 +47,19 @@ beforeEach(() => {
 });
 
 describe("Workbench panel handles", () => {
+  it("shows the SpireCode identity and slogan when no project is active", () => {
+    useProjectsStore.setState({ projects: [], activeWorktreeId: null });
+
+    render(<Workbench />);
+
+    expect(
+      screen.getByRole("heading", { name: "SpireCode" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Fast Lightweight GUI Code Agent"),
+    ).toBeInTheDocument();
+  });
+
   it("exposes resize separators only for the two auxiliary side panels", () => {
     render(<Workbench />);
 

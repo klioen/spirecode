@@ -26,7 +26,7 @@
 
 ## Risks
 
-- 最危险的是 package/crate/binary/app artifact 四层名称不一致，可能编译成功但签名或 DMG smoke 失败；以 bundle smoke 作为最终证明。
+- 最危险的是 package/crate/binary/app artifact 四层名称不一致，可能编译成功但签名或 DMG smoke 失败；以 bundle smoke 作为最终证明。macOS 偶尔会在 DMG 刚创建后短暂返回资源不可用，校验采用三次有界重试，重试耗尽仍严格失败。
 - bundle identifier 改变会产生新的 app data/container 身份，Rust durable state 不会自动继承旧应用数据；这是完整品牌迁移的必然后果，不伪装成原 app 的更新。
 - localStorage key 直接替换会丢失主题和布局；采用明确的一次性迁移并用测试固定。
 - 全局替换可能误伤普通单词、历史技术说明或路径；只替换精确产品 identifiers，并在最后做全量 diff 审查。
@@ -37,7 +37,7 @@
 
 - Storage migration tests：旧 theme/workbench key 被读取、迁移、删除，新写入只使用 `spirecode.*`。
 - UI tests：SpireCode 和 slogan 可见，旧 wordmark 不存在。
-- Naming guard：除两个 legacy migration literals 外，tracked text 不含 `Pi App`、`pi-app`、`pi_app`、`pi-ide` 或文本品牌 `π`。
+- Naming guard：除迁移审计目录与两个 legacy migration literals 外，tracked text 不含 `Pi App`、`pi-app`、`pi_app`、`pi-ide` 或文本品牌 `π`。
 - `pnpm check`：format、lint、typecheck、frontend tests、Rust fmt/clippy/tests 全部退出 0。
 - `pnpm bundle`：构建、ad-hoc sign、生成 DMG，并通过 app/DMG smoke。
 - Artifact inspection：`SpireCode.app`、`SpireCode_0.1.0_aarch64.dmg` 存在；binary 为 `spirecode`；bundle id 为 `com.bytedance.spirecode.dev`。

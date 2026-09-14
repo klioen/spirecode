@@ -18,7 +18,7 @@
 2. 简化 New Worktree UI，删除 Add Origin state、action、form 和样式。
 3. 自 WebView 到 Rust service 逐层删除 `project_add_origin` 完整链路及专属测试/helper。
 4. 全仓 grep 检查无残留，运行目标测试及 `pnpm check`。
-5. 运行 `pnpm bundle`，覆盖 `/Applications/Pi App.app` 并核对 built/installed binary SHA-256。
+5. 运行 `pnpm bundle`，覆盖 `/Applications/SpireCode.app` 并核对 built/installed binary SHA-256。
 
 ## Risks
 

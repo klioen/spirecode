@@ -230,7 +230,7 @@ mod tests {
     use super::*;
     use std::fs;
     fn temp() -> PathBuf {
-        std::env::temp_dir().join(format!("pi-app-fs-{}", Uuid::new_v4()))
+        std::env::temp_dir().join(format!("spirecode-fs-{}", Uuid::new_v4()))
     }
     #[test]
     fn rejects_traversal_git_binary_and_oversized_files() {

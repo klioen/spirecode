@@ -13,7 +13,7 @@ Projects 左栏和 Files/Changes 右栏可通过边缘分隔条拖拽调整大�
 
 ## Affected users and systems
 
-所有 Pi App 用户；Workbench 布局、Zustand view state、Project/File/Git/Terminal 面板尺寸。
+所有 SpireCode 用户；Workbench 布局、Zustand view state、Project/File/Git/Terminal 面板尺寸。
 
 ## Constraints
 

@@ -1,9 +1,9 @@
-# Spec: Pi App 双主题视觉系统
+# Spec: SpireCode 双主题视觉系统
 Status: accepted。 Implements: `docs/visual-theme-refresh/intent.md`。
 
 ## Theme model
 
-支持 `system | light | dark` 三种用户设置，持久化到 `pi-app.appearance.v1`。根节点写入 `data-theme="light|dark"`，system 模式监听 `prefers-color-scheme`。
+支持 `system | light | dark` 三种用户设置，持久化到 `spirecode.appearance.v1`。根节点写入 `data-theme="light|dark"`，system 模式监听 `prefers-color-scheme`。
 
 ## Palette direction
 

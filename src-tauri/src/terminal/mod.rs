@@ -359,7 +359,7 @@ mod tests {
 
     fn cwd() -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "pi-app-terminal-{}",
+            "spirecode-terminal-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

@@ -68,7 +68,7 @@ mod tests {
 
     fn temp() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
-            "pi-app-persistence-{}",
+            "spirecode-persistence-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

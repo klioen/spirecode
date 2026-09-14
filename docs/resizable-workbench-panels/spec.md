@@ -33,7 +33,7 @@ rightPanelWidth: number
 rightCollapsed: boolean
 ```
 
-storage key: `pi-app.workbench.v1`。旧 terminal 字段被忽略且不再写回。
+storage key: `spirecode.workbench.v1`。旧 terminal 字段被忽略且不再写回。
 
 ## Proof
 

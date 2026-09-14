@@ -1,4 +1,6 @@
-# Pi App
+# SpireCode
+
+**Fast Lightweight GUI Code Agent**
 
 A native Tauri desktop workbench for local Git projects. The V1 surface includes Projects, Files, Git Changes, and Terminal; chat and file editing are intentionally deferred.
 
@@ -29,4 +31,4 @@ pnpm bundle
 
 The local build is not notarized. Gatekeeper assessment will reject it until a Developer ID signing and notarization pipeline is configured.
 
-Design artifacts are in [`docs/pi-app`](docs/pi-app/).
+Design artifacts are in [`docs/spirecode`](docs/spirecode/).

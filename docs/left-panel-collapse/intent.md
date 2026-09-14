@@ -15,7 +15,7 @@ Workbench header、Grid、workbenchStore、ProjectRail 和 panel resize handle�
 
 ## Constraints
 
-- 左栏折叠状态持久化到现有 `pi-app.workbench.v1`。
+- 左栏折叠状态持久化到现有 `spirecode.workbench.v1`。
 - 折叠不关闭项目、不删除项目状态。
 - Projects 宽度值保持，展开后恢复。
 - 右栏折叠与拖拽行为保持不变。

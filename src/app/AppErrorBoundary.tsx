@@ -14,8 +14,8 @@ export class AppErrorBoundary extends Component<
     if (this.state.error)
       return (
         <main className="fatal-error">
-          <span>π</span>
-          <h1>Workbench could not start</h1>
+          <span>S</span>
+          <h1>SpireCode could not start</h1>
           <p>{this.state.error.message}</p>
           <button onClick={() => location.reload()}>Reload</button>
         </main>

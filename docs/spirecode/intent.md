@@ -1,9 +1,9 @@
-# Intent: 基于 Tauri 的 pi-app macOS 客户端
+# Intent: 基于 Tauri 的 spirecode macOS 客户端
 Author: keliangliang。 Status: accepted。
 
 ## Problem
 
-需要一个可以安装到 macOS 的 pi-app 客户端，提供本地开发工作台的基础能力：Projects、Files、Git Changes 和 Terminal。现有 ThinkRail 已验证这套产品信息架构，但其桌面宿主和本地服务基于 Electrobun/Bun；直接采用 GPUI 又会显著增加编辑器、终端渲染、IME 和跨平台维护成本。
+需要一个可以安装到 macOS 的 spirecode 客户端，提供本地开发工作台的基础能力：Projects、Files、Git Changes 和 Terminal。现有 ThinkRail 已验证这套产品信息架构，但其桌面宿主和本地服务基于 Electrobun/Bun；直接采用 GPUI 又会显著增加编辑器、终端渲染、IME 和跨平台维护成本。
 
 ## Proposed outcome
 
