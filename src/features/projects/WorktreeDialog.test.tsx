@@ -8,7 +8,6 @@ import { DeleteWorktreeDialog, NewWorktreeDialog } from "./WorktreeDialog";
 vi.mock("./projectsApi", () => ({
   projectsApi: {
     listOriginBranches: vi.fn(),
-    addOrigin: vi.fn(),
     createWorktree: vi.fn(),
     inspectDeleteWorktree: vi.fn(),
     deleteWorktree: vi.fn(),
@@ -28,7 +27,6 @@ const managed: WorktreeSummary = {
 
 beforeEach(() => {
   vi.mocked(projectsApi.listOriginBranches).mockReset();
-  vi.mocked(projectsApi.addOrigin).mockReset();
   vi.mocked(projectsApi.createWorktree).mockReset();
   vi.mocked(projectsApi.inspectDeleteWorktree).mockReset();
   vi.mocked(projectsApi.deleteWorktree).mockReset();
@@ -90,7 +88,7 @@ describe("worktree dialogs", () => {
     );
   });
 
-  it("explains when origin is not configured and offers add origin", async () => {
+  it("shows refresh when origin is not configured", async () => {
     vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
       originConfigured: false,
       branches: [],
@@ -111,52 +109,18 @@ describe("worktree dialogs", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Add origin remote" }),
-    ).toBeInTheDocument();
-  });
-
-  it("adds an origin URL and loads its fetched branches", async () => {
-    vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
-      originConfigured: false,
-      branches: [],
-      defaultRef: null,
-      nextName: "worktree1",
-    });
-    vi.mocked(projectsApi.addOrigin).mockResolvedValue({
-      originConfigured: true,
-      branches: [{ ref: "origin/main", name: "main" }],
-      defaultRef: "origin/main",
-      nextName: "worktree1",
-    });
-
-    render(
-      <NewWorktreeDialog
-        projectId="project-id"
-        projectName="Project"
-        onClose={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Add origin remote" }),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "Origin URL" }), {
-      target: { value: "https://github.com/example/repo.git" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add origin" }));
-
-    await waitFor(() =>
-      expect(projectsApi.addOrigin).toHaveBeenCalledWith(
-        "project-id",
-        "https://github.com/example/repo.git",
-      ),
-    );
-    expect(
-      await screen.findByRole("option", { name: "main" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Add origin remote" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("textbox", { name: "Origin URL" }),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh origin branches" }),
+    );
+    await waitFor(() =>
+      expect(projectsApi.listOriginBranches).toHaveBeenCalledTimes(2),
+    );
   });
 
   it("explains when origin has no fetched branches", async () => {

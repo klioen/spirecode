@@ -7,12 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     sync::{Arc, Mutex},
-    thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
 
@@ -82,41 +80,6 @@ impl WorktreeService {
         let next_name = self.next_name(&project)?;
         Ok(OriginBranches {
             origin_configured,
-            branches,
-            default_ref,
-            next_name,
-        })
-    }
-
-    pub fn add_origin(
-        &self,
-        projects: &ProjectService,
-        project_id: Uuid,
-        url: String,
-    ) -> CommandResult<OriginBranches> {
-        let url = url.trim().to_owned();
-        validate_remote_url(&url)?;
-        let lock = self.repository_lock(project_id)?;
-        let _guard = lock.lock().map_err(|_| lock_error())?;
-        let project = projects.project(project_id)?;
-        let root = Path::new(&project.path);
-        if origin_configured(root)? {
-            return Err(CommandError::new(
-                "WORKTREE_CONFLICT",
-                "origin remote is already configured",
-            ));
-        }
-        run_git(root, &["remote", "add", "origin", &url])?;
-        if let Err(error) = run_git_bounded(root, &["fetch", "origin", "--prune"]) {
-            let rollback = run_git(root, &["remote", "remove", "origin"]);
-            return Err(recovery_error(error, [("removeOrigin", rollback)]));
-        }
-        let _ = run_git_allow_failure(root, &["remote", "set-head", "origin", "-a"]);
-        let branches = origin_branches(root)?;
-        let default_ref = default_origin_ref(root, &branches)?;
-        let next_name = self.next_name(&project)?;
-        Ok(OriginBranches {
-            origin_configured: true,
             branches,
             default_ref,
             next_name,
@@ -399,27 +362,6 @@ fn validate_name(name: &str) -> CommandResult<()> {
     Ok(())
 }
 
-fn validate_remote_url(url: &str) -> CommandResult<()> {
-    let protocol = ["https://", "http://", "ssh://", "git://"]
-        .iter()
-        .any(|prefix| url.starts_with(prefix));
-    let scp_like = url
-        .split_once('@')
-        .and_then(|(_, rest)| rest.split_once(':'))
-        .is_some_and(|(host, path)| !host.is_empty() && !path.is_empty());
-    if url.is_empty()
-        || url.starts_with('-')
-        || url.chars().any(char::is_control)
-        || (!protocol && !scp_like)
-    {
-        return Err(CommandError::new(
-            "INVALID_ARGUMENT",
-            "origin URL must be an HTTP(S), SSH, Git, or user@host:path URL",
-        ));
-    }
-    Ok(())
-}
-
 fn origin_configured(root: &Path) -> CommandResult<bool> {
     Ok(
         run_git_allow_failure(root, &["remote", "get-url", "origin"])?
@@ -619,81 +561,6 @@ fn managed_only(worktree: &WorktreeSummary) -> CommandResult<()> {
     }
 }
 
-fn run_git_bounded(root: &Path, args: &[&str]) -> CommandResult<Output> {
-    let mut child = Command::new("git")
-        .current_dir(root)
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "credential.helper=",
-            "-c",
-            "protocol.ext.allow=never",
-        ])
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(CommandError::io)?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| CommandError::new("GIT_FAILED", "missing Git stdout"))?;
-    let mut stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| CommandError::new("GIT_FAILED", "missing Git stderr"))?;
-    let stdout_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stdout.read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let stderr_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stderr.read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let start = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait().map_err(CommandError::io)? {
-            break status;
-        }
-        if start.elapsed() >= Duration::from_secs(30) {
-            child.kill().map_err(CommandError::io)?;
-            let _ = child.wait();
-            return Err(CommandError::new(
-                "GIT_TIMED_OUT",
-                "Git fetch timed out after 30 seconds",
-            ));
-        }
-        thread::sleep(Duration::from_millis(20));
-    };
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| CommandError::new("GIT_FAILED", "Git stdout reader panicked"))?
-        .map_err(CommandError::io)?;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| CommandError::new("GIT_FAILED", "Git stderr reader panicked"))?
-        .map_err(CommandError::io)?;
-    let output = Output {
-        status,
-        stdout,
-        stderr,
-    };
-    if output.status.success() {
-        Ok(output)
-    } else {
-        Err(
-            CommandError::new("GIT_FAILED", String::from_utf8_lossy(&output.stderr).trim()).detail(
-                "exitCode",
-                output
-                    .status
-                    .code()
-                    .map_or_else(|| "signal".into(), |code| code.to_string()),
-            ),
-        )
-    }
-}
-
 fn run_git(root: &Path, args: &[&str]) -> CommandResult<Output> {
     let output = run_git_allow_failure(root, args)?;
     if output.status.success() {
@@ -862,36 +729,6 @@ mod tests {
         assert!(!result.origin_configured);
         assert!(result.branches.is_empty());
         assert!(result.default_ref.is_none());
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn validates_origin_urls_and_rolls_back_failed_fetch() {
-        for invalid in ["", "-upload-pack=evil", "/tmp/repo", "https://bad\nurl"] {
-            assert_eq!(
-                validate_remote_url(invalid).unwrap_err().code,
-                "INVALID_ARGUMENT"
-            );
-        }
-        let root = std::env::temp_dir().join(format!("pi-origin-rollback-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        git(&root, &["init"]);
-        let projects = ProjectService::load(root.join("state.json")).unwrap();
-        let project = projects.open_path(&root).unwrap();
-        let service = WorktreeService::with_managed_home(root.join("managed"));
-
-        assert_eq!(
-            service
-                .add_origin(
-                    &projects,
-                    project.id,
-                    "http://127.0.0.1:1/missing.git".into(),
-                )
-                .unwrap_err()
-                .code,
-            "GIT_FAILED"
-        );
-        assert!(!origin_configured(&root).unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 

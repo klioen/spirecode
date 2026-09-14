@@ -1,5 +1,5 @@
 # Spec: 移除 Add Origin
-Status: accepted。 Implements: `docs/remove-add-origin/intent.md`。
+Status: accepted。 Implements: `docs/remove-add-origin/intent.md`。 Supersedes the Add Origin portions of `docs/worktree-origin-empty-state/spec.md`。
 
 ## UI behavior
 
@@ -24,5 +24,5 @@ project_add_origin({ projectId, url }) -> OriginBranchCatalog
 ## Proof
 
 - 前端测试覆盖无 origin 时 Refresh icon、点击后重新读取 catalog，且不存在 Add Origin 控件。
-- 全仓 `rg` 不再找到 `project_add_origin`、`projectAddOrigin`、`addOrigin`、`Add origin remote` 或 `Origin URL`。
+- 生产代码不再找到 `project_add_origin`、`projectAddOrigin`、`addOrigin`、`Add origin remote` 或 `Origin URL`；测试可保留后两者用于负向断言。
 - `pnpm check` 和 `pnpm bundle` 通过。

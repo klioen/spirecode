@@ -479,25 +479,6 @@ body.panel-resizing-vertical * {
   color: var(--text-subtle);
   cursor: default;
 }
-.origin-form {
-  margin-top: 8px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-}
-.origin-form .primary {
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--elevated-bg);
-  cursor: pointer;
-}
-.origin-form .primary:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .field-error,
 .dialog-error {
   margin-top: 8px;

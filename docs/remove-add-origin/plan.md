@@ -31,9 +31,9 @@
 
 ```bash
 pnpm test -- WorktreeDialog.test.tsx
-rg -n 'project_add_origin|projectAddOrigin|addOrigin|Add origin remote|Origin URL' src src-tauri
+rg -n 'project_add_origin|projectAddOrigin|addOrigin|Add origin remote|Origin URL' src src-tauri --glob '!**/*.test.*'
 pnpm check
 pnpm bundle
 ```
 
-健康结果：测试和检查全通过；grep 无匹配；App/DMG smoke 通过；安装版 binary hash 与构建版一致。
+健康结果：测试和检查全通过；生产代码 grep 无匹配；App/DMG smoke 通过；安装版 binary hash 与构建版一致。
