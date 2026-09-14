@@ -4,6 +4,7 @@ import {
   RiCodeSSlashLine,
   RiFileCodeLine,
   RiGitCommitLine,
+  RiTerminalBoxLine,
 } from "@remixicon/react";
 import {
   commands,
@@ -14,6 +15,9 @@ import {
 import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
 import { useChangesStore } from "../changes/changesStore";
+import { useProjectsStore } from "../projects/projectsStore";
+import { TerminalInstance } from "../terminal/TerminalInstance";
+import { terminalStream } from "../terminal/terminalStream";
 import { useEditorStore, type ResourceTab } from "./editorStore";
 
 const MonacoEditor = lazy(() =>
@@ -32,7 +36,9 @@ type LoadState =
   | { status: "ready"; value: FileContent | GitDiff }
   | { status: "error"; error: CommandError };
 
-function ResourceView({ tab }: { tab: ResourceTab }) {
+type DocumentTab = Exclude<ResourceTab, { type: "terminal" }>;
+
+function ResourceView({ tab }: { tab: DocumentTab }) {
   const [state, setState] = useState<LoadState>(() => {
     const value = cache.get(tab.id);
     return value ? { status: "ready", value } : { status: "loading" };
@@ -188,6 +194,38 @@ function DiffView({ diff }: { diff: GitDiff }) {
 
 export function EditorPane({ projectId }: { projectId: string }) {
   const view = useEditorStore((state) => state.views[projectId]);
+  const createTerminal = async () => {
+    let terminalId: string | null = null;
+    try {
+      const terminal = await commands.terminalCreate(projectId);
+      terminalId = terminal.terminalId;
+      await commands.terminalAttach(terminal.terminalId, terminalStream.push);
+      useEditorStore.getState().openTerminal(projectId, terminal.terminalId);
+    } catch (error) {
+      if (terminalId) {
+        await commands.terminalClose(terminalId, true).catch(() => undefined);
+        terminalStream.close(terminalId);
+      }
+      useProjectsStore.getState().setError(commandError(error));
+    }
+  };
+  const closeTab = async (tab: ResourceTab) => {
+    if (tab.type !== "terminal") {
+      useEditorStore.getState().close(projectId, tab.id);
+      return;
+    }
+    try {
+      await commands.terminalClose(tab.terminalId, true);
+    } catch (error) {
+      const failure = commandError(error);
+      if (failure.code !== "TERMINAL_NOT_FOUND") {
+        useProjectsStore.getState().setError(failure);
+        return;
+      }
+    }
+    terminalStream.close(tab.terminalId);
+    useEditorStore.getState().close(projectId, tab.id);
+  };
   const active = useMemo(
     () => view?.tabs.find((tab) => tab.id === view.activeTabId),
     [view],
@@ -195,41 +233,69 @@ export function EditorPane({ projectId }: { projectId: string }) {
   return (
     <main className="editor-pane">
       <div className="editor-tabs">
-        {(view?.tabs ?? []).map((tab) => (
-          <button
-            className={`editor-tab ${tab.id === view.activeTabId ? "active" : ""}`}
-            key={tab.id}
-            onClick={() => {
-              useEditorStore.getState().beginNavigation();
-              useEditorStore.getState().activate(projectId, tab.id);
-            }}
-            onDoubleClick={() =>
-              useEditorStore.getState().keep(projectId, tab.id)
-            }
-          >
-            {tab.type === "diff" ? (
-              <RiGitCommitLine size={14} />
-            ) : (
-              <RiFileCodeLine size={14} />
-            )}
-            <span className={tab.preview ? "preview-label" : ""}>
-              {tab.relativePath.split("/").slice(-1)[0]}
-            </span>
-            <span
-              className="tab-close"
-              onClick={(event) => {
-                event.stopPropagation();
-                useEditorStore.getState().close(projectId, tab.id);
+        <div className="editor-tab-list">
+          {(view?.tabs ?? []).map((tab) => (
+            <button
+              className={`editor-tab ${tab.id === view.activeTabId ? "active" : ""}`}
+              key={tab.id}
+              onClick={() => {
+                useEditorStore.getState().beginNavigation();
+                useEditorStore.getState().activate(projectId, tab.id);
               }}
+              onDoubleClick={() =>
+                useEditorStore.getState().keep(projectId, tab.id)
+              }
             >
-              <RiCloseLine size={14} />
-            </span>
-          </button>
-        ))}
+              {tab.type === "diff" ? (
+                <RiGitCommitLine size={14} />
+              ) : tab.type === "terminal" ? (
+                <RiTerminalBoxLine size={14} />
+              ) : (
+                <RiFileCodeLine size={14} />
+              )}
+              <span className={tab.preview ? "preview-label" : ""}>
+                {tab.type === "terminal"
+                  ? tab.title
+                  : tab.relativePath.split("/").slice(-1)[0]}
+              </span>
+              <span
+                className="tab-close"
+                role="button"
+                aria-label={`Close ${
+                  tab.type === "terminal"
+                    ? tab.title
+                    : tab.relativePath.split("/").slice(-1)[0]
+                }`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void closeTab(tab);
+                }}
+              >
+                <RiCloseLine size={14} />
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          className="editor-new-terminal"
+          title="New terminal"
+          aria-label="New terminal"
+          onClick={() => void createTerminal()}
+        >
+          <RiTerminalBoxLine size={16} />
+        </button>
       </div>
       <div className="editor-content">
         {active ? (
-          <ResourceView key={active.id} tab={active} />
+          active.type === "terminal" ? (
+            <TerminalInstance
+              key={active.id}
+              projectId={projectId}
+              terminalId={active.terminalId}
+            />
+          ) : (
+            <ResourceView key={active.id} tab={active} />
+          )
         ) : (
           <div className="editor-empty">
             <RiCodeSSlashLine size={42} />
@@ -240,8 +306,8 @@ export function EditorPane({ projectId }: { projectId: string }) {
               <span>Quick open</span>
             </div>
             <div>
-              <kbd>⌘ J</kbd>
-              <span>Toggle terminal</span>
+              <RiTerminalBoxLine size={14} />
+              <span>Open a terminal from the tab header</span>
             </div>
           </div>
         )}

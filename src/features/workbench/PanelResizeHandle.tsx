@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 interface PanelResizeHandleProps {
   label: string;
-  edge: "projects" | "right" | "terminal";
-  orientation: "vertical" | "horizontal";
+  edge: "projects" | "right";
   value: number;
   min: number;
   max: number;
@@ -12,15 +11,9 @@ interface PanelResizeHandleProps {
   onReset: () => void;
 }
 
-const coordinate = (
-  event: Pick<PointerEvent, "clientX" | "clientY">,
-  orientation: PanelResizeHandleProps["orientation"],
-) => (orientation === "vertical" ? event.clientX : event.clientY);
-
 export function PanelResizeHandle({
   label,
   edge,
-  orientation,
   value,
   min,
   max,
@@ -36,8 +29,7 @@ export function PanelResizeHandle({
     const move = (event: PointerEvent) => {
       const start = drag.current;
       if (!start) return;
-      const delta = coordinate(event, orientation) - start.coordinate;
-      onChange(start.value + delta * direction);
+      onChange(start.value + (event.clientX - start.coordinate) * direction);
     };
     const finish = () => {
       drag.current = null;
@@ -46,53 +38,41 @@ export function PanelResizeHandle({
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
-    document.body.classList.add(
-      "panel-resizing",
-      `panel-resizing-${orientation}`,
-    );
+    document.body.classList.add("panel-resizing", "panel-resizing-vertical");
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
       document.body.classList.remove(
         "panel-resizing",
-        `panel-resizing-${orientation}`,
+        "panel-resizing-vertical",
       );
     };
-  }, [direction, dragging, onChange, orientation]);
-
-  const adjustByKey = (key: string) => {
-    const physicalDelta =
-      key === "ArrowRight" || key === "ArrowDown"
-        ? 8
-        : key === "ArrowLeft" || key === "ArrowUp"
-          ? -8
-          : 0;
-    if (physicalDelta !== 0) onChange(value + physicalDelta * direction);
-    return physicalDelta !== 0;
-  };
+  }, [direction, dragging, onChange]);
 
   return (
     <div
-      className={`panel-resize-handle ${edge} ${orientation} ${dragging ? "dragging" : ""}`}
+      className={`panel-resize-handle ${edge} vertical ${dragging ? "dragging" : ""}`}
       role="separator"
       aria-label={label}
-      aria-orientation={orientation}
+      aria-orientation="vertical"
       aria-valuenow={Math.round(value)}
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
       onPointerDown={(event) => {
         event.preventDefault();
-        drag.current = {
-          coordinate: coordinate(event, orientation),
-          value,
-        };
+        drag.current = { coordinate: event.clientX, value };
         event.currentTarget.setPointerCapture?.(event.pointerId);
         setDragging(true);
       }}
       onKeyDown={(event) => {
-        if (adjustByKey(event.key)) event.preventDefault();
+        const delta =
+          event.key === "ArrowRight" ? 8 : event.key === "ArrowLeft" ? -8 : 0;
+        if (delta !== 0) {
+          onChange(value + delta * direction);
+          event.preventDefault();
+        }
       }}
       onDoubleClick={onReset}
     />

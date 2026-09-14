@@ -9,7 +9,6 @@ describe("PanelResizeHandle", () => {
       <PanelResizeHandle
         label="Resize projects"
         edge="projects"
-        orientation="vertical"
         value={220}
         min={160}
         max={360}
@@ -34,26 +33,25 @@ describe("PanelResizeHandle", () => {
     const onReset = vi.fn();
     render(
       <PanelResizeHandle
-        label="Resize terminal"
-        edge="terminal"
-        orientation="horizontal"
-        value={226}
-        min={120}
-        max={500}
+        label="Resize files"
+        edge="right"
+        value={292}
+        min={220}
+        max={520}
         direction={-1}
         onChange={onChange}
         onReset={onReset}
       />,
     );
     const separator = screen.getByRole("separator", {
-      name: "Resize terminal",
+      name: "Resize files",
     });
 
-    expect(separator).toHaveAttribute("aria-valuenow", "226");
-    expect(separator).toHaveAttribute("aria-valuemin", "120");
-    expect(separator).toHaveAttribute("aria-valuemax", "500");
-    fireEvent.keyDown(separator, { key: "ArrowUp" });
-    expect(onChange).toHaveBeenCalledWith(234);
+    expect(separator).toHaveAttribute("aria-valuenow", "292");
+    expect(separator).toHaveAttribute("aria-valuemin", "220");
+    expect(separator).toHaveAttribute("aria-valuemax", "520");
+    fireEvent.keyDown(separator, { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenCalledWith(300);
     fireEvent.doubleClick(separator);
     expect(onReset).toHaveBeenCalledOnce();
   });

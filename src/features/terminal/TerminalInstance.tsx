@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { commands, type TerminalMessage } from "../../bindings";
+import { useEditorStore } from "../editor/editorStore";
 import { terminalRegistry } from "./terminalRegistry";
 import { decodeTerminalOutput, terminalStream } from "./terminalStream";
-import { useTerminalStore } from "./terminalStore";
 
 export function TerminalInstance({
   projectId,
@@ -44,9 +44,9 @@ export function TerminalInstance({
             if (message.type === "output")
               terminal.write(decodeTerminalOutput(terminalId, message.data));
             else
-              useTerminalStore
+              useEditorStore
                 .getState()
-                .setStatus(
+                .setTerminalStatus(
                   projectId,
                   terminalId,
                   message.type === "exit" ? "exited" : "error",

@@ -14,9 +14,6 @@ vi.mock("../changes/ChangesPanel", () => ({
 vi.mock("../editor/EditorPane", () => ({
   EditorPane: () => <main>Editor</main>,
 }));
-vi.mock("../terminal/TerminalPanel", () => ({
-  TerminalPanel: () => <section>Terminal</section>,
-}));
 
 beforeEach(() => {
   localStorage.clear();
@@ -30,7 +27,7 @@ beforeEach(() => {
 });
 
 describe("Workbench panel handles", () => {
-  it("exposes a resize separator for each adjustable panel", () => {
+  it("exposes resize separators only for the two auxiliary side panels", () => {
     render(<Workbench />);
 
     expect(
@@ -42,23 +39,19 @@ describe("Workbench panel handles", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("separator", { name: "Resize terminal panel" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("separator", { name: "Resize terminal panel" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("hides resize separators for collapsed auxiliary panels", () => {
+  it("hides the right resize separator when the sidebar is collapsed", () => {
     render(<Workbench />);
 
     fireEvent.click(screen.getByTitle("Toggle sidebar"));
-    fireEvent.click(screen.getByTitle("Toggle terminal"));
 
     expect(
       screen.queryByRole("separator", {
         name: "Resize files and changes panel",
       }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("separator", { name: "Resize terminal panel" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("separator", { name: "Resize projects panel" }),

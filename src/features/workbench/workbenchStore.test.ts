@@ -12,31 +12,28 @@ beforeEach(() => {
 });
 
 describe("workbench panel sizes", () => {
-  it("clamps every panel size to its supported range", () => {
+  it("clamps the side panel sizes to their supported ranges", () => {
     const store = useWorkbenchStore.getState();
     store.setProjectsWidth(10);
     store.setRightPanelWidth(900);
-    store.setTerminalHeight(40);
 
     expect(useWorkbenchStore.getState()).toMatchObject({
       projectsWidth: PANEL_LIMITS.projects.min,
       rightPanelWidth: PANEL_LIMITS.right.max,
-      terminalHeight: PANEL_LIMITS.terminal.min,
     });
   });
 
-  it("persists sizes and restores defaults independently", () => {
+  it("persists side sizes without retired terminal panel state", () => {
     const store = useWorkbenchStore.getState();
     store.setProjectsWidth(280);
     store.setRightPanelWidth(360);
-    store.setTerminalHeight(300);
 
     expect(
       JSON.parse(localStorage.getItem("pi-app.workbench.v1") ?? "{}"),
-    ).toMatchObject({
+    ).toEqual({
       projectsWidth: 280,
       rightPanelWidth: 360,
-      terminalHeight: 300,
+      rightCollapsed: false,
     });
 
     store.resetPanelSize("projects");

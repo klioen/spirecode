@@ -1,17 +1,15 @@
 import { create } from "zustand";
 
-export type PanelName = "projects" | "right" | "terminal";
+export type PanelName = "projects" | "right";
 
 export const DEFAULT_PANEL_SIZES = {
   projects: 220,
   right: 292,
-  terminal: 226,
 } as const;
 
 export const PANEL_LIMITS = {
   projects: { min: 160, max: 360 },
   right: { min: 220, max: 520 },
-  terminal: { min: 120, max: 720 },
 } as const;
 
 const STORAGE_KEY = "pi-app.workbench.v1";
@@ -19,9 +17,7 @@ const STORAGE_KEY = "pi-app.workbench.v1";
 interface PersistedWorkbench {
   projectsWidth: number;
   rightPanelWidth: number;
-  terminalHeight: number;
   rightCollapsed: boolean;
-  terminalCollapsed: boolean;
 }
 
 interface WorkbenchState extends PersistedWorkbench {
@@ -29,10 +25,8 @@ interface WorkbenchState extends PersistedWorkbench {
   setRightView: (view: "files" | "changes") => void;
   setProjectsWidth: (width: number) => void;
   setRightPanelWidth: (width: number) => void;
-  setTerminalHeight: (height: number) => void;
   resetPanelSize: (panel: PanelName) => void;
   toggleRight: () => void;
-  toggleTerminal: () => void;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -41,9 +35,7 @@ const clamp = (value: number, min: number, max: number) =>
 const defaults = (): PersistedWorkbench => ({
   projectsWidth: DEFAULT_PANEL_SIZES.projects,
   rightPanelWidth: DEFAULT_PANEL_SIZES.right,
-  terminalHeight: DEFAULT_PANEL_SIZES.terminal,
   rightCollapsed: false,
-  terminalCollapsed: false,
 });
 
 const normalized = (
@@ -59,13 +51,7 @@ const normalized = (
     PANEL_LIMITS.right.min,
     PANEL_LIMITS.right.max,
   ),
-  terminalHeight: clamp(
-    Number(value?.terminalHeight) || DEFAULT_PANEL_SIZES.terminal,
-    PANEL_LIMITS.terminal.min,
-    PANEL_LIMITS.terminal.max,
-  ),
   rightCollapsed: value?.rightCollapsed === true,
-  terminalCollapsed: value?.terminalCollapsed === true,
 });
 
 const load = (): PersistedWorkbench => {
@@ -90,9 +76,7 @@ const persist = (state: PersistedWorkbench) => {
 const persisted = (state: WorkbenchState): PersistedWorkbench => ({
   projectsWidth: state.projectsWidth,
   rightPanelWidth: state.rightPanelWidth,
-  terminalHeight: state.terminalHeight,
   rightCollapsed: state.rightCollapsed,
-  terminalCollapsed: state.terminalCollapsed,
 });
 
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
@@ -125,38 +109,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       persist(persisted(next));
       return { rightPanelWidth: next.rightPanelWidth };
     }),
-  setTerminalHeight: (terminalHeight) =>
-    set((state) => {
-      const next = {
-        ...state,
-        terminalHeight: clamp(
-          terminalHeight,
-          PANEL_LIMITS.terminal.min,
-          PANEL_LIMITS.terminal.max,
-        ),
-      };
-      persist(persisted(next));
-      return { terminalHeight: next.terminalHeight };
-    }),
   resetPanelSize: (panel) => {
     const setters = useWorkbenchStore.getState();
     if (panel === "projects")
       setters.setProjectsWidth(DEFAULT_PANEL_SIZES.projects);
-    else if (panel === "right")
-      setters.setRightPanelWidth(DEFAULT_PANEL_SIZES.right);
-    else setters.setTerminalHeight(DEFAULT_PANEL_SIZES.terminal);
+    else setters.setRightPanelWidth(DEFAULT_PANEL_SIZES.right);
   },
   toggleRight: () =>
     set((state) => {
       const next = { ...state, rightCollapsed: !state.rightCollapsed };
       persist(persisted(next));
       return { rightCollapsed: next.rightCollapsed };
-    }),
-  toggleTerminal: () =>
-    set((state) => {
-      const next = { ...state, terminalCollapsed: !state.terminalCollapsed };
-      persist(persisted(next));
-      return { terminalCollapsed: next.terminalCollapsed };
     }),
 }));
 

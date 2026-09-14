@@ -16,6 +16,15 @@ export type ResourceTab =
       relativePath: string;
       scope: DiffScope;
       preview: boolean;
+    }
+  | {
+      id: string;
+      projectId: string;
+      type: "terminal";
+      terminalId: string;
+      title: string;
+      status: "running" | "exited" | "error";
+      preview: false;
     };
 
 export const fileResourceId = (projectId: string, relativePath: string) =>
@@ -25,6 +34,8 @@ export const diffResourceId = (
   scope: DiffScope,
   relativePath: string,
 ) => `diff:${projectId}:${scope}:${relativePath}`;
+export const terminalResourceId = (projectId: string, terminalId: string) =>
+  `terminal:${projectId}:${terminalId}`;
 
 interface ProjectEditorView {
   tabs: ResourceTab[];
@@ -35,7 +46,14 @@ interface EditorState {
   navigationGeneration: number;
   resourceGenerationByProject: Record<string, number>;
   diffGenerationByProject: Record<string, number>;
+  terminalSequenceByProject: Record<string, number>;
   open: (tab: ResourceTab, keep?: boolean) => void;
+  openTerminal: (projectId: string, terminalId: string) => ResourceTab;
+  setTerminalStatus: (
+    projectId: string,
+    terminalId: string,
+    status: "running" | "exited" | "error",
+  ) => void;
   keep: (projectId: string, tabId: string) => void;
   close: (projectId: string, tabId: string) => void;
   activate: (projectId: string, tabId: string) => void;
@@ -50,6 +68,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   navigationGeneration: 0,
   resourceGenerationByProject: {},
   diffGenerationByProject: {},
+  terminalSequenceByProject: {},
   open: (incoming, keep = false) =>
     set((state) => {
       const view = state.views[incoming.projectId] ?? emptyView();
@@ -59,8 +78,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         tabs = view.tabs.map((tab) =>
           tab.id === incoming.id && keep ? { ...tab, preview: false } : tab,
         );
+      } else if (incoming.type === "terminal") {
+        tabs = [...view.tabs, incoming];
       } else {
-        const next = { ...incoming, preview: !keep };
+        const next: ResourceTab = { ...incoming, preview: !keep };
         tabs = next.preview
           ? [...view.tabs.filter((tab) => !tab.preview), next]
           : [...view.tabs, next];
@@ -69,6 +90,52 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         views: {
           ...state.views,
           [incoming.projectId]: { tabs, activeTabId: incoming.id },
+        },
+      };
+    }),
+  openTerminal: (projectId, terminalId) => {
+    const sequence = (get().terminalSequenceByProject[projectId] ?? 0) + 1;
+    const terminal: ResourceTab = {
+      id: terminalResourceId(projectId, terminalId),
+      projectId,
+      type: "terminal",
+      terminalId,
+      title: `Terminal${sequence}`,
+      status: "running",
+      preview: false,
+    };
+    set((state) => {
+      const view = state.views[projectId] ?? emptyView();
+      return {
+        terminalSequenceByProject: {
+          ...state.terminalSequenceByProject,
+          [projectId]: sequence,
+        },
+        views: {
+          ...state.views,
+          [projectId]: {
+            tabs: [...view.tabs, terminal],
+            activeTabId: terminal.id,
+          },
+        },
+      };
+    });
+    return terminal;
+  },
+  setTerminalStatus: (projectId, terminalId, status) =>
+    set((state) => {
+      const view = state.views[projectId] ?? emptyView();
+      return {
+        views: {
+          ...state.views,
+          [projectId]: {
+            ...view,
+            tabs: view.tabs.map((tab) =>
+              tab.type === "terminal" && tab.terminalId === terminalId
+                ? { ...tab, status }
+                : tab,
+            ),
+          },
         },
       };
     }),
