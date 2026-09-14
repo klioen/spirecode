@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import {
   RiArrowDownSLine,
   RiCommandLine,
+  RiLayoutLeftLine,
   RiLayoutRightLine,
 } from "@remixicon/react";
 import { ChangesPanel } from "../changes/ChangesPanel";
@@ -51,22 +52,24 @@ export function Workbench() {
     workbench.setProjectsWidth(Math.min(width, available));
   };
   const resizeRight = (width: number) => {
-    const available =
-      viewportWidth - workbench.projectsWidth - MIN_EDITOR_WIDTH - PANEL_GAP;
+    const projects = workbench.projectsCollapsed ? 0 : workbench.projectsWidth;
+    const available = viewportWidth - projects - MIN_EDITOR_WIDTH - PANEL_GAP;
     workbench.setRightPanelWidth(Math.min(width, available));
   };
   const maxCombinedPanels = Math.max(
     0,
     viewportWidth - MIN_EDITOR_WIDTH - PANEL_GAP,
   );
-  const visibleProjectsWidth = Math.min(
-    workbench.projectsWidth,
-    Math.max(
-      PANEL_LIMITS.projects.min,
-      maxCombinedPanels -
-        (workbench.rightCollapsed ? 0 : PANEL_LIMITS.right.min),
-    ),
-  );
+  const visibleProjectsWidth = workbench.projectsCollapsed
+    ? 0
+    : Math.min(
+        workbench.projectsWidth,
+        Math.max(
+          PANEL_LIMITS.projects.min,
+          maxCombinedPanels -
+            (workbench.rightCollapsed ? 0 : PANEL_LIMITS.right.min),
+        ),
+      );
   const visibleRightWidth = workbench.rightCollapsed
     ? 0
     : Math.min(
@@ -82,20 +85,24 @@ export function Workbench() {
   } as CSSProperties;
   return (
     <div
-      className={`workbench ${workbench.rightCollapsed ? "right-collapsed" : ""}`}
+      className={`workbench ${workbench.projectsCollapsed ? "projects-collapsed" : ""} ${workbench.rightCollapsed ? "right-collapsed" : ""}`}
       style={style}
     >
-      <ProjectRail />
-      <PanelResizeHandle
-        label="Resize projects panel"
-        edge="projects"
-        value={workbench.projectsWidth}
-        min={PANEL_LIMITS.projects.min}
-        max={PANEL_LIMITS.projects.max}
-        direction={1}
-        onChange={resizeProjects}
-        onReset={() => workbench.resetPanelSize("projects")}
-      />
+      {!workbench.projectsCollapsed && (
+        <>
+          <ProjectRail />
+          <PanelResizeHandle
+            label="Resize projects panel"
+            edge="projects"
+            value={workbench.projectsWidth}
+            min={PANEL_LIMITS.projects.min}
+            max={PANEL_LIMITS.projects.max}
+            direction={1}
+            onChange={resizeProjects}
+            onReset={() => workbench.resetPanelSize("projects")}
+          />
+        </>
+      )}
       <header className="topbar">
         <div className="project-crumb">
           <span className="traffic-spacer" />
@@ -115,7 +122,18 @@ export function Workbench() {
           <kbd>⌘ K</kbd>
         </button>
         <div className="layout-actions">
-          <button title="Toggle sidebar" onClick={workbench.toggleRight}>
+          <button
+            title="Toggle projects panel"
+            aria-label="Toggle projects panel"
+            onClick={workbench.toggleProjects}
+          >
+            <RiLayoutLeftLine size={17} />
+          </button>
+          <button
+            title="Toggle files panel"
+            aria-label="Toggle files panel"
+            onClick={workbench.toggleRight}
+          >
             <RiLayoutRightLine size={17} />
           </button>
         </div>

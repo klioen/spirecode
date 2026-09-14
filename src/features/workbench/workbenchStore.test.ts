@@ -33,6 +33,7 @@ describe("workbench panel sizes", () => {
     ).toEqual({
       projectsWidth: 280,
       rightPanelWidth: 360,
+      projectsCollapsed: false,
       rightCollapsed: false,
     });
 
@@ -41,5 +42,18 @@ describe("workbench panel sizes", () => {
       DEFAULT_PANEL_SIZES.projects,
     );
     expect(useWorkbenchStore.getState().rightPanelWidth).toBe(360);
+  });
+
+  it("persists the projects panel collapsed state without changing its width", () => {
+    useWorkbenchStore.getState().setProjectsWidth(280);
+    useWorkbenchStore.getState().toggleProjects();
+
+    expect(useWorkbenchStore.getState()).toMatchObject({
+      projectsWidth: 280,
+      projectsCollapsed: true,
+    });
+    expect(
+      JSON.parse(localStorage.getItem("pi-app.workbench.v1") ?? "{}"),
+    ).toMatchObject({ projectsWidth: 280, projectsCollapsed: true });
   });
 });

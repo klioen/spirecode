@@ -43,10 +43,10 @@ describe("Workbench panel handles", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hides the right resize separator when the sidebar is collapsed", () => {
+  it("hides the right resize separator when the files panel is collapsed", () => {
     render(<Workbench />);
 
-    fireEvent.click(screen.getByTitle("Toggle sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: "Toggle files panel" }));
 
     expect(
       screen.queryByRole("separator", {
@@ -56,5 +56,19 @@ describe("Workbench panel handles", () => {
     expect(
       screen.getByRole("separator", { name: "Resize projects panel" }),
     ).toBeInTheDocument();
+  });
+
+  it("hides the projects panel and separator when collapsed", () => {
+    render(<Workbench />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Toggle projects panel" }),
+    );
+
+    expect(screen.queryByText("Projects")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize projects panel" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Editor")).toBeInTheDocument();
   });
 });

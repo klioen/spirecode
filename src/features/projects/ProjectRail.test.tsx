@@ -42,11 +42,17 @@ describe("ProjectRail", () => {
     );
   });
 
-  it("keeps the add-project action visible", () => {
+  it("keeps add/reveal navigation but removes copy and close actions", () => {
     render(<ProjectRail />);
 
     expect(
       screen.getByRole("button", { name: "Open project" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Copy .* path/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Close / }),
+    ).not.toBeInTheDocument();
   });
 });

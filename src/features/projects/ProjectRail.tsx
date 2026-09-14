@@ -1,7 +1,5 @@
 import {
   RiAddLine,
-  RiCloseLine,
-  RiFileCopyLine,
   RiFolderOpenLine,
   RiGitRepositoryLine,
 } from "@remixicon/react";
@@ -28,12 +26,6 @@ export function ProjectRail() {
     } catch (error) {
       store.setError(commandError(error));
     }
-  };
-  const close = async (projectId: string) => {
-    await runProjectAction(async () => {
-      await projectsApi.close(projectId);
-      store.removeProject(projectId);
-    });
   };
   return (
     <aside className="project-rail" aria-label="Projects">
@@ -78,28 +70,6 @@ export function ProjectRail() {
                 <RiGitRepositoryLine size={15} />
                 <span>{project.name}</span>
               </button>
-              {active && (
-                <div className="project-actions">
-                  <button
-                    title="Copy project path"
-                    aria-label={`Copy ${project.name} path`}
-                    onClick={() =>
-                      void runProjectAction(() =>
-                        projectsApi.copyPath(project.id),
-                      )
-                    }
-                  >
-                    <RiFileCopyLine size={14} />
-                  </button>
-                  <button
-                    title="Close project"
-                    aria-label={`Close ${project.name}`}
-                    onClick={() => void close(project.id)}
-                  >
-                    <RiCloseLine size={14} />
-                  </button>
-                </div>
-              )}
             </div>
           );
         })}

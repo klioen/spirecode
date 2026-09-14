@@ -17,6 +17,7 @@ const STORAGE_KEY = "pi-app.workbench.v1";
 interface PersistedWorkbench {
   projectsWidth: number;
   rightPanelWidth: number;
+  projectsCollapsed: boolean;
   rightCollapsed: boolean;
 }
 
@@ -26,6 +27,7 @@ interface WorkbenchState extends PersistedWorkbench {
   setProjectsWidth: (width: number) => void;
   setRightPanelWidth: (width: number) => void;
   resetPanelSize: (panel: PanelName) => void;
+  toggleProjects: () => void;
   toggleRight: () => void;
 }
 
@@ -35,6 +37,7 @@ const clamp = (value: number, min: number, max: number) =>
 const defaults = (): PersistedWorkbench => ({
   projectsWidth: DEFAULT_PANEL_SIZES.projects,
   rightPanelWidth: DEFAULT_PANEL_SIZES.right,
+  projectsCollapsed: false,
   rightCollapsed: false,
 });
 
@@ -51,6 +54,7 @@ const normalized = (
     PANEL_LIMITS.right.min,
     PANEL_LIMITS.right.max,
   ),
+  projectsCollapsed: value?.projectsCollapsed === true,
   rightCollapsed: value?.rightCollapsed === true,
 });
 
@@ -76,6 +80,7 @@ const persist = (state: PersistedWorkbench) => {
 const persisted = (state: WorkbenchState): PersistedWorkbench => ({
   projectsWidth: state.projectsWidth,
   rightPanelWidth: state.rightPanelWidth,
+  projectsCollapsed: state.projectsCollapsed,
   rightCollapsed: state.rightCollapsed,
 });
 
@@ -115,6 +120,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       setters.setProjectsWidth(DEFAULT_PANEL_SIZES.projects);
     else setters.setRightPanelWidth(DEFAULT_PANEL_SIZES.right);
   },
+  toggleProjects: () =>
+    set((state) => {
+      const next = { ...state, projectsCollapsed: !state.projectsCollapsed };
+      persist(persisted(next));
+      return { projectsCollapsed: next.projectsCollapsed };
+    }),
   toggleRight: () =>
     set((state) => {
       const next = { ...state, rightCollapsed: !state.rightCollapsed };

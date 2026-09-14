@@ -52,8 +52,14 @@ button:focus-visible {
   grid-template-areas: "rail top top" "rail center right";
   background: var(--bg);
 }
+.workbench.projects-collapsed {
+  grid-template-columns: 0 minmax(340px, 1fr) var(--right-panel-width, 292px);
+}
 .workbench.right-collapsed {
   grid-template-columns: var(--projects-width, 220px) minmax(340px, 1fr) 0;
+}
+.workbench.projects-collapsed.right-collapsed {
+  grid-template-columns: 0 minmax(340px, 1fr) 0;
 }
 .panel-resize-handle {
   position: absolute;
@@ -215,26 +221,6 @@ body.panel-resizing-vertical * {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-}
-.project-actions {
-  display: flex;
-  padding-right: 3px;
-}
-.project-actions button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  color: #686c75;
-  cursor: pointer;
-}
-.project-actions button:hover {
-  background: #24262c;
-  color: var(--bright);
 }
 .project-empty {
   min-height: 110px;
