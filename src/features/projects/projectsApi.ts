@@ -2,6 +2,7 @@ import { commands } from "../../bindings";
 export const projectsApi = {
   list: commands.projectList,
   catalog: commands.projectCatalog,
+  addOrigin: commands.projectAddOrigin,
   openDialog: commands.projectOpenDialog,
   close: commands.projectClose,
   reveal: commands.projectReveal,

@@ -219,6 +219,15 @@ pub async fn git_list_origin_branches(
 }
 
 #[tauri::command]
+pub async fn project_add_origin(
+    project_id: Uuid,
+    url: String,
+    app: AppHandle,
+) -> CommandResult<OriginBranches> {
+    run_blocking(move || app.state::<AppState>().add_project_origin(project_id, url)).await
+}
+
+#[tauri::command]
 pub async fn worktree_create(
     project_id: Uuid,
     name: String,

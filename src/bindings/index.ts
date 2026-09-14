@@ -32,6 +32,8 @@ export const commands = {
   projectCopyPath: (projectId: string) =>
     command<void>("project_copy_path", { projectId }),
   projectCatalog: () => command<ProjectCatalog>("project_catalog"),
+  projectAddOrigin: (projectId: string, url: string) =>
+    command<OriginBranchCatalog>("project_add_origin", { projectId, url }),
 
   gitListOriginBranches: (projectId: string) =>
     command<OriginBranchCatalog>("git_list_origin_branches", { projectId }),

@@ -1,3 +1,4 @@
+import { RiAddLine, RiRefreshLine } from "@remixicon/react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type {
   OriginBranchCatalog,
@@ -61,6 +62,9 @@ export function NewWorktreeDialog({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showOriginForm, setShowOriginForm] = useState(false);
+  const [originUrl, setOriginUrl] = useState("");
+  const [addingOrigin, setAddingOrigin] = useState(false);
   const refresh = useCallback(async () => {
     setRefreshing(true);
     setError(null);
@@ -82,6 +86,24 @@ export function NewWorktreeDialog({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  const addOrigin = async () => {
+    const url = originUrl.trim();
+    if (!url) return;
+    setAddingOrigin(true);
+    setError(null);
+    try {
+      const result = await projectsApi.addOrigin(projectId, url);
+      setCatalog(result);
+      setBaseRef(result.defaultRef ?? result.branches[0]?.ref ?? "");
+      setName((current) => current || result.nextName);
+      setShowOriginForm(false);
+      setOriginUrl("");
+    } catch (failure) {
+      setError(commandError(failure).message);
+    } finally {
+      setAddingOrigin(false);
+    }
+  };
   const validation = validateWorktreeName(name);
   const create = async () => {
     store.setCreatingProject(projectId);
@@ -105,22 +127,45 @@ export function NewWorktreeDialog({
     <DialogFrame title={`New worktree for ${projectName}`} onClose={onClose}>
       <label>
         Base branch
-        <select
-          aria-label="Base branch"
-          value={baseRef}
-          onChange={(event) => setBaseRef(event.target.value)}
-          disabled={!catalog || creating}
-        >
-          {(catalog?.branches ?? []).map((branch) => (
-            <option key={branch.ref} value={branch.ref}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
+        <div className="branch-field-row">
+          <select
+            aria-label="Base branch"
+            value={baseRef}
+            onChange={(event) => setBaseRef(event.target.value)}
+            disabled={!catalog || creating || addingOrigin}
+          >
+            {(catalog?.branches ?? []).map((branch) => (
+              <option key={branch.ref} value={branch.ref}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
+          {catalog?.originConfigured ? (
+            <button
+              className="branch-icon-button"
+              aria-label="Refresh origin branches"
+              title="Refresh origin branches"
+              onClick={() => void refresh()}
+              disabled={refreshing || creating}
+            >
+              <RiRefreshLine className={refreshing ? "spin" : ""} size={16} />
+            </button>
+          ) : (
+            <button
+              className="branch-icon-button"
+              aria-label="Add origin remote"
+              title="Add origin remote"
+              onClick={() => setShowOriginForm((visible) => !visible)}
+              disabled={!catalog || creating}
+            >
+              <RiAddLine size={17} />
+            </button>
+          )}
+        </div>
       </label>
       {catalog && !catalog.originConfigured && (
         <div className="branch-notice">
-          No origin remote configured. Add an origin remote, then refresh.
+          No origin remote configured. Add an origin URL to continue.
         </div>
       )}
       {catalog?.originConfigured && catalog.branches.length === 0 && (
@@ -128,13 +173,25 @@ export function NewWorktreeDialog({
           No fetched origin branches. Run git fetch origin, then refresh.
         </div>
       )}
-      <button
-        className="branch-refresh"
-        onClick={() => void refresh()}
-        disabled={refreshing || creating}
-      >
-        {refreshing ? "Refreshing…" : "Refresh"}
-      </button>
+      {showOriginForm && !catalog?.originConfigured && (
+        <div className="origin-form">
+          <input
+            aria-label="Origin URL"
+            placeholder="https://github.com/org/repo.git"
+            value={originUrl}
+            onChange={(event) => setOriginUrl(event.target.value)}
+            disabled={addingOrigin}
+            autoFocus
+          />
+          <button
+            className="primary"
+            onClick={() => void addOrigin()}
+            disabled={!originUrl.trim() || addingOrigin}
+          >
+            {addingOrigin ? "Adding…" : "Add origin"}
+          </button>
+        </div>
+      )}
       <label>
         Worktree name
         <input

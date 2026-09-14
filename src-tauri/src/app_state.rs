@@ -59,6 +59,14 @@ impl AppState {
         self.projects.close(project_id)
     }
 
+    pub fn add_project_origin(
+        &self,
+        project_id: Uuid,
+        url: String,
+    ) -> CommandResult<crate::worktrees::OriginBranches> {
+        self.worktrees.add_origin(&self.projects, project_id, url)
+    }
+
     pub fn create_worktree(
         &self,
         project_id: Uuid,

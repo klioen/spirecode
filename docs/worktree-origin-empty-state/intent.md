@@ -7,7 +7,7 @@ New Worktree dialog 在 Project 未配置 origin，或 origin 尚未 fetch 分�
 
 ## Proposed outcome
 
-Dialog 明确区分“未配置 origin”和“origin 没有已 fetch 分支”，展示可操作提醒和 Refresh 按钮。Refresh 重新读取本地 Git remote/tracking refs，不自动执行网络 fetch。
+Dialog 明确区分“未配置 origin”和“origin 没有已 fetch 分支”。未配置 origin 时，Base branch 右侧显示 Add icon，点击后填写 Git remote URL，后端添加 origin 并 fetch；已配置 origin 时显示 Refresh icon，重新读取本地 tracking refs。
 
 ## Affected users and systems
 
