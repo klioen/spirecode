@@ -20,7 +20,8 @@
 
 ## Proof
 
-- 新增测试 red-green。
-- `pnpm vitest run electron/domains/chat/piAdapter.test.ts electron/domains/chat/chatService.test.ts`
-- `pnpm check`
-- bundle、安装并进行真实新会话模型验证。
+- 新增测试先红（4/4 失败）后绿；Chat 针对性测试 9/9 通过。
+- 真实 SDK 探针连续创建两个全新 session，均选择 `traex/gpt-5.6-sol`，services diagnostics 为 0。
+- `pnpm check`：35 个文件、129 个测试通过，format、brand、lint、typecheck 全部通过。
+- `pnpm bundle`：应用与 DMG 构建、签名验证、smoke 全部通过。
+- 安装后创建真实新会话，验证 session JSONL 首个 `model_change` 为配置默认模型。

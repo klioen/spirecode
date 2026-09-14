@@ -5,7 +5,8 @@ import type {
 import {
   ModelRuntime,
   SessionManager,
-  createAgentSession,
+  createAgentSessionFromServices,
+  createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
 
 export interface PiSession {
@@ -45,17 +46,44 @@ export interface PiAdapter {
   open(info: PiSessionInfo, cwd: string): Promise<PiSessionRecord>;
 }
 
+interface PiModelRuntime {
+  getModel(provider: string, modelId: string): unknown;
+  hasConfiguredAuth(provider: string): boolean;
+}
+
+interface PiSettingsManager {
+  getDefaultProvider(): string | undefined;
+  getDefaultModel(): string | undefined;
+}
+
+interface PiSessionManager {
+  buildSessionContext(): { messages: unknown[] };
+}
+
+interface PiServices {
+  modelRuntime: PiModelRuntime;
+  settingsManager: PiSettingsManager;
+}
+
 export interface PiSdk {
-  ModelRuntime: { create(): Promise<unknown> };
+  ModelRuntime: { create(): Promise<PiModelRuntime> };
   SessionManager: {
-    create(cwd: string): unknown;
+    create(cwd: string): PiSessionManager;
     list(cwd: string): Promise<Array<Record<string, unknown>>>;
-    open(path: string, sessionDir?: string, cwdOverride?: string): unknown;
+    open(
+      path: string,
+      sessionDir?: string,
+      cwdOverride?: string,
+    ): PiSessionManager;
   };
-  createAgentSession(options: {
+  createAgentSessionServices(options: {
     cwd: string;
-    modelRuntime: unknown;
-    sessionManager: unknown;
+    modelRuntime: PiModelRuntime;
+  }): Promise<PiServices>;
+  createAgentSessionFromServices(options: {
+    services: PiServices;
+    sessionManager: PiSessionManager;
+    model?: unknown;
   }): Promise<{ session: AgentSession }>;
 }
 
@@ -63,7 +91,8 @@ export async function createPiAdapter(
   sdk: PiSdk = {
     ModelRuntime,
     SessionManager,
-    createAgentSession,
+    createAgentSessionServices,
+    createAgentSessionFromServices,
   } as unknown as PiSdk,
 ): Promise<PiAdapter> {
   const modelRuntime = await sdk.ModelRuntime.create();
@@ -86,14 +115,23 @@ export async function createPiAdapter(
   });
 
   const load = async (
-    sessionManager: unknown,
+    sessionManager: PiSessionManager,
     cwd: string,
     metadata: Partial<PiSessionInfo> = {},
   ): Promise<PiSessionRecord> => {
-    const { session } = await sdk.createAgentSession({
+    const services = await sdk.createAgentSessionServices({
       cwd,
       modelRuntime,
+    });
+    const hasExistingMessages =
+      sessionManager.buildSessionContext().messages.length > 0;
+    const model = hasExistingMessages
+      ? undefined
+      : configuredDefaultModel(services);
+    const { session } = await sdk.createAgentSessionFromServices({
+      services,
       sessionManager,
+      model,
     });
     const now = Date.now();
     return {
@@ -136,6 +174,19 @@ export async function createPiAdapter(
       );
     },
   };
+}
+
+function configuredDefaultModel(services: PiServices): unknown {
+  const provider = services.settingsManager.getDefaultProvider();
+  const modelId = services.settingsManager.getDefaultModel();
+  if (!provider || !modelId) return undefined;
+  const model = services.modelRuntime.getModel(provider, modelId);
+  if (!model || !services.modelRuntime.hasConfiguredAuth(provider)) {
+    throw new Error(
+      `Configured default model ${provider}/${modelId} is unavailable`,
+    );
+  }
+  return model;
 }
 
 function acceptPrompt(
