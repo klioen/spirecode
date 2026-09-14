@@ -10,6 +10,7 @@ import { EditorPane } from "../editor/EditorPane";
 import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
+import { ThemeToggle } from "../theme/ThemeToggle";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 import { PANEL_LIMITS, useWorkbenchStore } from "./workbenchStore";
 
@@ -122,6 +123,7 @@ export function Workbench() {
           <kbd>⌘ K</kbd>
         </button>
         <div className="layout-actions">
+          <ThemeToggle />
           <button
             title="Toggle projects panel"
             aria-label="Toggle projects panel"

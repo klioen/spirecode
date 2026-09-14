@@ -1,4 +1,7 @@
+import type { ITheme } from "@xterm/xterm";
+
 export interface TerminalWriter {
+  options: { theme?: ITheme };
   write(data: string): void;
   dispose(): void;
 }

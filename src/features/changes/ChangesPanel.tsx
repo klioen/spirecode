@@ -15,11 +15,13 @@ function ChangeGroup({
   title,
   changes,
   scope,
+  activeTabId,
 }: {
   projectId: string;
   title: string;
   changes: GitChange[];
   scope: DiffScope;
+  activeTabId: string | null;
 }) {
   if (!changes.length) return null;
   return (
@@ -30,11 +32,13 @@ function ChangeGroup({
         <b>{changes.length}</b>
       </div>
       {changes.map((change) => {
+        const resourceId = diffResourceId(projectId, scope, change.path);
+        const active = activeTabId === resourceId;
         const open = (keep: boolean) => {
           useEditorStore.getState().beginNavigation();
           useEditorStore.getState().open(
             {
-              id: diffResourceId(projectId, scope, change.path),
+              id: resourceId,
               projectId,
               type: "diff",
               scope,
@@ -46,7 +50,8 @@ function ChangeGroup({
         };
         return (
           <button
-            className="change-row"
+            className={`change-row ${active ? "active" : ""}`}
+            aria-current={active ? "page" : undefined}
             key={`${scope}:${change.path}`}
             onClick={() => open(false)}
             onDoubleClick={() => open(true)}
@@ -73,6 +78,9 @@ function ChangeGroup({
 
 export function ChangesPanel({ projectId }: { projectId: string }) {
   const state = useChangesStore((store) => store.byProject[projectId]);
+  const activeTabId = useEditorStore(
+    (editor) => editor.views[projectId]?.activeTabId ?? null,
+  );
   useEffect(() => {
     void refreshChanges(projectId);
   }, [projectId]);
@@ -122,18 +130,21 @@ export function ChangesPanel({ projectId }: { projectId: string }) {
             title="STAGED"
             changes={staged}
             scope="staged"
+            activeTabId={activeTabId}
           />
           <ChangeGroup
             projectId={projectId}
             title="CHANGES"
             changes={unstaged}
             scope="unstaged"
+            activeTabId={activeTabId}
           />
           <ChangeGroup
             projectId={projectId}
             title="UNTRACKED"
             changes={untracked}
             scope="untracked"
+            activeTabId={activeTabId}
           />
         </>
       )}

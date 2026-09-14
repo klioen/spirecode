@@ -16,6 +16,8 @@ import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
 import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
+import { defineMonacoTheme, monacoThemeName } from "../theme/themeColors";
+import { useThemeStore } from "../theme/themeStore";
 import { TerminalInstance } from "../terminal/TerminalInstance";
 import { terminalStream } from "../terminal/terminalStream";
 import { useEditorStore, type ResourceTab } from "./editorStore";
@@ -39,6 +41,7 @@ type LoadState =
 type DocumentTab = Exclude<ResourceTab, { type: "terminal" }>;
 
 function ResourceView({ tab }: { tab: DocumentTab }) {
+  const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const [state, setState] = useState<LoadState>(() => {
     const value = cache.get(tab.id);
     return value ? { status: "ready", value } : { status: "loading" };
@@ -120,7 +123,8 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
       <MonacoEditor
         value={content}
         language={language}
-        theme="vs-dark"
+        theme={monacoThemeName(resolvedTheme)}
+        beforeMount={(monaco) => defineMonacoTheme(monaco, resolvedTheme)}
         options={{
           readOnly: true,
           domReadOnly: true,
@@ -150,6 +154,7 @@ function languageForPath(path: string): string | undefined {
 }
 
 function DiffView({ diff }: { diff: GitDiff }) {
+  const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const diffMode = useChangesStore((store) => store.diffMode);
   const setDiffMode = useChangesStore((store) => store.setDiffMode);
   return (
@@ -179,7 +184,8 @@ function DiffView({ diff }: { diff: GitDiff }) {
           modified={diff.modified ?? ""}
           originalLanguage={languageForPath(diff.path)}
           modifiedLanguage={languageForPath(diff.path)}
-          theme="vs-dark"
+          theme={monacoThemeName(resolvedTheme)}
+          beforeMount={(monaco) => defineMonacoTheme(monaco, resolvedTheme)}
           options={{
             readOnly: true,
             renderSideBySide: diffMode === "split",

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import "../features/theme/themeStore";
 import { commandError } from "../lib/errors";
 import { Workbench } from "../features/workbench/Workbench";
 import { subscribeToGitChanges } from "../features/changes/changesRefresh";

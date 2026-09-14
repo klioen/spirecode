@@ -33,6 +33,9 @@ function Directory({
   const state = tree.directories[directoryKey(projectId, path)];
   const expanded = tree.expandedByProject[projectId] ?? [];
   const generation = tree.generationByProject[projectId] ?? 0;
+  const activeTabId = useEditorStore(
+    (editor) => editor.views[projectId]?.activeTabId,
+  );
   useEffect(() => {
     const key = directoryKey(projectId, path);
     if (state) return;
@@ -66,6 +69,9 @@ function Directory({
       {state.entries.map((entry) => {
         const isDirectory = entry.kind === "directory";
         const isOpen = expanded.includes(entry.relativePath);
+        const isActive =
+          !isDirectory &&
+          activeTabId === fileResourceId(projectId, entry.relativePath);
         const openFile = (keep: boolean) => {
           useEditorStore.getState().beginNavigation();
           useEditorStore.getState().open(
@@ -82,7 +88,8 @@ function Directory({
         return (
           <div key={entry.relativePath}>
             <button
-              className="tree-row"
+              className={`tree-row ${isActive ? "active" : ""}`}
+              aria-current={isActive ? "page" : undefined}
               style={{ paddingLeft: 12 + depth * 14 }}
               onClick={() =>
                 isDirectory

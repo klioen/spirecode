@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { commands, type TerminalMessage } from "../../bindings";
 import { useEditorStore } from "../editor/editorStore";
+import { terminalTheme } from "../theme/themeColors";
+import { useThemeStore } from "../theme/themeStore";
 import { terminalRegistry } from "./terminalRegistry";
 import { decodeTerminalOutput, terminalStream } from "./terminalStream";
 
@@ -13,6 +15,11 @@ export function TerminalInstance({
   terminalId: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const resolvedTheme = useThemeStore((theme) => theme.resolved);
+  useEffect(() => {
+    const terminal = terminalRegistry.get(terminalId);
+    if (terminal) terminal.options.theme = terminalTheme();
+  }, [resolvedTheme, terminalId]);
   useEffect(() => {
     let disposed = false;
     let observer: ResizeObserver | undefined;
@@ -25,12 +32,7 @@ export function TerminalInstance({
           fontFamily: "'JetBrains Mono', Menlo, monospace",
           fontSize: 12,
           scrollback: 5000,
-          theme: {
-            background: "#101114",
-            foreground: "#c9cbd1",
-            cursor: "#9ee493",
-            selectionBackground: "#425047",
-          },
+          theme: terminalTheme(),
         });
         const fit = new FitAddon();
         terminal.loadAddon(fit);
