@@ -7,7 +7,7 @@ Author: keliangliang。 Status: accepted。
 
 ## Proposed outcome
 
-移除底部 Terminal panel。中央主 panel header 右侧增加 New Terminal 图标；点击后创建真实 PTY，并在中央 tab strip 新增 Terminal tab。Terminal 与 file/diff 共用激活、顺序和关闭模型，可同时打开多个，按 `Terminal 1`、`Terminal 2` 递增命名。
+移除底部 Terminal panel。中央主 panel header 右侧增加 New Terminal 图标；点击后创建真实 PTY，并在中央 tab strip 新增 Terminal tab。Terminal 与 file/diff 共用激活、顺序和关闭模型，可同时打开多个，按 `Terminal1`、`Terminal2` 递增命名。
 
 ## Affected users and systems
 
@@ -17,6 +17,7 @@ Author: keliangliang。 Status: accepted。
 
 - Terminal tab 属于当前 project，不跨 project 混用。
 - 每个 project 独立递增编号；关闭后不重用编号，避免名称跳动。
+- Terminal 名称严格使用无空格形式：`Terminal1`、`Terminal2`。
 - 关闭 Terminal tab 必须终止对应 PTY、清理 stream 和 xterm instance。
 - file/diff 关闭不影响后端资源。
 - 不保留隐藏的底部 Terminal panel 或第二套 Terminal tab store。

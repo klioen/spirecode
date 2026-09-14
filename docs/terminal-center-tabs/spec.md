@@ -5,7 +5,7 @@ Status: accepted。 Implements: `docs/terminal-center-tabs/intent.md`。
 
 - 中央 tab header 右侧提供图标按钮，accessible name 为 `New terminal`。
 - 点击按钮依次调用 `terminal_create` 和 `terminal_attach`，成功后打开并激活中央 Terminal tab。
-- Terminal tab 名称按项目独立编号：`Terminal 1`、`Terminal 2`……；关闭后编号不回退。
+- Terminal tab 名称按项目独立编号：`Terminal1`、`Terminal2`……；关闭后编号不回退。
 - 中央 tab union 增加：
 
 ```text
@@ -24,6 +24,8 @@ Status: accepted。 Implements: `docs/terminal-center-tabs/intent.md`。
 - Terminal tab 内容使用现有 `TerminalInstance`，占满中央内容区。
 - PTY exit/error 更新 tab 状态，但不自动关闭 tab。
 - 关闭 Terminal tab：force close PTY、关闭 stream、dispose xterm、再从中央 store 删除；后端已退出或不存在时仍完成 UI 清理。
+- 创建成功但 attach 失败时必须主动 force close 新建 PTY，避免泄漏。
+- Terminal 创建/关闭失败使用现有全局错误 surface，不仅写 console。
 - 移除 `TerminalPanel`、Terminal 独立 tab store、底部 panel DOM、Terminal 折叠按钮、Terminal 高度/持久化/resize handle。
 - Projects 和右栏 resize 继续工作。
 

@@ -22,7 +22,8 @@
 
 ## Risks
 
-- create 成功但 attach 失败会泄漏 PTY；失败路径必须主动 close。
+- create 成功但 attach 失败会泄漏 PTY；失败路径必须主动 force close 并报告错误。
+- Terminal 命名必须保持 `Terminal1` 无空格格式，不能沿用旧 `shell 1` 或设计初稿中的 `Terminal 1`。
 - 关闭 tab 是异步操作，不能先删除 UI 后悄悄留下 PTY。
 - `TerminalInstance` 卸载只释放 xterm view，不应自行终止 PTY，后端生命周期仍由 tab close 管理。
 - 迁移后若残留 terminal localStorage 字段，应在 hydration 时忽略，不继续写回。
