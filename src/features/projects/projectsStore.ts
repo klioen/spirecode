@@ -54,7 +54,16 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
           : firstWorktreeId(projects),
     })),
   hydrateCatalog: (catalog) =>
-    set({ projects: catalog.projects, activeWorktreeId: null }),
+    set({
+      projects: catalog.projects,
+      activeWorktreeId:
+        catalog.projects.length === 1
+          ? (catalog.projects[0]?.worktrees.find(({ kind }) => kind === "main")
+              ?.id ??
+            catalog.projects[0]?.worktrees[0]?.id ??
+            null)
+          : null,
+    }),
   setCatalog: (catalog) =>
     set({
       projects: catalog.projects,

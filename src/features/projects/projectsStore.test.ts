@@ -38,14 +38,26 @@ beforeEach(() =>
 );
 
 describe("nested project worktree state", () => {
-  it("hydrates projects without restoring a selected worktree", () => {
+  it("selects main when startup catalog has exactly one project", () => {
+    const main = worktree("one", "one-main");
+    const feature = worktree("one", "feature", "managed");
     useProjectsStore.getState().hydrateCatalog({
       version: 2,
-      projects: [project("one")],
-      activeWorktreeId: "one-main",
+      projects: [project("one", main, feature)],
+      activeWorktreeId: "feature",
     });
 
     expect(useProjectsStore.getState().projects).toHaveLength(1);
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("one-main");
+  });
+
+  it("does not select when startup catalog has multiple projects", () => {
+    useProjectsStore.getState().hydrateCatalog({
+      version: 2,
+      projects: [project("one"), project("two")],
+      activeWorktreeId: "one-main",
+    });
+
     expect(useProjectsStore.getState().activeWorktreeId).toBeNull();
   });
 
