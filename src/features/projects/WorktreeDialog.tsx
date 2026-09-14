@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type {
   OriginBranchCatalog,
   WorktreeDeleteInspection,
@@ -60,21 +60,28 @@ export function NewWorktreeDialog({
   const [baseRef, setBaseRef] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let disposed = false;
-    void projectsApi.listOriginBranches(projectId).then(
-      (result) => {
-        if (disposed) return;
-        setCatalog(result);
-        setBaseRef(result.defaultRef ?? result.branches[0]?.ref ?? "");
-        setName(result.nextName);
-      },
-      (failure) => !disposed && setError(commandError(failure).message),
-    );
-    return () => {
-      disposed = true;
-    };
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const result = await projectsApi.listOriginBranches(projectId);
+      setCatalog(result);
+      setBaseRef((current) =>
+        result.branches.some((branch) => branch.ref === current)
+          ? current
+          : (result.defaultRef ?? result.branches[0]?.ref ?? ""),
+      );
+      setName((current) => current || result.nextName);
+    } catch (failure) {
+      setError(commandError(failure).message);
+    } finally {
+      setRefreshing(false);
+    }
   }, [projectId]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
   const validation = validateWorktreeName(name);
   const create = async () => {
     store.setCreatingProject(projectId);
@@ -111,6 +118,23 @@ export function NewWorktreeDialog({
           ))}
         </select>
       </label>
+      {catalog && !catalog.originConfigured && (
+        <div className="branch-notice">
+          No origin remote configured. Add an origin remote, then refresh.
+        </div>
+      )}
+      {catalog?.originConfigured && catalog.branches.length === 0 && (
+        <div className="branch-notice">
+          No fetched origin branches. Run git fetch origin, then refresh.
+        </div>
+      )}
+      <button
+        className="branch-refresh"
+        onClick={() => void refresh()}
+        disabled={refreshing || creating}
+      >
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </button>
       <label>
         Worktree name
         <input

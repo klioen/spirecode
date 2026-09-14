@@ -26,6 +26,7 @@ pub struct OriginBranch {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OriginBranches {
+    pub origin_configured: bool,
     pub branches: Vec<OriginBranch>,
     pub default_ref: Option<String>,
     pub next_name: String,
@@ -72,10 +73,13 @@ impl WorktreeService {
         project_id: Uuid,
     ) -> CommandResult<OriginBranches> {
         let project = projects.project(project_id)?;
-        let branches = origin_branches(Path::new(&project.path))?;
-        let default_ref = default_origin_ref(Path::new(&project.path), &branches)?;
+        let root = Path::new(&project.path);
+        let origin_configured = origin_configured(root)?;
+        let branches = origin_branches(root)?;
+        let default_ref = default_origin_ref(root, &branches)?;
         let next_name = self.next_name(&project)?;
         Ok(OriginBranches {
+            origin_configured,
             branches,
             default_ref,
             next_name,
@@ -356,6 +360,14 @@ fn validate_name(name: &str) -> CommandResult<()> {
         return Err(CommandError::new("INVALID_WORKTREE_NAME", "name may contain ASCII letters, digits, '-' and '_', and must start and end alphanumeric"));
     }
     Ok(())
+}
+
+fn origin_configured(root: &Path) -> CommandResult<bool> {
+    Ok(
+        run_git_allow_failure(root, &["remote", "get-url", "origin"])?
+            .status
+            .success(),
+    )
 }
 
 fn origin_branches(root: &Path) -> CommandResult<Vec<OriginBranch>> {
@@ -690,6 +702,7 @@ mod tests {
             .service
             .list_origin_branches(&fixture.projects, fixture.project.id)
             .unwrap();
+        assert!(result.origin_configured);
         assert_eq!(result.default_ref.as_deref(), Some("origin/main"));
         assert_eq!(result.next_name, "worktree1");
         assert_eq!(
@@ -700,6 +713,23 @@ mod tests {
                 .collect::<HashSet<_>>(),
             HashSet::from(["main", "release"])
         );
+    }
+
+    #[test]
+    fn reports_when_origin_is_not_configured() {
+        let root = std::env::temp_dir().join(format!("pi-no-origin-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        git(&root, &["init"]);
+        let projects = ProjectService::load(root.join("state.json")).unwrap();
+        let project = projects.open_path(&root).unwrap();
+        let service = WorktreeService::with_managed_home(root.join("managed"));
+
+        let result = service.list_origin_branches(&projects, project.id).unwrap();
+
+        assert!(!result.origin_configured);
+        assert!(result.branches.is_empty());
+        assert!(result.default_ref.is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -47,6 +47,7 @@ beforeEach(() => {
 describe("worktree dialogs", () => {
   it("loads origin branches and uses the backend-provided default name", async () => {
     vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
+      originConfigured: true,
       branches: [
         { ref: "origin/main", name: "main" },
         { ref: "origin/release", name: "release" },
@@ -82,6 +83,63 @@ describe("worktree dialogs", () => {
         "origin/release",
       ),
     );
+  });
+
+  it("explains when origin is not configured and can refresh", async () => {
+    vi.mocked(projectsApi.listOriginBranches)
+      .mockResolvedValueOnce({
+        originConfigured: false,
+        branches: [],
+        defaultRef: null,
+        nextName: "worktree1",
+      })
+      .mockResolvedValueOnce({
+        originConfigured: true,
+        branches: [{ ref: "origin/main", name: "main" }],
+        defaultRef: "origin/main",
+        nextName: "worktree1",
+      });
+
+    render(
+      <NewWorktreeDialog
+        projectId="project-id"
+        projectName="Project"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/No origin remote configured/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(
+      await screen.findByRole("option", { name: "main" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Base branch" })).toHaveValue(
+      "origin/main",
+    );
+  });
+
+  it("explains when origin has no fetched branches", async () => {
+    vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
+      originConfigured: true,
+      branches: [],
+      defaultRef: null,
+      nextName: "worktree1",
+    });
+
+    render(
+      <NewWorktreeDialog
+        projectId="project-id"
+        projectName="Project"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/No fetched origin branches/),
+    ).toBeInTheDocument();
   });
 
   it("requires force deletion when inspection reports dirty or busy state", async () => {

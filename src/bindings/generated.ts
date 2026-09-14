@@ -51,6 +51,7 @@ export interface OriginBranch {
 }
 
 export interface OriginBranchCatalog {
+  originConfigured: boolean;
   branches: OriginBranch[];
   defaultRef: string | null;
   nextName: string;

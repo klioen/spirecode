@@ -443,6 +443,33 @@ body.panel-resizing-vertical * {
   background: var(--control-bg);
   color: var(--text-default);
 }
+.branch-notice {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--control-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.branch-refresh {
+  margin-top: 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  background: var(--control-bg);
+  color: var(--text-default);
+  cursor: pointer;
+}
+.branch-refresh:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--control-hover);
+}
+.branch-refresh:disabled {
+  color: var(--text-subtle);
+  cursor: default;
+}
 .field-error,
 .dialog-error {
   margin-top: 8px;
