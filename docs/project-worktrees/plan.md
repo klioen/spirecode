@@ -39,7 +39,7 @@
 
 1. 建立 Rust CatalogV2 和 V1 migration 测试，保留旧 ID 作为 main worktree ID。
 2. 实现 worktree branch discovery、`~/.pi/worktrees` ownership marker、name validation/create/rollback 集成测试。
-3. 实现 rename branch+path 和 delete clean/dirty/busy/force/rollback 集成测试。
+3. 实现 rename branch+path 和 delete clean/dirty/busy/force/rollback 集成测试；dirty fixture 必须分别覆盖 staged、unstaged、untracked，且非 force 删除证明目录与 catalog 均保持不变。
 4. 将 AppState watcher/Git/Terminal 作用域切换到 worktree ID。
 5. 更新 Tauri commands 和 TypeScript contracts。
 6. 前端 store 引入 activeWorktreeId，资源 identity 全量改名并测试隔离。
@@ -84,5 +84,5 @@ pnpm bundle
 5. 验证 cwd、branch、HEAD、无 upstream、catalog persistence、watcher、terminal cwd。
 6. 同项目连续创建默认 `worktree2`。
 7. Rename `worktree1 -> release-fix`，验证 branch/path/catalog 同步且 ID 不变。
-8. clean delete 保留 local branch；dirty/busy 非 force 拒绝；force delete 关闭 Terminal 并删除目录。
+8. clean delete 不带 `--force` 且保留 local branch；staged/unstaged/untracked dirty 与 busy 非 force 均拒绝并保留目录/record；显式 force delete 才关闭 Terminal、丢弃改动并删除目录。
 9. 创建同名 Project ownership 冲突 fixture，验证拒绝而非复用/误删。

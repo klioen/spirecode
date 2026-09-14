@@ -186,7 +186,7 @@ worktree_inspect_delete(worktreeId) -> {
 
 默认 `force:false` 时：
 
-- dirty/untracked worktree 拒绝并返回 `WORKTREE_DIRTY`；
+- 通过 porcelain status 检查 staged、unstaged、untracked 三类未 commit 改动；任一存在即拒绝并返回 `WORKTREE_DIRTY`，且不得执行 `git worktree remove`；
 - running Terminal 拒绝并返回 `WORKTREE_BUSY`。
 
 UI 先 inspect：若 dirty 或 terminalCount > 0，显示破坏性确认，明确说明会终止 Terminal 并丢弃未提交修改。确认后调用 `force:true`。
@@ -196,7 +196,7 @@ UI 先 inspect：若 dirty 或 terminalCount > 0，显示破坏性确认，明�
 1. repository mutation mutex + ownership marker validation。
 2. `force:true` 时关闭该 worktree 的所有 Terminal。
 3. stop watcher、clear Git lock/cache。
-4. `git worktree remove [--force] <path>`。
+4. clean + `force:false` 执行 `git worktree remove <path>`；只有用户确认后的 `force:true` 才执行 `git worktree remove --force <path>`。
 5. 从 catalog 删除 record，原子保存。
 6. 保留 local branch，不执行 `git branch -D`。
 7. 清理空的 project managed root（marker 除外时可保留）。
