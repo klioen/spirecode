@@ -398,7 +398,7 @@ export class WorktreeService {
   }
 
   private managedRoot(project: ProjectSummary): string {
-    return path.join(this.managedHome, project.name);
+    return path.join(this.managedHome, "worktrees", project.name);
   }
 
   private async ensureOwner(
