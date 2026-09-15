@@ -108,4 +108,21 @@ describe("ProjectRail", () => {
       screen.getByRole("menuitem", { name: "Delete" }),
     ).toBeInTheDocument();
   });
+
+  it("closes an open worktree menu when clicking outside it", () => {
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Manage feature" }));
+
+    fireEvent.pointerDown(screen.getByText("PROJECTS"));
+
+    expect(
+      screen.queryByRole("menuitem", { name: "Rename" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Delete" }),
+    ).not.toBeInTheDocument();
+  });
 });

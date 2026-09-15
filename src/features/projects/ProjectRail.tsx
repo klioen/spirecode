@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   RiAddLine,
   RiArrowRightSLine,
@@ -27,9 +27,29 @@ export function ProjectRail() {
   const store = useProjectsStore();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
+  const openMenuRowRef = useRef<HTMLDivElement | null>(null);
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
     () => new Set(),
   );
+  useEffect(() => {
+    if (!menuWorktreeId) return;
+
+    const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !openMenuRowRef.current?.contains(event.target)
+      ) {
+        setMenuWorktreeId(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeMenuOnOutsidePointerDown);
+    return () =>
+      document.removeEventListener(
+        "pointerdown",
+        closeMenuOnOutsidePointerDown,
+      );
+  }, [menuWorktreeId]);
   const toggleProject = (projectId: string) => {
     setExpandedProjectIds((current) => {
       const next = new Set(current);
@@ -132,6 +152,11 @@ export function ProjectRail() {
                       <div
                         className={`worktree-row ${active ? "active" : ""}`}
                         key={worktree.id}
+                        ref={
+                          menuWorktreeId === worktree.id
+                            ? openMenuRowRef
+                            : undefined
+                        }
                         onContextMenu={(event) => {
                           if (!managed) return;
                           event.preventDefault();
