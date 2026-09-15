@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   RiAddLine,
+  RiArrowRightSLine,
   RiFolderOpenLine,
   RiGitBranchLine,
   RiGitRepositoryLine,
@@ -26,6 +27,18 @@ export function ProjectRail() {
   const store = useProjectsStore();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleProject = (projectId: string) => {
+    setExpandedProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+    setMenuWorktreeId(null);
+  };
   const open = async () => {
     store.setLoading(true);
     try {
@@ -75,102 +88,119 @@ export function ProjectRail() {
         </button>
       </div>
       <div className="project-list">
-        {store.projects.map((project) => (
-          <section className="project-group" key={project.id}>
-            <div className="project-heading">
-              <div className="project-name" title={project.path}>
-                <RiGitRepositoryLine size={15} />
-                <span>{project.name}</span>
+        {store.projects.map((project) => {
+          const expanded = expandedProjectIds.has(project.id);
+          return (
+            <section className="project-group" key={project.id}>
+              <div className="project-heading">
+                <button
+                  className="project-name"
+                  title={project.path}
+                  aria-label={`${expanded ? "Collapse" : "Expand"} ${project.name}`}
+                  aria-expanded={expanded}
+                  onClick={() => toggleProject(project.id)}
+                >
+                  <RiArrowRightSLine
+                    className={`project-chevron ${expanded ? "expanded" : ""}`}
+                    size={15}
+                  />
+                  <RiGitRepositoryLine size={15} />
+                  <span>{project.name}</span>
+                </button>
+                <button
+                  className="worktree-add"
+                  aria-label={`Create worktree for ${project.name}`}
+                  title={`Create worktree for ${project.name}`}
+                  disabled={store.creatingProjectId === project.id}
+                  onClick={() =>
+                    setDialog({
+                      type: "new",
+                      projectId: project.id,
+                      projectName: project.name,
+                    })
+                  }
+                >
+                  <RiAddLine size={15} />
+                </button>
               </div>
-              <button
-                className="worktree-add"
-                aria-label={`Create worktree for ${project.name}`}
-                title={`Create worktree for ${project.name}`}
-                disabled={store.creatingProjectId === project.id}
-                onClick={() =>
-                  setDialog({
-                    type: "new",
-                    projectId: project.id,
-                    projectName: project.name,
-                  })
-                }
-              >
-                <RiAddLine size={15} />
-              </button>
-            </div>
-            <div className="worktree-list">
-              {project.worktrees.map((worktree) => {
-                const active = worktree.id === store.activeWorktreeId;
-                const managed = worktree.kind === "managed";
-                return (
-                  <div
-                    className={`worktree-row ${active ? "active" : ""}`}
-                    key={worktree.id}
-                    onContextMenu={(event) => {
-                      if (!managed) return;
-                      event.preventDefault();
-                      setMenuWorktreeId(worktree.id);
-                    }}
-                  >
-                    <button
-                      className="worktree-name"
-                      aria-current={active ? "page" : undefined}
-                      aria-label={worktree.name}
-                      title={`${worktree.path} · ${worktree.branch} · Double-click to reveal`}
-                      onClick={() => void select(worktree.id)}
-                      onDoubleClick={() => void reveal(worktree.id)}
-                    >
-                      <RiGitBranchLine size={14} />
-                      <span>{worktree.name}</span>
-                    </button>
-                    {managed && (
-                      <button
-                        className="worktree-menu-button"
-                        aria-label={`Manage ${worktree.name}`}
-                        onClick={() =>
-                          setMenuWorktreeId(
-                            menuWorktreeId === worktree.id ? null : worktree.id,
-                          )
-                        }
+              {expanded && (
+                <div className="worktree-list">
+                  {project.worktrees.map((worktree) => {
+                    const active = worktree.id === store.activeWorktreeId;
+                    const managed = worktree.kind === "managed";
+                    return (
+                      <div
+                        className={`worktree-row ${active ? "active" : ""}`}
+                        key={worktree.id}
+                        onContextMenu={(event) => {
+                          if (!managed) return;
+                          event.preventDefault();
+                          setMenuWorktreeId(worktree.id);
+                        }}
                       >
-                        <RiMore2Fill size={15} />
-                      </button>
-                    )}
-                    {menuWorktreeId === worktree.id && (
-                      <div className="worktree-menu" role="menu">
                         <button
-                          role="menuitem"
-                          onClick={() => {
-                            setMenuWorktreeId(null);
-                            setDialog({ type: "rename", worktree });
-                          }}
+                          className="worktree-name"
+                          aria-current={active ? "page" : undefined}
+                          aria-label={worktree.name}
+                          title={`${worktree.path} · ${worktree.branch} · Double-click to reveal`}
+                          onClick={() => void select(worktree.id)}
+                          onDoubleClick={() => void reveal(worktree.id)}
                         >
-                          Rename
+                          <RiGitBranchLine size={14} />
+                          <span>{worktree.name}</span>
                         </button>
-                        <button
-                          role="menuitem"
-                          className="danger-text"
-                          onClick={() => {
-                            setMenuWorktreeId(null);
-                            setDialog({ type: "delete", worktree });
-                          }}
-                        >
-                          Delete
-                        </button>
+                        {managed && (
+                          <button
+                            className="worktree-menu-button"
+                            aria-label={`Manage ${worktree.name}`}
+                            onClick={() =>
+                              setMenuWorktreeId(
+                                menuWorktreeId === worktree.id
+                                  ? null
+                                  : worktree.id,
+                              )
+                            }
+                          >
+                            <RiMore2Fill size={15} />
+                          </button>
+                        )}
+                        {menuWorktreeId === worktree.id && (
+                          <div className="worktree-menu" role="menu">
+                            <button
+                              role="menuitem"
+                              onClick={() => {
+                                setMenuWorktreeId(null);
+                                setDialog({ type: "rename", worktree });
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="danger-text"
+                              onClick={() => {
+                                setMenuWorktreeId(null);
+                                setDialog({ type: "delete", worktree });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-              {store.creatingProjectId === project.id && (
-                <div className="worktree-progress">
-                  <span className="spinner" />
-                  Creating worktree…
+                    );
+                  })}
+                  {store.creatingProjectId === project.id && (
+                    <div className="worktree-progress">
+                      <span className="spinner" />
+                      Creating worktree…
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          </section>
-        ))}
+            </section>
+          );
+        })}
       </div>
       {store.projects.length === 0 && (
         <button className="project-empty" onClick={() => void open()}>

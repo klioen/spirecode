@@ -167,10 +167,7 @@ export class WorktreeService {
   }
 
   async rollbackCreated(worktreeId: string): Promise<void> {
-    const worktree = await this.projects.worktree(worktreeId);
-    const project = await this.projects.project(worktree.projectId);
     await this.delete(worktreeId, true);
-    await runGit(project.path, ["branch", "-D", "--", worktree.branch]);
   }
 
   async rename(worktreeId: string, name: string): Promise<WorktreeSummary> {
@@ -273,6 +270,14 @@ export class WorktreeService {
         ...(force ? ["--force"] : []),
         current.path,
       ]);
+      try {
+        await runGit(project.path, ["branch", "-D", "--", current.branch]);
+      } catch (error) {
+        throw toCommandError(error).detail(
+          "recovery",
+          "Git worktree was removed but its local branch and catalog record remain; remove the branch and retry delete",
+        );
+      }
       try {
         await this.projects.removeWorktree(worktreeId);
       } catch (error) {

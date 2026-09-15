@@ -148,7 +148,7 @@ describe("WorktreeService", () => {
     });
   });
 
-  it("creates, renames, and deletes a managed worktree while preserving its branch", async () => {
+  it("creates, renames, and deletes a managed worktree with its local branch", async () => {
     const value = await fixture();
     const created = await value.service.create(
       value.project.id,
@@ -177,13 +177,13 @@ describe("WorktreeService", () => {
     await expect(value.service.delete(created.id, false)).resolves.toEqual({
       ok: true,
     });
-    expect(
-      await git(value.project.path, [
+    await expect(
+      git(value.project.path, [
         "show-ref",
         "--verify",
         "refs/heads/release-fix",
       ]),
-    ).toContain("refs/heads/release-fix");
+    ).rejects.toBeDefined();
     expect(value.worktrees).toHaveLength(0);
   });
 
@@ -245,6 +245,9 @@ describe("WorktreeService", () => {
       ok: true,
     });
     expect(value.terminals.closed).toEqual([created.id]);
+    await expect(
+      git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
+    ).rejects.toBeDefined();
   });
 
   it("rolls back both checkout and branch after post-create failure", async () => {
