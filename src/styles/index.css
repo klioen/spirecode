@@ -868,12 +868,10 @@ body.panel-resizing-vertical * {
 .chat-tool-group {
   width: min(560px, 100%);
   overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--elevated-bg) 72%, transparent);
-  transition:
-    width 180ms ease,
-    border-color 120ms ease;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  transition: width 180ms ease;
 }
 .chat-thinking[open],
 .chat-tool-group[open] {
@@ -900,14 +898,14 @@ body.panel-resizing-vertical * {
 .chat-thinking summary:hover,
 .chat-tool-group > summary:hover,
 .chat-tool summary:hover {
-  background: var(--control-hover);
-  color: var(--text-default);
+  background: color-mix(in srgb, var(--control-hover) 55%, transparent);
+  color: var(--text-muted);
 }
 .chat-status-icon {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
-  color: var(--accent);
+  color: var(--text-subtle);
 }
 .chat-disclosure-icon {
   width: 16px;
@@ -921,10 +919,10 @@ details[open] > summary > .chat-disclosure-icon {
 }
 .chat-thinking-content {
   max-height: 360px;
-  padding: 14px 16px 16px 36px;
+  padding: 10px 16px 16px 36px;
   overflow: auto;
-  border-top: 1px solid var(--border-muted);
-  color: var(--text-muted);
+  border: 0;
+  color: var(--text-subtle);
   font-size: 13px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -934,14 +932,14 @@ details[open] > summary > .chat-disclosure-icon {
   color: var(--danger);
 }
 .chat-tool-list {
-  padding: 7px 12px 12px 34px;
-  border-top: 1px solid var(--border-muted);
+  padding: 4px 12px 10px 34px;
+  border: 0;
   display: grid;
   gap: 2px;
 }
 .chat-tool {
   min-width: 0;
-  border-left: 1px solid var(--border-default);
+  border: 0;
 }
 .chat-tool summary {
   min-height: 34px;
@@ -950,7 +948,7 @@ details[open] > summary > .chat-disclosure-icon {
 }
 .chat-tool-name {
   flex: 0 0 auto;
-  color: var(--text-default);
+  color: var(--text-muted);
   font:
     12px/1.4 ui-monospace,
     SFMono-Regular,
@@ -980,14 +978,14 @@ details[open] > summary > .chat-disclosure-icon {
 }
 .chat-tool-detail section {
   overflow: hidden;
-  border: 1px solid var(--border-muted);
+  border: 0;
   border-radius: 7px;
-  background: var(--control-bg);
+  background: color-mix(in srgb, var(--control-bg) 68%, transparent);
 }
 .chat-tool h4 {
   margin: 0;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--border-muted);
+  padding: 7px 10px 2px;
+  border: 0;
   color: var(--text-subtle);
   font-size: 10px;
   font-weight: 600;
