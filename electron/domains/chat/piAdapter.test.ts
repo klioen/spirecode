@@ -77,8 +77,14 @@ function sdkFixture(options: {
     createAgentSessionServices: async (input: {
       cwd: string;
       modelRuntime: unknown;
+      resourceLoaderOptions?: unknown;
     }) => {
-      calls.push(["services", input.cwd, input.modelRuntime]);
+      calls.push([
+        "services",
+        input.cwd,
+        input.modelRuntime,
+        input.resourceLoaderOptions,
+      ]);
       return {
         cwd: input.cwd,
         modelRuntime: runtime,
@@ -94,24 +100,40 @@ function sdkFixture(options: {
       return { session: fixture.session };
     },
   } as unknown as PiSdk;
-  return { sdk, calls, fixture, runtime, manager };
+  const loadResources = async () => ({
+    settingsManager: settings,
+    resourceLoaderOptions: {
+      noExtensions: true,
+      additionalExtensionPaths: ["/bundle/pi-memory"],
+    },
+    diagnostics: [],
+  });
+  return { sdk, calls, fixture, runtime, manager, loadResources };
 }
 
 describe("piAdapter", () => {
   it("resolves the configured default after extension providers load", async () => {
     const configuredModel = { provider: "traex", id: "gpt-5.6-sol" };
-    const { sdk, calls, runtime, manager } = sdkFixture({
+    const { sdk, calls, runtime, manager, loadResources } = sdkFixture({
       defaultProvider: "traex",
       defaultModel: "gpt-5.6-sol",
       resolvedModel: configuredModel,
     });
 
-    const adapter = await createPiAdapter(sdk);
+    const adapter = await createPiAdapter(sdk, { loadResources });
     await adapter.create("/repo");
 
     expect(calls).toEqual([
       "runtime",
-      ["services", "/repo", runtime],
+      [
+        "services",
+        "/repo",
+        runtime,
+        {
+          noExtensions: true,
+          additionalExtensionPaths: ["/bundle/pi-memory"],
+        },
+      ],
       ["getModel", "traex", "gpt-5.6-sol"],
       ["hasConfiguredAuth", "traex"],
       ["session", manager, configuredModel],
@@ -119,14 +141,14 @@ describe("piAdapter", () => {
   });
 
   it("preserves the saved model when opening a session with messages", async () => {
-    const { sdk, calls, manager } = sdkFixture({
+    const { sdk, calls, manager, loadResources } = sdkFixture({
       existingMessages: [{ role: "user", content: "existing" }],
       defaultProvider: "traex",
       defaultModel: "gpt-5.6-sol",
       resolvedModel: { provider: "traex", id: "gpt-5.6-sol" },
     });
 
-    const adapter = await createPiAdapter(sdk);
+    const adapter = await createPiAdapter(sdk, { loadResources });
     await adapter.open(
       {
         sessionId: "s1",
@@ -146,13 +168,13 @@ describe("piAdapter", () => {
   });
 
   it("rejects a configured default that is unavailable after provider loading", async () => {
-    const { sdk, calls } = sdkFixture({
+    const { sdk, calls, loadResources } = sdkFixture({
       defaultProvider: "traex",
       defaultModel: "missing",
       resolvedModel: undefined,
     });
 
-    const adapter = await createPiAdapter(sdk);
+    const adapter = await createPiAdapter(sdk, { loadResources });
     await expect(adapter.create("/repo")).rejects.toThrow(
       "Configured default model traex/missing is unavailable",
     );
@@ -162,8 +184,8 @@ describe("piAdapter", () => {
   });
 
   it("acknowledges send during prompt preflight and queues follow-ups", async () => {
-    const { sdk, fixture } = sdkFixture({});
-    const adapter = await createPiAdapter(sdk);
+    const { sdk, fixture, loadResources } = sdkFixture({});
+    const adapter = await createPiAdapter(sdk, { loadResources });
     const created = await adapter.create("/repo");
     await created.session.send("first");
     fixture.setStreaming(true);

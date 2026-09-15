@@ -4,7 +4,13 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "dist-electron", "release", "src/bindings/generated.ts"],
+    ignores: [
+      ".build",
+      "dist",
+      "dist-electron",
+      "release",
+      "src/bindings/generated.ts",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
