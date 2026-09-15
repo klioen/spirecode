@@ -52,7 +52,44 @@ it("uses thinking as a boundary between tool groups", () => {
   ]);
 });
 
-it("uses messages and notices as process boundaries", () => {
+it("groups tools across invisible completed assistant placeholders", () => {
+  const emptyAssistant: ChatTimelineItem = {
+    type: "message",
+    id: "empty-assistant",
+    role: "assistant",
+    content: "  ",
+    status: "complete",
+  };
+
+  expect(
+    projectChatTimeline([
+      tool("tool-1"),
+      emptyAssistant,
+      tool("tool-2"),
+      emptyAssistant,
+      tool("tool-3"),
+    ]),
+  ).toEqual([
+    {
+      type: "process",
+      id: "tool:tool-1:tool:tool-3",
+      steps: [tool("tool-1"), tool("tool-2"), tool("tool-3")],
+    },
+  ]);
+});
+
+it("keeps an empty streaming assistant when no process follows it", () => {
+  const waiting: ChatTimelineItem = {
+    type: "message",
+    id: "waiting",
+    role: "assistant",
+    content: "",
+    status: "streaming",
+  };
+  expect(projectChatTimeline([waiting])).toEqual([waiting]);
+});
+
+it("uses visible messages and notices as process boundaries", () => {
   const notice: ChatTimelineItem = {
     type: "notice",
     id: "notice-1",
