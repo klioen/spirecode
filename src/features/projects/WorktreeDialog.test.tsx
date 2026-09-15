@@ -76,7 +76,7 @@ describe("worktree dialogs", () => {
 
     expect(await screen.findByDisplayValue("worktree3")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Base branch" })).toHaveValue(
-      "origin/release",
+      "release",
     );
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() =>
@@ -86,6 +86,46 @@ describe("worktree dialogs", () => {
         "origin/release",
       ),
     );
+  });
+
+  it("searches origin branches and only creates from a selected result", async () => {
+    vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
+      originConfigured: true,
+      branches: [
+        { ref: "origin/main", name: "main" },
+        { ref: "origin/release/next", name: "release/next" },
+        { ref: "origin/feature/search", name: "feature/search" },
+      ],
+      defaultRef: "origin/main",
+      nextName: "worktree1",
+    });
+    vi.mocked(projectsApi.createWorktree).mockResolvedValue(managed);
+
+    render(
+      <NewWorktreeDialog
+        projectId="project-id"
+        projectName="Project"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const branch = await screen.findByRole("combobox", { name: "Base branch" });
+    fireEvent.change(branch, { target: { value: "release" } });
+    expect(
+      screen.getByRole("option", { name: "release/next" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "main" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("option", { name: "release/next" }));
+    expect(branch).toHaveValue("release/next");
+    expect(screen.getByRole("button", { name: "Create" })).toBeEnabled();
+
+    fireEvent.change(branch, { target: { value: "missing" } });
+    expect(screen.getByText("No matching branches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
   });
 
   it("shows refresh when origin is not configured", async () => {
@@ -158,6 +198,16 @@ describe("worktree dialogs", () => {
       await screen.findByText(/Uncommitted changes will be lost/),
     ).toBeInTheDocument();
     expect(screen.getByText(/2 running terminal/)).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        Boolean(
+          element?.tagName === "P" &&
+          element.textContent?.includes(
+            "The local branch feature will also be deleted.",
+          ),
+        ),
+      ),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Force delete" }));
     await waitFor(() =>
       expect(projectsApi.deleteWorktree).toHaveBeenCalledWith(

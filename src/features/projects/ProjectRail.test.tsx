@@ -55,23 +55,48 @@ beforeEach(() => {
 });
 
 describe("ProjectRail", () => {
-  it("renders nested checkout rows and a project-scoped create button", () => {
+  it("collapses projects by default and toggles their worktrees", () => {
     render(<ProjectRail />);
-    expect(screen.getByText("spirecode-client")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "main" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("button", { name: "feature" })).toBeInTheDocument();
+    const toggle = screen.getByRole("button", {
+      name: "Expand spirecode-client",
+    });
+
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: "main" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "feature" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", {
         name: "Create worktree for spirecode-client",
       }),
     ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(
+      screen.getByRole("button", { name: "Collapse spirecode-client" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "main" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "feature" })).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse spirecode-client" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "main" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("only exposes managed worktree lifecycle actions", () => {
+  it("only exposes managed worktree lifecycle actions after expansion", () => {
     render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
     expect(
       screen.queryByRole("button", { name: "Manage main" }),
     ).not.toBeInTheDocument();

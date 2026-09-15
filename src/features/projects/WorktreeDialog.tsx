@@ -59,6 +59,8 @@ export function NewWorktreeDialog({
   const store = useProjectsStore();
   const [catalog, setCatalog] = useState<OriginBranchCatalog | null>(null);
   const [baseRef, setBaseRef] = useState("");
+  const [branchQuery, setBranchQuery] = useState("");
+  const [branchOptionsOpen, setBranchOptionsOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,11 +70,15 @@ export function NewWorktreeDialog({
     try {
       const result = await projectsApi.listOriginBranches(projectId);
       setCatalog(result);
-      setBaseRef((current) =>
-        result.branches.some((branch) => branch.ref === current)
+      setBaseRef((current) => {
+        const next = result.branches.some((branch) => branch.ref === current)
           ? current
-          : (result.defaultRef ?? result.branches[0]?.ref ?? ""),
-      );
+          : (result.defaultRef ?? result.branches[0]?.ref ?? "");
+        setBranchQuery(
+          result.branches.find((branch) => branch.ref === next)?.name ?? "",
+        );
+        return next;
+      });
       setName((current) => current || result.nextName);
     } catch (failure) {
       setError(commandError(failure).message);
@@ -84,6 +90,28 @@ export function NewWorktreeDialog({
     void refresh();
   }, [refresh]);
   const validation = validateWorktreeName(name);
+  const normalizedBranchQuery = branchQuery.trim().toLocaleLowerCase();
+  const filteredBranches = (catalog?.branches ?? []).filter(
+    (branch) =>
+      branch.name.toLocaleLowerCase().includes(normalizedBranchQuery) ||
+      branch.ref.toLocaleLowerCase().includes(normalizedBranchQuery),
+  );
+  const updateBranchQuery = (query: string) => {
+    setBranchQuery(query);
+    setBranchOptionsOpen(true);
+    const normalized = query.trim().toLocaleLowerCase();
+    const exact = catalog?.branches.find(
+      (branch) =>
+        branch.name.toLocaleLowerCase() === normalized ||
+        branch.ref.toLocaleLowerCase() === normalized,
+    );
+    setBaseRef(exact?.ref ?? "");
+  };
+  const selectBranch = (ref: string, name: string) => {
+    setBaseRef(ref);
+    setBranchQuery(name);
+    setBranchOptionsOpen(false);
+  };
   const create = async () => {
     store.setCreatingProject(projectId);
     setError(null);
@@ -107,18 +135,50 @@ export function NewWorktreeDialog({
       <label>
         Base branch
         <div className="branch-field-row">
-          <select
-            aria-label="Base branch"
-            value={baseRef}
-            onChange={(event) => setBaseRef(event.target.value)}
-            disabled={!catalog || creating}
-          >
-            {(catalog?.branches ?? []).map((branch) => (
-              <option key={branch.ref} value={branch.ref}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
+          <div className="branch-combobox">
+            <input
+              role="combobox"
+              aria-label="Base branch"
+              aria-autocomplete="list"
+              aria-controls="base-branch-options"
+              aria-expanded={branchOptionsOpen}
+              value={branchQuery}
+              onChange={(event) => updateBranchQuery(event.target.value)}
+              onFocus={() => setBranchOptionsOpen(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setBranchOptionsOpen(false);
+              }}
+              autoComplete="off"
+              disabled={!catalog || creating}
+            />
+            {branchOptionsOpen && catalog && catalog.branches.length > 0 && (
+              <div
+                id="base-branch-options"
+                className="branch-options"
+                role="listbox"
+                aria-label="Origin branches"
+              >
+                {filteredBranches.length > 0 ? (
+                  filteredBranches.map((branch) => (
+                    <button
+                      key={branch.ref}
+                      type="button"
+                      role="option"
+                      aria-selected={branch.ref === baseRef}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectBranch(branch.ref, branch.name)}
+                    >
+                      {branch.name}
+                    </button>
+                  ))
+                ) : (
+                  <div className="branch-options-empty">
+                    No matching branches
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <button
             className="branch-icon-button"
             aria-label="Refresh origin branches"
@@ -274,7 +334,7 @@ export function DeleteWorktreeDialog({
       {inspection && (
         <>
           <p>
-            The local branch <b>{inspection.branch}</b> will be kept.
+            The local branch <b>{inspection.branch}</b> will also be deleted.
           </p>
           {destructive && (
             <div className="destructive-warning">
