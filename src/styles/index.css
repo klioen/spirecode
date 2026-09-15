@@ -1395,6 +1395,33 @@ details[open] > summary > .chat-disclosure-icon {
   color: var(--text-subtle);
   font-size: 10px;
 }
+.change-toolbar-actions,
+.change-mode-toggle {
+  display: flex;
+  align-items: center;
+}
+.change-toolbar-actions {
+  gap: 4px;
+}
+.change-mode-toggle {
+  padding: 1px;
+  border: 1px solid var(--border-muted);
+  border-radius: 5px;
+  background: var(--control-bg);
+}
+.panel-toolbar .change-mode-toggle button {
+  padding: 4px;
+  border-radius: 3px;
+}
+.panel-toolbar .change-mode-toggle button.active {
+  background: var(--control-selected);
+  color: var(--accent);
+}
+.panel-toolbar button:hover {
+  border-color: var(--border-default);
+  background: var(--control-hover);
+  color: var(--text-default);
+}
 .change-heading {
   height: 25px;
   display: flex;
@@ -1414,6 +1441,18 @@ details[open] > summary > .chat-disclosure-icon {
 }
 .change-row {
   padding-left: 23px;
+}
+.change-tree-row {
+  padding-right: 10px;
+}
+.change-tree-row > svg {
+  flex: 0 0 auto;
+}
+.change-directory-row > svg:first-child {
+  color: var(--text-subtle);
+}
+.change-directory-row > svg:nth-child(2) {
+  color: var(--accent);
 }
 .change-row span {
   flex: 1;

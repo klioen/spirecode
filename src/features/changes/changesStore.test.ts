@@ -26,6 +26,12 @@ beforeEach(() =>
 );
 
 describe("changes snapshot", () => {
+  it("uses list mode by default and supports switching to tree mode", () => {
+    expect(useChangesStore.getState().mode).toBe("list");
+    useChangesStore.getState().setMode("tree");
+    expect(useChangesStore.getState().mode).toBe("tree");
+  });
+
   it("retains last-known-good data when refresh fails", () => {
     const store = useChangesStore.getState();
     const initial = store.startRefresh("p1");
