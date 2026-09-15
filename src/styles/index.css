@@ -972,8 +972,11 @@ details[open] > summary > .chat-disclosure-icon {
 .chat-tool-name {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 22px;
+  font:
+    13px/22px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 .chat-tool-summary {
   min-width: 0;
@@ -1006,32 +1009,49 @@ details[open] > summary > .chat-disclosure-icon {
   color: var(--text-subtle);
 }
 .chat-tool-detail {
-  display: grid;
-  gap: 10px;
-  padding: 5px 10px 13px 28px;
+  padding: 6px 10px 13px 28px;
 }
-.chat-tool-detail section {
+.chat-tool-preview {
   overflow: hidden;
-  border: 0;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--control-bg) 68%, transparent);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--elevated-bg);
 }
-.chat-tool h4 {
-  margin: 0;
-  padding: 7px 10px 2px;
+.chat-tool-preview-tabs {
+  min-height: 40px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-tool-preview-tabs button {
+  height: 28px;
+  padding: 0 10px;
   border: 0;
+  border-radius: 12px;
+  background: transparent;
   color: var(--text-subtle);
-  font-size: 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-tool-preview-tabs button:hover {
+  color: var(--text-muted);
+  background: var(--control-hover);
+}
+.chat-tool-preview-tabs button.active {
+  color: var(--text-default);
+  background: var(--control-selected);
   font-weight: 600;
 }
-.chat-tool pre {
-  max-height: 300px;
+.chat-tool-preview-content {
+  max-height: 240px;
   margin: 0;
-  padding: 10px;
+  padding: 12px 16px;
   overflow: auto;
   color: var(--text-muted);
   font:
-    11px/1.55 ui-monospace,
+    12px/1.55 ui-monospace,
     SFMono-Regular,
     Menlo,
     monospace;

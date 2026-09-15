@@ -1,5 +1,6 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { toolPresentation } from "./ProcessIcon";
+import { ToolPreview } from "./ToolPreview";
 import type { ChatToolModel } from "./types";
 
 const MAX_VALUE_LENGTH = 16_000;
@@ -32,7 +33,6 @@ export function ToolCard({ tool, defaultOpen = false }: ToolCardProps) {
   const presentation = toolPresentation(tool);
   const Icon = presentation.icon;
   const running = tool.status === "running";
-  const label = running ? presentation.activeAction : presentation.action;
 
   return (
     <details
@@ -45,25 +45,14 @@ export function ToolCard({ tool, defaultOpen = false }: ToolCardProps) {
           data-process-icon={presentation.iconKind}
           aria-hidden="true"
         />
-        <span className="chat-tool-name">{label}</span>
+        <span className="chat-tool-name">{tool.name}</span>
         {presentation.summary && (
           <span className="chat-tool-summary">{presentation.summary}</span>
         )}
         <RiArrowDownSLine className="chat-disclosure-icon" aria-hidden="true" />
       </summary>
       <div className="chat-tool-detail">
-        {argumentsText !== null && (
-          <section>
-            <h4>入参</h4>
-            <pre>{argumentsText}</pre>
-          </section>
-        )}
-        {resultText !== null && (
-          <section>
-            <h4>{tool.error ? "错误" : "输出"}</h4>
-            <pre>{resultText}</pre>
-          </section>
-        )}
+        <ToolPreview input={argumentsText} output={resultText} />
       </div>
     </details>
   );

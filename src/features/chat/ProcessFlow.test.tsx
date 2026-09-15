@@ -32,7 +32,7 @@ it("renders a single tool directly with a semantic icon and summary", () => {
   const { container } = render(<ProcessFlow steps={[readTool]} />);
 
   expect(screen.queryByText(/已执行/)).toBeNull();
-  expect(screen.getByText("读取文件")).toBeInTheDocument();
+  expect(screen.getByText("read")).toBeInTheDocument();
   expect(screen.getByText("src/chat.tsx")).toBeInTheDocument();
   expect(container.querySelector('[data-process-icon="read"]')).not.toBeNull();
 });
@@ -47,7 +47,7 @@ it("groups multiple process steps and preserves their icons when expanded", () =
 
   fireEvent.click(groupLabel);
   expect(within(group!).getByText("深度思考")).toBeVisible();
-  expect(within(group!).getByText("读取文件")).toBeVisible();
+  expect(within(group!).getByText("read")).toBeVisible();
   expect(
     container.querySelector('[data-process-icon="thinking"]'),
   ).not.toBeNull();
@@ -75,12 +75,12 @@ it("shows the active semantic action with shimmer while running", () => {
 });
 
 it.each([
-  ["bash", { command: "pnpm test" }, "执行命令", "bash"],
-  ["read", { path: "src/a.ts" }, "读取文件", "read"],
-  ["write", { path: "src/b.ts" }, "写入文件", "write"],
-  ["edit", { path: "src/c.ts" }, "编辑文件", "edit"],
-  ["web_search", { query: "weather" }, "搜索网页", "web_search"],
-  ["web_fetch", { url: "https://example.com" }, "读取网页", "web_fetch"],
+  ["bash", { command: "pnpm test" }, "bash", "bash"],
+  ["read", { path: "src/a.ts" }, "read", "read"],
+  ["write", { path: "src/b.ts" }, "write", "write"],
+  ["edit", { path: "src/c.ts" }, "edit", "edit"],
+  ["web_search", { query: "weather" }, "web_search", "web_search"],
+  ["web_fetch", { url: "https://example.com" }, "web_fetch", "web_fetch"],
   ["extension_tool", { value: 1 }, "extension_tool", "unknown"],
 ] as const)(
   "maps %s to one semantic icon and action",

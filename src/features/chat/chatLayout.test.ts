@@ -26,7 +26,12 @@ describe("chat timeline layout", () => {
     );
     expect(css).toMatch(/\.chat-process-list\s*\{[^}]*border:\s*0;/s);
     expect(css).toMatch(/\.chat-tool\s*\{[^}]*border:\s*0;/s);
-    expect(css).toMatch(/\.chat-tool-detail section\s*\{[^}]*border:\s*0;/s);
+    expect(css).toMatch(
+      /\.chat-tool-preview\s*\{[^}]*border:\s*1px solid var\(--border-default\);[^}]*border-radius:\s*12px;/s,
+    );
+    expect(css).toMatch(
+      /\.chat-tool-preview-content\s*\{[^}]*max-height:\s*240px;[^}]*overflow:\s*auto;/s,
+    );
     expect(css).toMatch(
       /summary:not\(:hover\):not\(:focus-visible\)[^{]*\.chat-disclosure-icon\s*\{[^}]*opacity:\s*0;/s,
     );

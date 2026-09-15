@@ -89,9 +89,9 @@ describe("ChatView", () => {
     const processGroup = screen.getByText("已执行 3 项操作").closest("details");
     expect(processGroup).not.toHaveAttribute("open");
     expect(screen.getByText("深度思考")).not.toBeVisible();
-    expect(screen.getByText("读取文件")).not.toBeVisible();
+    expect(screen.getByText("read")).not.toBeVisible();
 
-    expect(screen.getByText("编辑文件")).toBeVisible();
+    expect(screen.getByText("edit")).toBeVisible();
   });
 
   it("calls the unified send contract and restores only abort response text", async () => {

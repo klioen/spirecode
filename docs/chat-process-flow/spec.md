@@ -35,7 +35,8 @@ Renderer 将现有 timeline 投影为 display items，不改变 runtime state：
 - 多步骤完成：`已执行 X 项操作`。
 - 多步骤存在失败：`已执行 X 项操作，Y 项失败`。
 - 多步骤运行中：优先展示当前工具的语义动作与摘要，而不是笼统计数。
-- 工具动作：`执行命令`、`读取文件`、`写入文件`、`编辑文件`、`搜索网页`、`读取网页`；未知工具显示原始名称。
+- 工具步骤标题始终显示原始 `tool.name`，不映射成中文语义动作；运行中的多步骤摘要仍可使用当前工具的语义动作。
+- 工具类型 icon 仍按 bash/read/write/edit/web_search/web_fetch/unknown 映射。
 - 参数摘要优先取 `path/file_path/command/query/url`，并截断过长文本。
 
 ### Interaction
@@ -45,7 +46,9 @@ Renderer 将现有 timeline 投影为 display items，不改变 runtime state：
 - group 展开后，单个 Tool 的详情仍默认折叠。
 - disclosure icon 在折叠态默认隐藏；hover、focus-visible、展开时显示。
 - Thinking 展开内容左侧显示 2px 浅灰引用线，最大高度 160px，超出内部滚动。
-- Tool 入参/输出使用轻灰背景、无外框，保留 16,000 字符截断。
+- Tool 展开后只显示一张轻量详情卡；卡片顶部为 `input` / `output` 两个 Tab，同一时刻只展示当前 Tab 内容。
+- 默认选择 `input`；没有 input 且存在 output 时默认选择 `output`。
+- 详情卡使用浅色表面、细边框、12px 圆角；内容区最大高度 240px并内部滚动，保留 16,000 字符截断。
 - 当前运行步骤标题使用灰色 shimmer；`prefers-reduced-motion` 下关闭。
 
 ## 3. Message and Composer layout
