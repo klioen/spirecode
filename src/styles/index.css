@@ -740,14 +740,6 @@ body.panel-resizing-vertical * {
 .chat-message-assistant,
 .chat-message-error {
   width: 100%;
-  padding-left: 28px;
-}
-.chat-assistant-mark {
-  position: absolute;
-  top: 1px;
-  left: 2px;
-  color: var(--accent);
-  font-size: 15px;
 }
 .chat-message-error {
   color: var(--danger);

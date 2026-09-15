@@ -51,7 +51,7 @@ Renderer 将现有 timeline 投影为 display items，不改变 runtime state：
 ## 3. Message and Composer layout
 
 - Thread 与 Composer 最大宽度调整为 960px。
-- Assistant 保持无气泡 Markdown 文档流和极简 `✦` 标识。
+- Assistant 保持无气泡 Markdown 文档流，不显示头像、名称或装饰 icon。
 - User 气泡移除边框，改为统一 8px 圆角，最大宽度不超过 720px。
 - 普通 Composer 使用 24px 圆角、约 126px 最小高度、低对比边框，无常驻大阴影。
 - Agent running 且草稿为空时只显示 Stop；存在 follow-up 草稿时显示发送按钮，并保留可中止能力但不制造两个同等视觉权重的主按钮。
