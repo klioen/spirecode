@@ -1,8 +1,10 @@
 export { ChatComposer, type ChatComposerProps } from "./ChatComposer";
 export { ChatHistory, type ChatHistoryProps } from "./ChatHistory";
 export { ChatMessage, type ChatMessageProps } from "./ChatMessage";
+export { MarkdownContent, type MarkdownContentProps } from "./MarkdownContent";
 export { ThinkingBlock, type ThinkingBlockProps } from "./ThinkingBlock";
 export { ToolCard, type ToolCardProps } from "./ToolCard";
+export { ToolGroup, type ToolGroupProps } from "./ToolGroup";
 export { ChatView, type ChatViewProps } from "./ChatView";
 export {
   chatRuntime,

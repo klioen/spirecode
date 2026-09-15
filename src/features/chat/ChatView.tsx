@@ -4,8 +4,46 @@ import { chatRuntime, type ChatRuntime, useChatSession } from "./chatRuntime";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ThinkingBlock } from "./ThinkingBlock";
-import { ToolCard } from "./ToolCard";
+import { ToolGroup } from "./ToolGroup";
 import { toChatError } from "./sessionReducer";
+import type { ChatTimelineItem, ChatToolModel } from "./types";
+
+type ChatDisplayItem =
+  | Exclude<ChatTimelineItem, { type: "tool" }>
+  | { type: "tool-group"; id: string; tools: ChatToolModel[] };
+
+export function groupChatTools(items: ChatTimelineItem[]): ChatDisplayItem[] {
+  const grouped: ChatDisplayItem[] = [];
+  let tools: ChatToolModel[] = [];
+
+  const flush = () => {
+    if (tools.length === 0) return;
+    grouped.push({
+      type: "tool-group",
+      id: `${tools[0].toolCallId}:${tools[tools.length - 1].toolCallId}`,
+      tools,
+    });
+    tools = [];
+  };
+
+  for (const item of items) {
+    if (item.type === "tool") {
+      tools.push({
+        toolCallId: item.toolCallId,
+        name: item.name,
+        arguments: item.arguments,
+        result: item.result,
+        error: item.error,
+        status: item.status,
+      });
+      continue;
+    }
+    flush();
+    grouped.push(item);
+  }
+  flush();
+  return grouped;
+}
 
 export interface ChatViewProps {
   worktreeId: string;
@@ -83,7 +121,7 @@ function ChatViewContent({
         {state.status !== "loading" && state.items.length === 0 && (
           <div>{emptyLabel ?? "Start a conversation with pi"}</div>
         )}
-        {state.items.map((item) => {
+        {groupChatTools(state.items).map((item) => {
           switch (item.type) {
             case "message":
               return <ChatMessage key={`message:${item.id}`} message={item} />;
@@ -91,8 +129,10 @@ function ChatViewContent({
               return (
                 <ThinkingBlock key={`thinking:${item.id}`} thinking={item} />
               );
-            case "tool":
-              return <ToolCard key={`tool:${item.toolCallId}`} tool={item} />;
+            case "tool-group":
+              return (
+                <ToolGroup key={`tool-group:${item.id}`} tools={item.tools} />
+              );
             case "notice":
               return (
                 <div

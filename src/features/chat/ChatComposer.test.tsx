@@ -43,6 +43,32 @@ describe("ChatComposer", () => {
     await waitFor(() => expect(input).toHaveValue("queued"));
   });
 
+  it("uses Stop while running with an empty draft and Follow up with text", () => {
+    render(<ChatComposer running onSend={vi.fn()} onStop={vi.fn()} />);
+    const input = screen.getByRole("textbox", { name: "Chat message" });
+
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "next request" } });
+    expect(
+      screen.getByRole("button", { name: "Follow up" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+  });
+
+  it("grows the textarea with content up to its maximum height", () => {
+    render(<ChatComposer running={false} onSend={vi.fn()} onStop={vi.fn()} />);
+    const input = screen.getByRole("textbox", {
+      name: "Chat message",
+    }) as HTMLTextAreaElement;
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      value: 180,
+    });
+
+    fireEvent.change(input, { target: { value: "a\nb\nc" } });
+    expect(input.style.height).toBe("180px");
+  });
+
   it("rejects whitespace and text over 64 KiB", () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
     render(<ChatComposer running={false} onSend={onSend} onStop={vi.fn()} />);
