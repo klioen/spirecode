@@ -3,7 +3,7 @@
 ## Files that change
 
 - Add `docs/chat-process-flow/{intent,spec,plan}.md` — 已确认需求、设计和实施证明。
-- Add `src/features/chat/chatDisplayItems.ts` and test — 将相邻 Thinking/Tool 投影为单步骤或多步骤 process segment。
+- Add `src/features/chat/chatDisplayItems.ts` and test — Thinking 始终独立投影；仅将相邻 Tool 投影为单步骤或多步骤 process segment。
 - Add `src/features/chat/ProcessFlow.tsx` and test — 语义动作聚合、单步骤、当前工具 icon、运行 shimmer、失败状态与折叠层级。
 - Modify `src/features/chat/ThinkingBlock.tsx` — 作为过程步骤渲染，支持 icon、引用线、紧凑展开内容。
 - Modify `src/features/chat/ToolCard.tsx` — 显示原始 tool name、工具类型 icon、basename/命令摘要，并按工具类型选择通用、Shell、Diff、Web results 详情。

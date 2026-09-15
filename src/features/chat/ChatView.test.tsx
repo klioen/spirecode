@@ -86,11 +86,15 @@ describe("ChatView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("safe").tagName).toBe("STRONG");
 
+    const thinking = screen.getByText("深度思考").closest("details");
+    expect(thinking).not.toHaveAttribute("open");
+    expect(screen.getByText("深度思考")).toBeVisible();
+    expect(screen.getByText("reasoning")).not.toBeVisible();
+
     const processGroup = screen
       .getByText("读取文件、执行命令等多项操作")
       .closest("details");
     expect(processGroup).not.toHaveAttribute("open");
-    expect(screen.getByText("深度思考")).not.toBeVisible();
     expect(screen.getByText("read")).not.toBeVisible();
 
     expect(screen.getByText("edit")).toBeVisible();

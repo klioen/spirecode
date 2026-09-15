@@ -5,11 +5,11 @@ Status: accepted。 Implements: `docs/chat-process-flow/intent.md`。
 
 Renderer 将现有 timeline 投影为 display items，不改变 runtime state：
 
-- `thinking` 与 `tool` 都属于 process step。
-- 严格相邻的 process step 组成一个 process segment。
-- `message` 或 `notice` 会终止 segment。
-- segment 只有一个步骤时直接显示该步骤。
-- segment 有两个及以上步骤时显示一个默认折叠的过程摘要，展开后按原顺序显示所有步骤。
+- `thinking` 始终投影为独立的 process item，不参与工具操作聚合或计数。
+- 只有严格相邻的 `tool` item 组成一个 process segment。
+- `thinking`、`message` 或 `notice` 都会终止当前 Tool segment。
+- Tool segment 只有一个步骤时直接显示该 Tool。
+- Tool segment 有两个及以上步骤时显示一个默认折叠的过程摘要，展开后按原顺序显示所有 Tool。
 
 ## 2. Process presentation
 

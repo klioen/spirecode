@@ -32,12 +32,20 @@ export function projectChatTimeline(
   };
 
   for (const item of items) {
-    if (item.type === "thinking" || item.type === "tool") {
+    if (item.type === "tool") {
       steps.push(item);
       continue;
     }
     flush();
-    projected.push(item);
+    if (item.type === "thinking") {
+      projected.push({
+        type: "process",
+        id: stepKey(item),
+        steps: [item],
+      });
+    } else {
+      projected.push(item);
+    }
   }
   flush();
   return projected;

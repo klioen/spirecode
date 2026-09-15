@@ -29,15 +29,26 @@ it("renders a single process step directly", () => {
   ]);
 });
 
-it("groups adjacent thinking and tool steps in original order", () => {
+it("keeps thinking outside an adjacent multi-tool operation group", () => {
   expect(
     projectChatTimeline([thinking, tool("tool-1"), tool("tool-2")]),
   ).toEqual([
+    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
     {
       type: "process",
-      id: "thinking:thinking-1:tool:tool-2",
-      steps: [thinking, tool("tool-1"), tool("tool-2")],
+      id: "tool:tool-1:tool:tool-2",
+      steps: [tool("tool-1"), tool("tool-2")],
     },
+  ]);
+});
+
+it("uses thinking as a boundary between tool groups", () => {
+  expect(
+    projectChatTimeline([tool("tool-1"), thinking, tool("tool-2")]),
+  ).toEqual([
+    { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
+    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
+    { type: "process", id: "tool:tool-2", steps: [tool("tool-2")] },
   ]);
 });
 
