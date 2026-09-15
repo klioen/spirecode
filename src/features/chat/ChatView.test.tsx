@@ -18,7 +18,7 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
             type: "message",
             id: "m1",
             role: "assistant",
-            content: "Plain **safe** text",
+            content: "## Markdown result\n\nPlain **safe** text",
             status: "complete",
           },
           {
@@ -30,9 +30,33 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
           {
             type: "tool",
             toolCallId: "tool-1",
-            name: "extension_tool",
+            name: "read",
             status: "done",
+            arguments: { path: "src/a.ts" },
             result: { ok: true },
+          },
+          {
+            type: "tool",
+            toolCallId: "tool-2",
+            name: "bash",
+            status: "done",
+            arguments: { command: "pnpm test" },
+            result: "passed",
+          },
+          {
+            type: "message",
+            id: "m2",
+            role: "assistant",
+            content: "More output",
+            status: "complete",
+          },
+          {
+            type: "tool",
+            toolCallId: "tool-3",
+            name: "edit",
+            status: "done",
+            arguments: { path: "src/b.ts" },
+            result: "updated",
           },
         ],
         queue: [],
@@ -47,7 +71,7 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
 }
 
 describe("ChatView", () => {
-  it("attaches and renders plain messages, thinking, and generic tools", async () => {
+  it("renders Markdown, collapsed deep thinking, and adjacent tool groups", async () => {
     render(
       <ChatView
         worktreeId="worktree-1"
@@ -57,9 +81,18 @@ describe("ChatView", () => {
       />,
     );
 
-    expect(await screen.findByText("Plain **safe** text")).toBeInTheDocument();
-    expect(screen.getByText("Thinking")).toBeInTheDocument();
-    expect(screen.getByText("extension_tool")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Markdown result" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("safe").tagName).toBe("STRONG");
+
+    const thinking = screen.getByText("深度思考").closest("details");
+    expect(thinking).not.toHaveAttribute("open");
+    expect(screen.getByText("reasoning")).not.toBeVisible();
+
+    expect(screen.getByText("已执行 2 项操作")).toBeInTheDocument();
+    expect(screen.getByText("已执行 1 项操作")).toBeInTheDocument();
+    expect(screen.queryByText("read")).not.toBeVisible();
   });
 
   it("calls the unified send contract and restores only abort response text", async () => {

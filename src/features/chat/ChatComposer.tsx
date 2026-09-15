@@ -1,7 +1,9 @@
-import { useState, type KeyboardEvent } from "react";
+import { RiSendPlane2Fill, RiStopMiniFill } from "@remixicon/react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatQueuedInput } from "./types";
 
 const MAX_INPUT_BYTES = 64 * 1024;
+const MAX_TEXTAREA_HEIGHT = 200;
 const encoder = new TextEncoder();
 
 export interface ChatComposerProps {
@@ -21,13 +23,25 @@ export function ChatComposer({
   onSend,
   onStop,
 }: ChatComposerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState(initialValue);
   const [composing, setComposing] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const byteLength = encoder.encode(value).byteLength;
   const tooLarge = byteLength > MAX_INPUT_BYTES;
-  const sendDisabled = disabled || pending || tooLarge || !value.trim();
+  const hasDraft = Boolean(value.trim());
+  const sendDisabled = disabled || pending || tooLarge || !hasDraft;
+  const showStop = running;
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+    textarea.style.overflowY =
+      textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? "auto" : "hidden";
+  }, [value]);
 
   const submit = async () => {
     const text = value;
@@ -64,44 +78,75 @@ export function ChatComposer({
     void submit();
   };
 
+  const actionLabel = running ? "Follow up" : "Send";
+
   return (
-    <div className="chat-composer">
+    <div className="chat-composer-shell">
       {queue.length > 0 && (
         <div className="chat-queue" aria-label="Queued follow-ups">
+          <span>待处理</span>
           {queue.map((entry) => (
             <div key={entry.id}>{entry.text}</div>
           ))}
         </div>
       )}
-      <textarea
-        aria-label="Chat message"
-        value={value}
-        disabled={disabled}
-        rows={3}
-        placeholder={running ? "Queue a follow-up…" : "Ask pi…"}
-        onChange={(event) => setValue(event.target.value)}
-        onCompositionStart={() => setComposing(true)}
-        onCompositionEnd={() => setComposing(false)}
-        onKeyDown={onKeyDown}
-      />
-      {tooLarge && (
-        <div role="alert">Message exceeds the 64 KiB UTF-8 limit.</div>
-      )}
-      {error && <div role="alert">{error}</div>}
-      <div className="chat-composer-actions">
-        <span>{byteLength.toLocaleString()} / 65,536 bytes</span>
-        {running && (
-          <button type="button" disabled={pending} onClick={() => void stop()}>
-            Stop
-          </button>
+      <div className="chat-composer">
+        <textarea
+          ref={textareaRef}
+          aria-label="Chat message"
+          value={value}
+          disabled={disabled}
+          rows={1}
+          placeholder={running ? "Queue a follow-up…" : "Ask pi…"}
+          onChange={(event) => setValue(event.target.value)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
+          onKeyDown={onKeyDown}
+        />
+        {tooLarge && (
+          <div className="chat-composer-error" role="alert">
+            Message exceeds the 64 KiB UTF-8 limit.
+          </div>
         )}
-        <button
-          type="button"
-          disabled={sendDisabled}
-          onClick={() => void submit()}
-        >
-          {running ? "Follow up" : "Send"}
-        </button>
+        {error && (
+          <div className="chat-composer-error" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="chat-composer-actions">
+          <span className="chat-composer-hint">
+            Enter 发送 · Shift+Enter 换行
+          </span>
+          {(byteLength > MAX_INPUT_BYTES * 0.8 || tooLarge) && (
+            <span className="chat-composer-count">
+              {byteLength.toLocaleString()} / 65,536
+            </span>
+          )}
+          {showStop && (
+            <button
+              className="chat-composer-submit chat-composer-stop"
+              type="button"
+              aria-label="Stop"
+              title="Stop"
+              disabled={pending || disabled}
+              onClick={() => void stop()}
+            >
+              <RiStopMiniFill aria-hidden="true" />
+            </button>
+          )}
+          {(!running || hasDraft) && (
+            <button
+              className="chat-composer-submit"
+              type="button"
+              aria-label={actionLabel}
+              title={actionLabel}
+              disabled={sendDisabled}
+              onClick={() => void submit()}
+            >
+              <RiSendPlane2Fill aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
