@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatQueuedInput } from "./types";
 
 const MAX_INPUT_BYTES = 64 * 1024;
-const MAX_TEXTAREA_HEIGHT = 200;
+const MAX_TEXTAREA_HEIGHT = 240;
 const encoder = new TextEncoder();
 
 export interface ChatComposerProps {

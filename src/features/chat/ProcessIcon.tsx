@@ -29,11 +29,16 @@ function argumentRecord(value: unknown): Record<string, unknown> | null {
 function summaryOf(tool: ChatToolModel): string | null {
   const args = argumentRecord(tool.arguments);
   if (!args) return null;
-  const value =
-    args.path ?? args.file_path ?? args.command ?? args.query ?? args.url;
+  const pathValue = args.path ?? args.file_path;
+  const value = pathValue ?? args.command ?? args.query ?? args.url;
   if (typeof value !== "string" || !value.trim()) return null;
   const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > 100 ? `${compact.slice(0, 100)}…` : compact;
+  const pathSegments = compact.replace(/\\/g, "/").split("/").filter(Boolean);
+  const display =
+    pathValue === value
+      ? pathSegments[pathSegments.length - 1] || compact
+      : compact;
+  return display.length > 100 ? `${display.slice(0, 100)}…` : display;
 }
 
 export function toolPresentation(tool: ChatToolModel): ToolPresentation {

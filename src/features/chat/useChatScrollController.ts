@@ -15,7 +15,11 @@ function moveToBottom(element: HTMLElement): void {
   }
 }
 
-export function useChatScrollController(sessionId: string) {
+export function useChatScrollController(
+  sessionId: string,
+  revision = 0,
+  running = false,
+) {
   const elementRef = useRef<HTMLElement | null>(null);
   const cleanupRef = useRef<() => void>(() => undefined);
   const followingRef = useRef(true);
@@ -84,5 +88,35 @@ export function useChatScrollController(sessionId: string) {
     return () => cleanupRef.current();
   }, [sessionId]);
 
-  return { transcriptRef, scrollToBottom, showScrollToBottom };
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element || !followingRef.current) return;
+    const delays = running ? [0, 50, 180] : [0, 16, 80, 180, 360];
+    const timers = delays.map((delay) =>
+      window.setTimeout(() => {
+        if (!followingRef.current) return;
+        moveToBottom(element);
+        previousScrollTopRef.current = element.scrollTop;
+        updateScrollState(element);
+      }, delay),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [revision, running, updateScrollState]);
+
+  const recoverToBottom = useCallback(() => {
+    scrollToBottom();
+    const element = elementRef.current;
+    if (!element) return;
+    [80, 180, 360, 720].forEach((delay) => {
+      window.setTimeout(() => {
+        if (followingRef.current) moveToBottom(element);
+      }, delay);
+    });
+  }, [scrollToBottom]);
+
+  return {
+    transcriptRef,
+    scrollToBottom: recoverToBottom,
+    showScrollToBottom,
+  };
 }

@@ -33,6 +33,15 @@ export function ToolCard({ tool, defaultOpen = false }: ToolCardProps) {
   const presentation = toolPresentation(tool);
   const Icon = presentation.icon;
   const running = tool.status === "running";
+  const baseName = tool.name.replace(/_tool$/, "");
+  const previewKind =
+    baseName === "bash"
+      ? "shell"
+      : baseName === "write" || baseName === "edit"
+        ? "diff"
+        : baseName === "web_search"
+          ? "web"
+          : "generic";
 
   return (
     <details
@@ -52,7 +61,12 @@ export function ToolCard({ tool, defaultOpen = false }: ToolCardProps) {
         <RiArrowDownSLine className="chat-disclosure-icon" aria-hidden="true" />
       </summary>
       <div className="chat-tool-detail">
-        <ToolPreview input={argumentsText} output={resultText} />
+        <ToolPreview
+          input={argumentsText}
+          output={resultText}
+          kind={previewKind}
+          object={presentation.summary}
+        />
       </div>
     </details>
   );

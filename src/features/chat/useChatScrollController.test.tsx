@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatScrollController } from "./useChatScrollController";
 
 class ResizeObserverMock {
@@ -37,6 +37,10 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("useChatScrollController", () => {
   it("follows growth while near the bottom", () => {
     const element = transcript();
@@ -47,6 +51,23 @@ describe("useChatScrollController", () => {
 
     expect(element.scrollTo).toHaveBeenCalledWith({ top: 1000 });
     expect(result.current.showScrollToBottom).toBe(false);
+  });
+
+  it("retries bottom alignment as streaming content settles", async () => {
+    vi.useFakeTimers();
+    const element = transcript();
+    const { result, rerender } = renderHook(
+      ({ revision, running }) =>
+        useChatScrollController("session-1", revision, running),
+      { initialProps: { revision: 1, running: true } },
+    );
+    act(() => result.current.transcriptRef(element));
+    vi.mocked(element.scrollTo).mockClear();
+
+    rerender({ revision: 2, running: false });
+    await act(() => vi.advanceTimersByTimeAsync(360));
+
+    expect(element.scrollTo).toHaveBeenCalledTimes(5);
   });
 
   it("stops following after the user scrolls upward and exposes recovery", () => {

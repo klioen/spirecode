@@ -30,7 +30,7 @@ function ChatViewContent({
   const state = useChatSession(sessionId, runtime);
   const running = state.status === "streaming";
   const { transcriptRef, scrollToBottom, showScrollToBottom } =
-    useChatScrollController(sessionId);
+    useChatScrollController(sessionId, state.sequence, running);
 
   useEffect(() => {
     let active = true;

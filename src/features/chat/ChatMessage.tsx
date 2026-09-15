@@ -14,12 +14,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
     >
       <div className="chat-message-content">
         {assistant ? (
-          <MarkdownContent content={message.content} />
+          <MarkdownContent
+            content={message.content}
+            running={message.status === "streaming"}
+          />
         ) : (
-          message.content
-        )}
-        {message.status === "streaming" && (
-          <span className="chat-stream-cursor" aria-label="Streaming" />
+          <>
+            {message.content}
+            {message.status === "streaming" && (
+              <span className="chat-stream-cursor" aria-label="Streaming" />
+            )}
+          </>
         )}
       </div>
     </article>

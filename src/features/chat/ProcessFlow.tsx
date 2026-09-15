@@ -35,16 +35,36 @@ export function ProcessFlow({ steps }: ProcessFlowProps) {
   const runningPresentation = runningTool
     ? toolPresentation(runningTool)
     : undefined;
+  const ActiveIcon = runningPresentation?.icon;
+  const actions = steps.flatMap((step) =>
+    step.type === "tool" && step.status !== "error"
+      ? [toolPresentation(step).action]
+      : [],
+  );
+  const uniqueActions = [...new Set(actions)];
+  const completedLabel =
+    uniqueActions.length === 0
+      ? "分析任务"
+      : `${uniqueActions.slice(0, 3).join("、")}${uniqueActions.length > 3 || steps.length > 1 ? "等多项操作" : ""}`;
   const label = runningPresentation
     ? runningPresentation.activeAction
-    : failed
-      ? `已执行 ${steps.length} 项操作，${failed} 项失败`
-      : `已执行 ${steps.length} 项操作`;
+    : failed === steps.filter((step) => step.type === "tool").length &&
+        failed > 0
+      ? "分析任务"
+      : completedLabel;
 
   return (
     <details className="chat-process-group">
       <summary className={runningTool ? "chat-process-shimmer" : undefined}>
-        <ProcessGroupIcon />
+        {runningPresentation && ActiveIcon ? (
+          <ActiveIcon
+            className="chat-status-icon chat-process-icon-active"
+            data-process-icon={runningPresentation.iconKind}
+            aria-hidden="true"
+          />
+        ) : (
+          <ProcessGroupIcon />
+        )}
         <span>{label}</span>
         {runningPresentation?.summary && (
           <span className="chat-process-summary-detail">

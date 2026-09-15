@@ -33,14 +33,14 @@ it("renders a single tool directly with a semantic icon and summary", () => {
 
   expect(screen.queryByText(/已执行/)).toBeNull();
   expect(screen.getByText("read")).toBeInTheDocument();
-  expect(screen.getByText("src/chat.tsx")).toBeInTheDocument();
+  expect(screen.getByText("chat.tsx")).toBeInTheDocument();
   expect(container.querySelector('[data-process-icon="read"]')).not.toBeNull();
 });
 
 it("groups multiple process steps and preserves their icons when expanded", () => {
   const { container } = render(<ProcessFlow steps={[thinking, readTool]} />);
 
-  const groupLabel = screen.getByText("已执行 2 项操作");
+  const groupLabel = screen.getByText("读取文件等多项操作");
   const group = groupLabel.closest("details");
   expect(group).not.toHaveAttribute("open");
   expect(container.querySelector('[data-process-icon="group"]')).not.toBeNull();
@@ -109,10 +109,46 @@ it.each([
   },
 );
 
-it("uses exactly one group icon before a multi-step summary", () => {
-  render(<ProcessFlow steps={[thinking, readTool]} />);
+it("summarizes completed process groups by semantic actions", () => {
+  render(
+    <ProcessFlow
+      steps={[
+        thinking,
+        readTool,
+        {
+          type: "tool",
+          toolCallId: "bash-1",
+          name: "bash",
+          arguments: { command: "pnpm test" },
+          status: "done",
+        },
+      ]}
+    />,
+  );
 
-  const summary = screen.getByText("已执行 2 项操作").closest("summary");
+  expect(screen.getByText("读取文件、执行命令等多项操作")).toBeInTheDocument();
+});
+
+it("uses the running tool icon and basename in the active group summary", () => {
+  render(
+    <ProcessFlow
+      steps={[
+        thinking,
+        {
+          ...readTool,
+          arguments: { path: "src/features/chat/ChatView.tsx" },
+          status: "running",
+          result: undefined,
+        },
+      ]}
+    />,
+  );
+
+  const summary = screen.getByText("正在读取文件").closest("summary");
   expect(summary?.querySelectorAll("[data-process-icon]")).toHaveLength(1);
-  expect(summary?.querySelector('[data-process-icon="group"]')).not.toBeNull();
+  expect(summary?.querySelector('[data-process-icon="read"]')).not.toBeNull();
+  expect(within(summary!).getByText("ChatView.tsx")).toBeInTheDocument();
+  expect(
+    within(summary!).queryByText("src/features/chat/ChatView.tsx"),
+  ).toBeNull();
 });
