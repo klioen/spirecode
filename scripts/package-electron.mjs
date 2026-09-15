@@ -13,11 +13,17 @@ function run(command, args, env = process.env) {
 }
 
 await rm("release", { recursive: true, force: true });
+await run("pnpm", ["prepare:pi-extensions"]);
+await run("pnpm", ["check:pi-extensions"]);
 await run("pnpm", ["build"]);
 await run("pnpm", ["exec", "electron-builder", "--mac", "--arm64", "--dir"], {
   ...process.env,
   CSC_IDENTITY_AUTO_DISCOVERY: "false",
 });
+await run("node", [
+  "scripts/check-pi-extensions.mjs",
+  "release/mac-arm64/SpireCode.app/Contents/Resources/pi-extensions",
+]);
 await run("./scripts/sign-electron-app.sh", []);
 await run("pnpm", [
   "exec",

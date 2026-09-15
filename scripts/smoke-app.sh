@@ -10,6 +10,12 @@ codesign --verify --deep --strict --verbose=2 "$app"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Contents/Info.plist")" == "SpireCode" ]]
 file "$app/Contents/MacOS/SpireCode" | grep -q 'arm64'
 
+node "$root/scripts/check-pi-extensions.mjs" \
+  "$app/Contents/Resources/pi-extensions"
+memory_worker="$app/Contents/Resources/pi-extensions/pi-memory/worker/worker.cjs"
+[[ -f "$memory_worker" ]]
+[[ ! -L "$memory_worker" ]]
+
 pty="$(find "$app/Contents/Resources/app.asar.unpacked" -name pty.node -print -quit)"
 [[ -n "$pty" ]]
 file "$pty" | grep -q 'arm64'

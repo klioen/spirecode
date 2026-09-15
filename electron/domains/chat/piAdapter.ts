@@ -1,6 +1,7 @@
 import type {
   AgentSession,
   AgentSessionEvent,
+  LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
 import {
   ModelRuntime,
@@ -8,6 +9,12 @@ import {
   createAgentSessionFromServices,
   createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
+import {
+  assertNoExtensionConflicts,
+  defaultBundleRoot,
+  resolveBundledResources,
+} from "./bundledResources.js";
+import { loadSpireSettings } from "./spireSettings.js";
 
 export interface PiSession {
   readonly sessionId: string;
@@ -51,7 +58,7 @@ interface PiModelRuntime {
   hasConfiguredAuth(provider: string): boolean;
 }
 
-interface PiSettingsManager {
+export interface PiSettingsManager {
   getDefaultProvider(): string | undefined;
   getDefaultModel(): string | undefined;
 }
@@ -63,6 +70,13 @@ interface PiSessionManager {
 interface PiServices {
   modelRuntime: PiModelRuntime;
   settingsManager: PiSettingsManager;
+  diagnostics?: Array<{ type: "info" | "warning" | "error"; message: string }>;
+}
+
+interface PiResourceLoaderOptions {
+  noExtensions: boolean;
+  additionalExtensionPaths: string[];
+  extensionsOverride?: (result: LoadExtensionsResult) => LoadExtensionsResult;
 }
 
 export interface PiSdk {
@@ -79,12 +93,22 @@ export interface PiSdk {
   createAgentSessionServices(options: {
     cwd: string;
     modelRuntime: PiModelRuntime;
+    settingsManager?: PiSettingsManager;
+    resourceLoaderOptions?: PiResourceLoaderOptions;
   }): Promise<PiServices>;
   createAgentSessionFromServices(options: {
     services: PiServices;
     sessionManager: PiSessionManager;
     model?: unknown;
   }): Promise<{ session: AgentSession }>;
+}
+
+export interface PiAdapterOptions {
+  loadResources?: (cwd: string) => Promise<{
+    settingsManager: PiSettingsManager;
+    resourceLoaderOptions: PiResourceLoaderOptions;
+    diagnostics: string[];
+  }>;
 }
 
 export async function createPiAdapter(
@@ -94,8 +118,10 @@ export async function createPiAdapter(
     createAgentSessionServices,
     createAgentSessionFromServices,
   } as unknown as PiSdk,
+  options: PiAdapterOptions = {},
 ): Promise<PiAdapter> {
   const modelRuntime = await sdk.ModelRuntime.create();
+  const loadResources = options.loadResources ?? loadDefaultResources;
 
   const wrap = (session: AgentSession): PiSession => ({
     sessionId: session.sessionId,
@@ -119,10 +145,14 @@ export async function createPiAdapter(
     cwd: string,
     metadata: Partial<PiSessionInfo> = {},
   ): Promise<PiSessionRecord> => {
+    const resources = await loadResources(cwd);
     const services = await sdk.createAgentSessionServices({
       cwd,
       modelRuntime,
+      settingsManager: resources.settingsManager,
+      resourceLoaderOptions: resources.resourceLoaderOptions,
     });
+    assertResourcesLoaded(services);
     const hasExistingMessages =
       sessionManager.buildSessionContext().messages.length > 0;
     const model = hasExistingMessages
@@ -174,6 +204,39 @@ export async function createPiAdapter(
       );
     },
   };
+}
+
+async function loadDefaultResources() {
+  const settings = await loadSpireSettings();
+  const bundled = await resolveBundledResources({
+    bundleRoot: defaultBundleRoot(),
+    settingsPath: settings.settingsPath,
+    packageSources: settings.packageSources,
+    extensionSources: settings.extensionSources,
+  });
+  for (const diagnostic of bundled.diagnostics) {
+    console.warn(`[spirecode:extensions] ${diagnostic}`);
+  }
+  return {
+    settingsManager: settings.settingsManager,
+    resourceLoaderOptions: {
+      noExtensions: true,
+      additionalExtensionPaths: bundled.paths,
+      extensionsOverride: assertNoExtensionConflicts,
+    },
+    diagnostics: bundled.diagnostics,
+  };
+}
+
+function assertResourcesLoaded(services: PiServices): void {
+  const errors = (services.diagnostics ?? [])
+    .filter((diagnostic) => diagnostic.type === "error")
+    .map((diagnostic) => diagnostic.message);
+  if (errors.length > 0) {
+    throw new Error(
+      `Unable to load SpireCode extensions: ${errors.join("; ")}`,
+    );
+  }
 }
 
 function configuredDefaultModel(services: PiServices): unknown {
