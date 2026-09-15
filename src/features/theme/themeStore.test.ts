@@ -17,6 +17,18 @@ const media = (dark: boolean) => {
 describe("theme controller", () => {
   beforeEach(() => localStorage.clear());
 
+  it("starts from and persists the current system appearance", () => {
+    const controller = createThemeController(
+      media(true) as unknown as MediaQueryList,
+    );
+
+    expect(controller.getState()).toMatchObject({
+      mode: "dark",
+      resolved: "dark",
+    });
+    expect(localStorage.getItem("spirecode.appearance.v1")).toBe("dark");
+  });
+
   it("migrates the legacy appearance setting", () => {
     const legacyKey = ["pi", "app.appearance.v1"].join("-");
     localStorage.setItem(legacyKey, "dark");
@@ -33,13 +45,35 @@ describe("theme controller", () => {
     expect(localStorage.getItem(legacyKey)).toBeNull();
   });
 
-  it("follows system appearance and persists explicit modes", () => {
-    const query = media(true);
+  it.each([
+    ["current", "spirecode.appearance.v1"],
+    ["legacy", ["pi", "app.appearance.v1"].join("-")],
+  ])("resolves a %s system setting to an explicit theme", (_source, key) => {
+    const legacyKey = ["pi", "app.appearance.v1"].join("-");
+    localStorage.setItem(key, "system");
+
+    const controller = createThemeController(
+      media(true) as unknown as MediaQueryList,
+    );
+
+    expect(controller.getState()).toMatchObject({
+      mode: "dark",
+      resolved: "dark",
+    });
+    expect(localStorage.getItem("spirecode.appearance.v1")).toBe("dark");
+    expect(localStorage.getItem(legacyKey)).toBeNull();
+  });
+
+  it("cycles only between light and dark", () => {
+    localStorage.setItem("spirecode.appearance.v1", "light");
+    const query = media(false);
     const controller = createThemeController(
       query as unknown as MediaQueryList,
     );
+
+    controller.getState().cycle();
     expect(controller.getState()).toMatchObject({
-      mode: "system",
+      mode: "dark",
       resolved: "dark",
     });
 
@@ -48,19 +82,11 @@ describe("theme controller", () => {
       mode: "light",
       resolved: "light",
     });
-    expect(localStorage.getItem("spirecode.appearance.v1")).toBe("light");
-  });
 
-  it("reacts to system changes only while mode is system", () => {
-    const query = media(false);
-    const controller = createThemeController(
-      query as unknown as MediaQueryList,
-    );
     query.emit(true);
-    expect(controller.getState().resolved).toBe("dark");
-
-    controller.getState().setMode("light");
-    query.emit(false);
-    expect(controller.getState().resolved).toBe("light");
+    expect(controller.getState()).toMatchObject({
+      mode: "light",
+      resolved: "light",
+    });
   });
 });

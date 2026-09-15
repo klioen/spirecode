@@ -1,22 +1,12 @@
-import { RiComputerLine, RiMoonLine, RiSunLine } from "@remixicon/react";
-import { useThemeStore, type ThemeMode } from "./themeStore";
-
-const nextMode: Record<ThemeMode, ThemeMode> = {
-  system: "light",
-  light: "dark",
-  dark: "system",
-};
+import { RiMoonLine, RiSunLine } from "@remixicon/react";
+import { useThemeStore } from "./themeStore";
 
 export function ThemeToggle() {
   const mode = useThemeStore((state) => state.mode);
   const cycle = useThemeStore((state) => state.cycle);
-  const Icon =
-    mode === "system"
-      ? RiComputerLine
-      : mode === "light"
-        ? RiSunLine
-        : RiMoonLine;
-  const label = `Theme: ${mode}. Switch to ${nextMode[mode]}`;
+  const Icon = mode === "light" ? RiSunLine : RiMoonLine;
+  const nextMode = mode === "light" ? "dark" : "light";
+  const label = `Theme: ${mode}. Switch to ${nextMode}`;
   return (
     <button title={label} aria-label={label} onClick={cycle}>
       <Icon size={17} />

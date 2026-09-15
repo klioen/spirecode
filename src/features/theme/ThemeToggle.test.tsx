@@ -4,14 +4,26 @@ import { ThemeToggle } from "./ThemeToggle";
 import { useThemeStore } from "./themeStore";
 
 beforeEach(() => {
-  useThemeStore.setState({ mode: "system", resolved: "dark" });
+  useThemeStore.setState({ mode: "light", resolved: "light" });
 });
 
 describe("ThemeToggle", () => {
-  it("shows the current mode and cycles to light", () => {
+  it("shows only explicit light and dark modes", () => {
     render(<ThemeToggle />);
-    const button = screen.getByRole("button", { name: /Theme: system/ });
-    fireEvent.click(button);
+
+    const lightButton = screen.getByRole("button", {
+      name: "Theme: light. Switch to dark",
+    });
+    expect(lightButton.querySelector("svg")).toBeTruthy();
+
+    fireEvent.click(lightButton);
+    expect(useThemeStore.getState().mode).toBe("dark");
+    const darkButton = screen.getByRole("button", {
+      name: "Theme: dark. Switch to light",
+    });
+
+    fireEvent.click(darkButton);
     expect(useThemeStore.getState().mode).toBe("light");
+    expect(screen.queryByRole("button", { name: /system/i })).toBeNull();
   });
 });
