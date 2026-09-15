@@ -79,8 +79,10 @@ SpireCode 不采用 VolcClaw 的白色硬编码、Tailwind class、Arco Collapse
 ## 4. Styling
 
 - Chat thread 最大宽度从当前 760px 调整为约 820px，Composer 与 thread 同轴。
-- 使用现有 `--workspace-*`、`--control-*`、`--border-*`、`--text-*`、`--accent-*` token，兼容 light/dark。
-- 新增 Chat 局部 motion：stream pulse、tool spinner、chevron/边框过渡；`prefers-reduced-motion` 下关闭动画。
+- 使用现有 `--workspace-*`、`--control-*`、`--text-*` token，兼容 light/dark。
+- Thinking、Tool group、单项 Tool 和入参/输出区域均不使用边框，外层保持透明；标题、图标、摘要和详情统一使用灰色次级文字弱化，仅失败状态保留 danger 色。
+- 展开后的入参/输出可使用轻微灰色背景建立层级，但不恢复卡片边框。
+- 新增 Chat 局部 motion：stream pulse、tool spinner、chevron 过渡；`prefers-reduced-motion` 下关闭动画。
 - 窄窗口下保留 16px 左右安全边距，Tool/Thinking 展开内容不造成水平溢出。
 
 ## 5. Compatibility boundary
