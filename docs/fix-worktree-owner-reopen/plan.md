@@ -20,7 +20,7 @@
 
 ## Proof
 
-- 新增测试 red-green。
-- `pnpm vitest run --config electron/domains/worktrees/vitest.config.ts`
-- `pnpm check`
-- bundle、安装及现场同仓库 marker 迁移验证。
+- 新增同仓库新 Project ID 回归测试先红后绿；Worktree 测试 8/8 通过。
+- `pnpm check`：35 个文件、130 个测试通过，format、brand、lint、typecheck 全部通过。
+- `pnpm bundle`：应用与 DMG 构建、签名验证、smoke 全部通过。
+- 安装后确认现有 `worktree1` 未变化，并通过同仓库 ownership migration 路径更新 marker。

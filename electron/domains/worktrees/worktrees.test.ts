@@ -273,6 +273,31 @@ describe("WorktreeService", () => {
     expect(value.worktrees).toHaveLength(0);
   });
 
+  it("adopts a managed root when the same repository gets a new project id", async () => {
+    const value = await fixture();
+    await value.service.create(value.project.id, "worktree1", "origin/main");
+    const oldProjectId = value.project.id;
+    value.project.id = "44444444-4444-4444-8444-444444444444";
+
+    await expect(
+      value.service.create(value.project.id, "worktree2", "origin/main"),
+    ).resolves.toMatchObject({
+      projectId: value.project.id,
+      name: "worktree2",
+    });
+    const marker = JSON.parse(
+      await readFile(
+        path.join(value.managedHome, value.project.name, OWNER_MARKER),
+        "utf8",
+      ),
+    ) as { projectId: string; gitCommonDir: string };
+    expect(marker.projectId).toBe(value.project.id);
+    expect(marker.projectId).not.toBe(oldProjectId);
+    expect(
+      await git(value.project.path, ["worktree", "list", "--porcelain"]),
+    ).toContain(path.join(value.managedHome, value.project.name, "worktree1"));
+  });
+
   it.runIf(process.platform !== "win32")(
     "rejects symlinked and foreign managed roots",
     async () => {
@@ -292,7 +317,7 @@ describe("WorktreeService", () => {
       await writeFile(
         path.join(foreignRoot, OWNER_MARKER),
         JSON.stringify({
-          projectId: "33333333-3333-4333-8333-333333333333",
+          projectId: foreign.project.id,
           gitCommonDir: "/other",
         }),
       );

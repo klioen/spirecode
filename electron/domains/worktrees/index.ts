@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { CommandError, toCommandError } from "../../core/errors.js";
 import { gitText, runGit } from "../../core/gitProcess.js";
+import { saveAtomic } from "../persistence/index.js";
 import type { ProjectSummary, WorktreeSummary } from "../projects/index.js";
 
 export const OWNER_MARKER = ".pi-worktree-owner.json";
@@ -424,10 +425,12 @@ export class WorktreeService {
       }
       if (
         !isOwnerMarker(existing) ||
-        existing.projectId !== expected.projectId ||
         existing.gitCommonDir !== expected.gitCommonDir
       ) {
         throw ownerConflict("managed root belongs to another repository");
+      }
+      if (existing.projectId !== expected.projectId) {
+        await saveAtomic(markerPath, expected);
       }
       return;
     }

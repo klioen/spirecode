@@ -1,5 +1,5 @@
 # Intent: 修复重新添加项目后无法创建 Worktree
-Author: keliangliang。 Status: draft。
+Author: keliangliang。 Status: accepted。
 
 ## Problem
 

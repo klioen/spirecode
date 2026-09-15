@@ -1,5 +1,5 @@
 # Spec: 同仓库安全接管 Managed Worktree Root
-Status: draft。 Implements: `docs/fix-worktree-owner-reopen/intent.md`。
+Status: accepted。 Implements: `docs/fix-worktree-owner-reopen/intent.md`。
 
 ## Requirements
 
