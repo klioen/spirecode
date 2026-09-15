@@ -12,19 +12,19 @@ export function ChatMessage({ message }: ChatMessageProps) {
       className={`chat-message chat-message-${message.role}`}
       aria-label={`${message.role} message`}
     >
-      {assistant && (
-        <div className="chat-assistant-mark" aria-hidden="true">
-          ✦
-        </div>
-      )}
       <div className="chat-message-content">
         {assistant ? (
-          <MarkdownContent content={message.content} />
+          <MarkdownContent
+            content={message.content}
+            running={message.status === "streaming"}
+          />
         ) : (
-          message.content
-        )}
-        {message.status === "streaming" && (
-          <span className="chat-stream-cursor" aria-label="Streaming" />
+          <>
+            {message.content}
+            {message.status === "streaming" && (
+              <span className="chat-stream-cursor" aria-label="Streaming" />
+            )}
+          </>
         )}
       </div>
     </article>

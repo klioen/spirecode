@@ -71,7 +71,7 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
 }
 
 describe("ChatView", () => {
-  it("renders Markdown, collapsed deep thinking, and adjacent tool groups", async () => {
+  it("renders Markdown, a unified process group, and a direct single tool", async () => {
     render(
       <ChatView
         worktreeId="worktree-1"
@@ -88,11 +88,16 @@ describe("ChatView", () => {
 
     const thinking = screen.getByText("深度思考").closest("details");
     expect(thinking).not.toHaveAttribute("open");
+    expect(screen.getByText("深度思考")).toBeVisible();
     expect(screen.getByText("reasoning")).not.toBeVisible();
 
-    expect(screen.getByText("已执行 2 项操作")).toBeInTheDocument();
-    expect(screen.getByText("已执行 1 项操作")).toBeInTheDocument();
-    expect(screen.queryByText("read")).not.toBeVisible();
+    const processGroup = screen
+      .getByText("读取文件、执行命令等多项操作")
+      .closest("details");
+    expect(processGroup).not.toHaveAttribute("open");
+    expect(screen.getByText("read")).not.toBeVisible();
+
+    expect(screen.getByText("edit")).toBeVisible();
   });
 
   it("calls the unified send contract and restores only abort response text", async () => {
