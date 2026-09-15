@@ -112,10 +112,10 @@ worktree1, worktree2, worktree3...
 
 ### Path
 
-Rust 在用户目录生成：
+受信任宿主在用户目录生成：
 
 ```text
-~/.pi/worktrees/<project-name>/<name>
+~/.spirecode/<project-name>/<name>
 ```
 
 `project-name` 使用现有 Project display name，但必须经过与 worktree name 相同的安全 path-segment 校验。Project managed root 包含 `.pi-worktree-owner.json`，记录 repository Project ID 和 canonical git-common-dir。创建、rename、delete 前都验证 marker；若同名 Project 指向不同 repository，则拒绝并提示目录冲突，不自动复用或删除。

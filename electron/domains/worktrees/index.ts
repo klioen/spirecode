@@ -16,6 +16,10 @@ import type { ProjectSummary, WorktreeSummary } from "../projects/index.js";
 
 export const OWNER_MARKER = ".pi-worktree-owner.json";
 
+export function defaultManagedHome(home = os.homedir()): string {
+  return path.join(home, ".spirecode");
+}
+
 export interface OriginBranch {
   ref: string;
   name: string;
@@ -66,7 +70,7 @@ export class WorktreeService {
   constructor(
     private readonly projects: ProjectStore,
     private readonly terminals: TerminalStore,
-    private readonly managedHome = path.join(os.homedir(), ".pi", "worktrees"),
+    private readonly managedHome = defaultManagedHome(),
   ) {}
 
   async listOriginBranches(projectId: string): Promise<OriginBranches> {

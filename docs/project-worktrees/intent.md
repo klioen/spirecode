@@ -11,7 +11,7 @@ SpireCode 当前一个 Project 只对应一个本地 Git working tree，无法�
 - 点击后打开 New Worktree dialog。
 - Dialog 从后端读取 `origin/*` 远端分支，用户选择 base branch。
 - 用户填写 worktree name；默认依次为 `worktree1`、`worktree2`……。
-- managed worktree 默认创建到 `~/.pi/worktrees/<project-name>/<worktree-name>`。
+- managed worktree 默认创建到 `~/.spirecode/<project-name>/<worktree-name>`。
 - 创建成功后，在 Project 下显示 managed worktree 子项并自动选中。
 - managed worktree 支持 rename 和 delete。
 - Rename 同步修改 worktree name、local branch 和磁盘目录。
@@ -33,7 +33,7 @@ SpireCode 当前一个 Project 只对应一个本地 Git working tree，无法�
 - base branch 仅来自本地可见的 `origin/*` tracking refs，不允许前端提交任意 ref。
 - worktree name 同时作为 display name、local branch 名和目录名；只允许安全字符。
 - 默认名按 Project 独立单调递增，删除后不回退编号。
-- worktree 根目录固定为 `~/.pi/worktrees/<project-name>/<worktree-name>`，绝对路径只由 Rust 生成。
+- worktree 根目录固定为 `~/.spirecode/<project-name>/<worktree-name>`，绝对路径只由受信任宿主生成。
 - 使用 `git worktree add -b <name> --no-track --end-of-options refs/remotes/origin/<branch>`。
 - 主 Project 目录不可 rename 或 delete。
 - Rename 在存在运行中 Terminal 时拒绝，避免 shell cwd 指向已移动目录。
