@@ -23,4 +23,5 @@
 - 新增同仓库新 Project ID 回归测试先红后绿；Worktree 测试 8/8 通过。
 - `pnpm check`：35 个文件、130 个测试通过，format、brand、lint、typecheck 全部通过。
 - `pnpm bundle`：应用与 DMG 构建、签名验证、smoke 全部通过。
-- 安装后确认现有 `worktree1` 未变化，并通过同仓库 ownership migration 路径更新 marker。
+- 安装版启动后 FD 为 114；现场 marker 已迁移到当前 Project ID，canonical common dir 不变。
+- 现有 `worktree1` 的 HEAD `2933bcd5` 和 clean 状态未变化；New Worktree 已成功创建 `worktree2`，同时登记于 Git registry 和 SpireCode catalog。
