@@ -1,0 +1,60 @@
+import { expect, it } from "vitest";
+import { projectChatTimeline } from "./chatDisplayItems";
+import type { ChatTimelineItem } from "./types";
+
+const thinking: ChatTimelineItem = {
+  type: "thinking",
+  id: "thinking-1",
+  content: "inspect",
+  status: "complete",
+};
+const tool = (id: string): ChatTimelineItem => ({
+  type: "tool",
+  toolCallId: id,
+  name: "read",
+  arguments: { path: `${id}.ts` },
+  status: "done",
+});
+const message: ChatTimelineItem = {
+  type: "message",
+  id: "message-1",
+  role: "assistant",
+  content: "done",
+  status: "complete",
+};
+
+it("renders a single process step directly", () => {
+  expect(projectChatTimeline([thinking])).toEqual([
+    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
+  ]);
+});
+
+it("groups adjacent thinking and tool steps in original order", () => {
+  expect(
+    projectChatTimeline([thinking, tool("tool-1"), tool("tool-2")]),
+  ).toEqual([
+    {
+      type: "process",
+      id: "thinking:thinking-1:tool:tool-2",
+      steps: [thinking, tool("tool-1"), tool("tool-2")],
+    },
+  ]);
+});
+
+it("uses messages and notices as process boundaries", () => {
+  const notice: ChatTimelineItem = {
+    type: "notice",
+    id: "notice-1",
+    kind: "retry",
+    text: "retrying",
+    active: true,
+  };
+  expect(
+    projectChatTimeline([thinking, message, tool("tool-1"), notice]),
+  ).toEqual([
+    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
+    message,
+    { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
+    notice,
+  ]);
+});

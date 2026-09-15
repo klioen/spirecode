@@ -1,4 +1,5 @@
-import { RiArrowDownSLine, RiBrainLine, RiLoader4Line } from "@remixicon/react";
+import { RiArrowDownSLine } from "@remixicon/react";
+import { ReasoningIcon } from "./ProcessIcon";
 import type { ChatThinkingModel } from "./types";
 
 export interface ThinkingBlockProps {
@@ -12,13 +13,9 @@ export function ThinkingBlock({
 }: ThinkingBlockProps) {
   const running = thinking.status === "streaming";
   return (
-    <details className="chat-thinking" open={defaultOpen}>
-      <summary>
-        {running ? (
-          <RiLoader4Line className="chat-status-icon spin" aria-hidden="true" />
-        ) : (
-          <RiBrainLine className="chat-status-icon" aria-hidden="true" />
-        )}
+    <details className="chat-thinking chat-process-step" open={defaultOpen}>
+      <summary className={running ? "chat-process-shimmer" : undefined}>
+        <ReasoningIcon running={running} />
         <span>深度思考</span>
         <RiArrowDownSLine className="chat-disclosure-icon" aria-hidden="true" />
       </summary>

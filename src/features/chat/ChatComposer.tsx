@@ -32,7 +32,7 @@ export function ChatComposer({
   const tooLarge = byteLength > MAX_INPUT_BYTES;
   const hasDraft = Boolean(value.trim());
   const sendDisabled = disabled || pending || tooLarge || !hasDraft;
-  const showStop = running;
+  const showStop = running && !hasDraft;
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;

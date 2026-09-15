@@ -4,7 +4,7 @@ export { ChatMessage, type ChatMessageProps } from "./ChatMessage";
 export { MarkdownContent, type MarkdownContentProps } from "./MarkdownContent";
 export { ThinkingBlock, type ThinkingBlockProps } from "./ThinkingBlock";
 export { ToolCard, type ToolCardProps } from "./ToolCard";
-export { ToolGroup, type ToolGroupProps } from "./ToolGroup";
+export { ProcessFlow, type ProcessFlowProps } from "./ProcessFlow";
 export { ChatView, type ChatViewProps } from "./ChatView";
 export {
   chatRuntime,
@@ -25,4 +25,10 @@ export {
   toChatError,
   type ChatReducerEvent,
 } from "./sessionReducer";
+export {
+  projectChatTimeline,
+  type ChatDisplayItem,
+  type ChatProcessStep,
+} from "./chatDisplayItems";
+export { useChatScrollController } from "./useChatScrollController";
 export type * from "./types";

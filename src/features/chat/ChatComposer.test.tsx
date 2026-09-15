@@ -23,10 +23,10 @@ describe("ChatComposer", () => {
     expect(input).toHaveValue("");
   });
 
-  it("restores text after a rejected send and exposes Stop while running", async () => {
+  it("restores text after a rejected send and restores queued text on Stop", async () => {
     const onSend = vi.fn().mockRejectedValue(new Error("not accepted"));
     const onStop = vi.fn().mockResolvedValue(["queued"]);
-    render(
+    const { rerender } = render(
       <ChatComposer
         running
         onSend={onSend}
@@ -39,6 +39,15 @@ describe("ChatComposer", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(input).toHaveValue("retry me"));
 
+    fireEvent.change(input, { target: { value: "" } });
+    rerender(
+      <ChatComposer
+        running
+        onSend={onSend}
+        onStop={onStop}
+        queue={[{ id: "q", text: "queued" }]}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(input).toHaveValue("queued"));
   });
@@ -52,7 +61,7 @@ describe("ChatComposer", () => {
     expect(
       screen.getByRole("button", { name: "Follow up" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 
   it("grows the textarea with content up to its maximum height", () => {
