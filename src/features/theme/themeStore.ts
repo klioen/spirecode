@@ -1,7 +1,7 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 
-export type ThemeMode = "system" | "light" | "dark";
-export type ResolvedTheme = "light" | "dark";
+export type ThemeMode = "light" | "dark";
+export type ResolvedTheme = ThemeMode;
 
 interface ThemeState {
   mode: ThemeMode;
@@ -12,26 +12,30 @@ interface ThemeState {
 
 const STORAGE_KEY = "spirecode.appearance.v1";
 const LEGACY_STORAGE_KEY = "pi-app.appearance.v1";
-const modes: ThemeMode[] = ["system", "light", "dark"];
+const modes: ThemeMode[] = ["light", "dark"];
 
-const storedMode = (): ThemeMode => {
+const isThemeMode = (value: string | null): value is ThemeMode =>
+  modes.includes(value as ThemeMode);
+
+const storedMode = (systemDark: boolean): ThemeMode => {
+  const systemMode: ThemeMode = systemDark ? "dark" : "light";
   try {
     const current = localStorage.getItem(STORAGE_KEY);
-    if (modes.includes(current as ThemeMode)) return current as ThemeMode;
+    if (isThemeMode(current)) return current;
+    if (current === "system") {
+      localStorage.setItem(STORAGE_KEY, systemMode);
+      return systemMode;
+    }
 
     const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (!modes.includes(legacy as ThemeMode)) return "system";
-
-    localStorage.setItem(STORAGE_KEY, legacy as ThemeMode);
+    const mode = isThemeMode(legacy) ? legacy : systemMode;
+    localStorage.setItem(STORAGE_KEY, mode);
     localStorage.removeItem(LEGACY_STORAGE_KEY);
-    return legacy as ThemeMode;
+    return mode;
   } catch {
-    return "system";
+    return systemMode;
   }
 };
-
-const resolve = (mode: ThemeMode, systemDark: boolean): ResolvedTheme =>
-  mode === "system" ? (systemDark ? "dark" : "light") : mode;
 
 const persist = (mode: ThemeMode) => {
   try {
@@ -44,24 +48,18 @@ const persist = (mode: ThemeMode) => {
 export function createThemeController(
   query: MediaQueryList,
 ): UseBoundStore<StoreApi<ThemeState>> {
-  const initialMode = storedMode();
-  const store = create<ThemeState>((set, get) => ({
+  const initialMode = storedMode(query.matches);
+  return create<ThemeState>((set, get) => ({
     mode: initialMode,
-    resolved: resolve(initialMode, query.matches),
+    resolved: initialMode,
     setMode: (mode) => {
       persist(mode);
-      set({ mode, resolved: resolve(mode, query.matches) });
+      set({ mode, resolved: mode });
     },
     cycle: () => {
-      const index = modes.indexOf(get().mode);
-      get().setMode(modes[(index + 1) % modes.length]);
+      get().setMode(get().mode === "light" ? "dark" : "light");
     },
   }));
-  query.addEventListener("change", (event) => {
-    if (store.getState().mode === "system")
-      store.setState({ resolved: event.matches ? "dark" : "light" });
-  });
-  return store;
 }
 
 const fallbackQuery: MediaQueryList = {
