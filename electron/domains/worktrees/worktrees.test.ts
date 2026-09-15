@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandError } from "../../core/errors.js";
 import type { ProjectSummary, WorktreeSummary } from "../projects/index.js";
 import {
+  defaultManagedHome,
   OWNER_MARKER,
   WorktreeService,
   type ProjectStore,
@@ -125,6 +126,12 @@ afterEach(async () => {
 });
 
 describe("WorktreeService", () => {
+  it("uses the SpireCode home for newly managed worktrees", () => {
+    expect(defaultManagedHome("/Users/example")).toBe(
+      path.join("/Users/example", ".spirecode"),
+    );
+  });
+
   it("lists real origin branches, default branch, and the next available name", async () => {
     const value = await fixture();
 
