@@ -1543,41 +1543,186 @@ details[open] > summary > .chat-disclosure-icon {
     transition: none;
   }
 }
-.chat-history {
+.chat-history-popover {
   position: absolute;
   z-index: 5;
   top: 8px;
   right: 8px;
   width: min(360px, calc(100% - 16px));
   max-height: calc(100% - 16px);
-  padding: 12px;
-  overflow: auto;
+  display: flex;
+}
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  max-height: 480px;
+  overflow: hidden;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--elevated-bg);
-  box-shadow: 0 12px 36px var(--shadow);
+  box-shadow: 0 16px 48px var(--shadow);
+}
+.chat-history-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px 16px;
+  flex-shrink: 0;
 }
 .chat-history h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 12px;
+  font-weight: 600;
+}
+.chat-history-count {
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-history-close {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-history-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 0 12px 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--text-subtle);
+}
+.chat-history-search:focus-within {
+  border-color: var(--accent-muted);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.chat-history-search input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-default);
+  font: inherit;
+  font-size: 12px;
+}
+.chat-history-search input::placeholder {
+  color: var(--text-subtle);
+}
+.chat-history-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+  scrollbar-width: thin;
+}
+.chat-history-group h3 {
+  margin: 12px 10px 5px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .chat-history ul {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
-  gap: 5px;
 }
-.chat-history button {
+.chat-history-item {
   width: 100%;
-  padding: 8px;
-  display: grid;
-  gap: 3px;
+  min-height: 38px;
+  padding: 9px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-default);
   text-align: left;
+  cursor: pointer;
+}
+.chat-history-item > svg {
+  flex-shrink: 0;
+  color: var(--text-subtle);
+}
+.chat-history-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.chat-history-item:hover,
+.chat-history-close:hover {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.chat-history-item[aria-current="true"] {
+  background: var(--accent-soft);
+}
+.chat-history-current {
+  color: var(--accent);
+  font-size: 10px;
 }
 .chat-history time {
   color: var(--text-subtle);
-  font-size: 9px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-history-current,
+.chat-history time {
+  flex-shrink: 0;
+}
+.chat-history-item:focus-visible,
+.chat-history-close:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+.chat-history-state {
+  min-height: 120px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.chat-history-state > svg,
+.chat-history-state small {
+  color: var(--text-subtle);
+}
+.chat-history-state small {
+  font-size: 11px;
+}
+.chat-history-error {
+  color: var(--danger);
+}
+.editor-resource-actions button[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .diff-source-view {
   height: 100%;
