@@ -4,12 +4,14 @@ import {
   RiCommandLine,
   RiLayoutLeftLine,
   RiLayoutRightLine,
+  RiSettings3Line,
 } from "@remixicon/react";
 import { ChangesPanel } from "../changes/ChangesPanel";
 import { EditorPane } from "../editor/EditorPane";
 import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
+import { SettingsDialog } from "../settings/SettingsDialog";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 import { PANEL_LIMITS, useWorkbenchStore } from "./workbenchStore";
@@ -38,6 +40,7 @@ function EmptyWorkbench() {
 
 export function Workbench() {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
     const updateViewport = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", updateViewport);
@@ -135,6 +138,13 @@ export function Workbench() {
         <div className="layout-actions">
           <ThemeToggle />
           <button
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <RiSettings3Line size={17} />
+          </button>
+          <button
             title="Toggle projects panel"
             aria-label="Toggle projects panel"
             onClick={workbench.toggleProjects}
@@ -194,6 +204,12 @@ export function Workbench() {
           <div className="tree-state">Open a project to browse</div>
         )}
       </aside>
+      {settingsOpen && (
+        <SettingsDialog
+          worktreeId={activeWorktreeId}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       {error && (
         <div className="toast">
           <b>{error.code}</b>

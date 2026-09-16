@@ -187,3 +187,13 @@ export interface ChatAccepted {
   accepted: boolean;
   restored?: string[];
 }
+
+export interface ExtensionSetting {
+  id: string;
+  name: string;
+  source: "spirecode" | "pi" | "package";
+  scope: "global" | "project";
+  displayPath: string;
+  enabled: boolean;
+  status: "enabled" | "disabled";
+}

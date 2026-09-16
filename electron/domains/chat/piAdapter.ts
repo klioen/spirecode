@@ -135,6 +135,10 @@ export interface PiAdapterOptions {
     resourceLoaderOptions: PiResourceLoaderOptions;
     diagnostics: string[];
   }>;
+  selectExtensionPaths?: (
+    cwd: string,
+    basePaths: string[],
+  ) => Promise<string[]>;
 }
 
 export async function createPiAdapter(
@@ -260,11 +264,18 @@ export async function createPiAdapter(
     metadata: Partial<PiSessionInfo> = {},
   ): Promise<PiSessionRecord> => {
     const resources = await loadResources(cwd);
+    const basePaths = resources.resourceLoaderOptions.additionalExtensionPaths;
+    const selectedPaths = options.selectExtensionPaths
+      ? await options.selectExtensionPaths(cwd, basePaths)
+      : basePaths;
     const services = await sdk.createAgentSessionServices({
       cwd,
       modelRuntime,
       settingsManager: resources.settingsManager,
-      resourceLoaderOptions: resources.resourceLoaderOptions,
+      resourceLoaderOptions: {
+        ...resources.resourceLoaderOptions,
+        additionalExtensionPaths: selectedPaths,
+      },
     });
     assertResourcesLoaded(services);
     const hasExistingMessages =

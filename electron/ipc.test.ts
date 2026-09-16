@@ -75,6 +75,26 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: apiKey");
   });
 
+  it("validates extension settings commands without accepting paths", () => {
+    expect(
+      validateCommandArgs("settings_extension_set_enabled", {
+        worktreeId: "worktree-1",
+        extensionId: "abc123",
+        enabled: false,
+      }),
+    ).toEqual({
+      worktreeId: "worktree-1",
+      extensionId: "abc123",
+      enabled: false,
+    });
+    expect(() =>
+      validateCommandArgs("settings_extensions_list", {
+        worktreeId: "worktree-1",
+        path: "/tmp/extension.ts",
+      }),
+    ).toThrow("Unexpected argument: path");
+  });
+
   it("retains path length limits and rejects unexpected fields", () => {
     expect(() =>
       validateCommandArgs("fs_read_dir", {

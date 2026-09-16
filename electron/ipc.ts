@@ -30,6 +30,7 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     provider: 128,
     modelId: 256,
     thinkingLevel: 16,
+    extensionId: 128,
   };
   if (
     (!allowEmpty && !value) ||
@@ -262,6 +263,18 @@ async function invoke(
         text(args, "worktreeId"),
         text(args, "sessionId"),
       );
+    case "settings_extensions_list": {
+      const worktreeId = text(args, "worktreeId");
+      return state.settings.list(await state.projects.root(worktreeId));
+    }
+    case "settings_extension_set_enabled": {
+      const worktreeId = text(args, "worktreeId");
+      return state.settings.setEnabled(
+        await state.projects.root(worktreeId),
+        text(args, "extensionId"),
+        boolean(args, "enabled"),
+      );
+    }
   }
 }
 
@@ -300,6 +313,8 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_set_thinking_level: ["worktreeId", "sessionId", "thinkingLevel"],
   chat_session_send: ["worktreeId", "sessionId", "text"],
   chat_session_abort: ["worktreeId", "sessionId"],
+  settings_extensions_list: ["worktreeId"],
+  settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
 };
 
 const CHAT_THINKING_LEVELS = new Set([
@@ -326,7 +341,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
 
   for (const key of allowed) {
     if (key === "cols" || key === "rows") number(args, key);
-    else if (key === "force") boolean(args, key);
+    else if (key === "force" || key === "enabled") boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }

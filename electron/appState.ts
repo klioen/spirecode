@@ -8,6 +8,7 @@ import {
 } from "./domains/filesystem/watcher.js";
 import { GitService } from "./domains/git/index.js";
 import { ProjectService } from "./domains/projects/index.js";
+import { SettingsService } from "./domains/settings/index.js";
 import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
@@ -27,6 +28,7 @@ export class AppState {
 
   private constructor(
     readonly projects: ProjectService,
+    readonly settings: SettingsService,
     readonly window: BrowserWindow,
   ) {
     const root = (id: string) => projects.root(id);
@@ -35,7 +37,10 @@ export class AppState {
     this.terminals = new TerminalService(root, (subscriptionId, payload) => {
       this.send("terminal://event", { subscriptionId, payload });
     });
-    this.chat = new ChatService(root);
+    this.chat = new ChatService(root, {
+      selectExtensionPaths: (cwd, basePaths) =>
+        this.settings.enabledPaths(cwd, basePaths),
+    });
     this.worktrees = new WorktreeService(projects, this.terminals);
   }
 
@@ -43,10 +48,11 @@ export class AppState {
     dataDirectory: string,
     window: BrowserWindow,
   ): Promise<AppState> {
-    const projects = await ProjectService.load(
-      path.join(dataDirectory, "state.json"),
-    );
-    const state = new AppState(projects, window);
+    const [projects, settings] = await Promise.all([
+      ProjectService.load(path.join(dataDirectory, "state.json")),
+      SettingsService.load(path.join(dataDirectory, "extension-settings.json")),
+    ]);
+    const state = new AppState(projects, settings, window);
     for (const project of await projects.list()) {
       for (const worktree of project.worktrees) {
         try {
