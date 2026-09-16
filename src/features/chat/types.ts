@@ -61,11 +61,22 @@ export interface ChatNoticeModel {
   active: boolean;
 }
 
+export type ChatTodoStatus =
+  "pending" | "in_progress" | "completed" | "blocked";
+
+export interface ChatTodoModel {
+  id: string;
+  todos: Array<{ id: string; step: string; status: ChatTodoStatus }>;
+  explanation?: string;
+  createdAt?: number;
+}
+
 export type ChatTimelineItem =
   | ({ type: "message" } & ChatMessageModel)
   | ({ type: "thinking" } & ChatThinkingModel)
   | ({ type: "tool" } & ChatToolModel)
-  | ({ type: "notice" } & ChatNoticeModel);
+  | ({ type: "notice" } & ChatNoticeModel)
+  | ({ type: "todo" } & ChatTodoModel);
 
 export interface ChatQueuedInput {
   id: string;
@@ -119,6 +130,7 @@ export type ChatSessionEvent =
       result?: unknown;
       error?: string;
     }
+  | { type: "todo_update"; todo: ChatTodoModel }
   | { type: "queue_update"; queue: ChatQueuedInput[] }
   | { type: "compaction_start"; message?: string }
   | { type: "compaction_end"; message?: string }

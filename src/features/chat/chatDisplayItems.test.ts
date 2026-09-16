@@ -89,6 +89,19 @@ it("keeps an empty streaming assistant when no process follows it", () => {
   expect(projectChatTimeline([waiting])).toEqual([waiting]);
 });
 
+it("uses todo snapshots as process boundaries", () => {
+  const todo: ChatTimelineItem = {
+    type: "todo",
+    id: "todo-1",
+    todos: [{ id: "a", step: "Inspect", status: "in_progress" }],
+  };
+  expect(projectChatTimeline([tool("tool-1"), todo, tool("tool-2")])).toEqual([
+    { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
+    todo,
+    { type: "process", id: "tool:tool-2", steps: [tool("tool-2")] },
+  ]);
+});
+
 it("uses visible messages and notices as process boundaries", () => {
   const notice: ChatTimelineItem = {
     type: "notice",

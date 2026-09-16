@@ -29,6 +29,7 @@ export interface PiSession {
   readonly isIdle: boolean;
   subscribe(listener: (event: unknown) => void): () => void;
   getMessages(): Promise<unknown[]>;
+  getEntries(): Promise<unknown[]>;
   getConfig(): Promise<ChatSessionConfig>;
   setModel(provider: string, modelId: string): Promise<ChatSessionConfig>;
   setThinkingLevel(level: ChatThinkingLevel): Promise<ChatSessionConfig>;
@@ -83,6 +84,7 @@ export interface PiSettingsManager {
 
 interface PiSessionManager {
   buildSessionContext(): { messages: unknown[] };
+  getBranch(): unknown[];
 }
 
 interface PiServices {
@@ -148,6 +150,7 @@ export async function createPiAdapter(
 
   const wrap = (
     session: AgentSession,
+    sessionManager: PiSessionManager,
     runtimeCommands: () => unknown[],
   ): PiSession => {
     const getConfig = async (): Promise<ChatSessionConfig> => {
@@ -215,6 +218,7 @@ export async function createPiAdapter(
       subscribe: (listener) =>
         session.subscribe(listener as (event: AgentSessionEvent) => void),
       getMessages: async () => session.messages,
+      getEntries: async () => sessionManager.getBranch(),
       getConfig,
       async setModel(provider, modelId) {
         const model = (await modelRuntime.getAvailable()).find(
@@ -277,6 +281,7 @@ export async function createPiAdapter(
     return {
       session: wrap(
         session,
+        sessionManager,
         () => created.extensionsResult?.runtime?.getCommands() ?? [],
       ),
       sessionId: session.sessionId,

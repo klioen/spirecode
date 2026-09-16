@@ -5,6 +5,7 @@ import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { RiArrowDownLine } from "@remixicon/react";
 import { ProcessFlow } from "./ProcessFlow";
+import { TodoListCard } from "./TodoListCard";
 import { projectChatTimeline } from "./chatDisplayItems";
 import { toChatError } from "./sessionReducer";
 import { useChatScrollController } from "./useChatScrollController";
@@ -134,6 +135,8 @@ function ChatViewContent({
                 return (
                   <ProcessFlow key={`process:${item.id}`} steps={item.steps} />
                 );
+              case "todo":
+                return <TodoListCard key={`todo:${item.id}`} todo={item} />;
               case "notice":
                 return (
                   <div

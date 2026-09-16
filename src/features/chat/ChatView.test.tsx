@@ -44,6 +44,15 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
             result: "passed",
           },
           {
+            type: "todo",
+            id: "todo-1",
+            explanation: "Current progress",
+            todos: [
+              { id: "done", step: "Inspect todo", status: "completed" },
+              { id: "active", step: "Render todo", status: "in_progress" },
+            ],
+          },
+          {
             type: "message",
             id: "m2",
             role: "assistant",
@@ -126,6 +135,8 @@ describe("ChatView", () => {
     expect(screen.getByText("read")).not.toBeVisible();
 
     expect(screen.getByText("edit")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Todo progress" })).toBeVisible();
+    expect(screen.getByText("1/2")).toBeVisible();
   });
 
   it("calls the unified send contract and restores only abort response text", async () => {

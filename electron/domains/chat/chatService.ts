@@ -5,7 +5,7 @@ import {
   type PiAdapter,
   type PiSessionRecord,
 } from "./piAdapter.js";
-import { normalizeEvent, normalizeMessages, normalizeSummary } from "./wire.js";
+import { normalizeEvent, normalizeSummary, normalizeTimeline } from "./wire.js";
 import {
   ChatError,
   type ChatAccepted,
@@ -300,7 +300,11 @@ export class ChatService {
     const statusAtFence = record.status;
     const queueAtFence = [...record.queue];
     const errorAtFence = record.error;
-    const items = normalizeMessages(await record.session.getMessages());
+    const [messages, entries] = await Promise.all([
+      record.session.getMessages(),
+      record.session.getEntries(),
+    ]);
+    const items = normalizeTimeline(messages, entries);
     if (record.needsResnapshot) throw resnapshotError();
     const snapshot: ChatSnapshot = {
       sessionId: record.sessionId,

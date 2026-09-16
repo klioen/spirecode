@@ -97,6 +97,14 @@ function sdkFixture(options: {
   };
   const manager = {
     buildSessionContext: () => ({ messages: options.existingMessages ?? [] }),
+    getBranch: () => [
+      {
+        type: "custom",
+        id: "todo-entry",
+        customType: "pi-todo-state",
+        data: { todos: [{ id: "a", step: "Inspect", status: "pending" }] },
+      },
+    ],
   };
   const calls: unknown[] = [];
   const fixture = sessionFixture();
@@ -326,6 +334,21 @@ describe("piAdapter", () => {
     });
     expect(fixture.calls).toContainEqual(["setModel", nextModel]);
     expect(fixture.calls).toContainEqual(["setThinkingLevel", "max"]);
+  });
+
+  it("exposes active branch entries for trusted Main projection", async () => {
+    const { sdk, loadResources } = sdkFixture({});
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    const created = await adapter.create("/repo");
+
+    await expect(created.session.getEntries()).resolves.toEqual([
+      {
+        type: "custom",
+        id: "todo-entry",
+        customType: "pi-todo-state",
+        data: { todos: [{ id: "a", step: "Inspect", status: "pending" }] },
+      },
+    ]);
   });
 
   it("acknowledges send during prompt preflight and queues follow-ups", async () => {

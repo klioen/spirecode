@@ -793,6 +793,57 @@ body.panel-resizing-vertical * {
 .chat-message-error {
   color: var(--danger);
 }
+.chat-todo-card {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--elevated-bg);
+  color: var(--text-default);
+}
+.chat-todo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.chat-todo-progress,
+.chat-todo-explanation {
+  color: var(--text-muted);
+}
+.chat-todo-explanation {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+.chat-todo-list {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-todo-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  color: var(--text-subtle);
+  font-size: 14px;
+  line-height: 22px;
+}
+.chat-todo-in_progress {
+  color: var(--accent);
+}
+.chat-todo-blocked {
+  color: var(--warning);
+}
+.chat-todo-completed {
+  color: var(--text-muted);
+}
+.chat-todo-completed .chat-todo-text {
+  text-decoration: line-through;
+}
 .chat-stream-cursor {
   display: inline-block;
   width: 6px;
