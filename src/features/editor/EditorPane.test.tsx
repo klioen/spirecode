@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../bindings";
 import { useProjectsStore } from "../projects/projectsStore";
@@ -12,6 +18,8 @@ vi.mock("../../bindings", async (importOriginal) => {
     ...actual,
     commands: {
       ...actual.commands,
+      fsReadFile: vi.fn(),
+      gitDiffFile: vi.fn(),
       terminalCreate: vi.fn(),
       terminalAttach: vi.fn(),
       terminalClose: vi.fn(),
@@ -19,13 +27,38 @@ vi.mock("../../bindings", async (importOriginal) => {
   };
 });
 
+vi.mock("@monaco-editor/react", () => ({
+  default: ({ value }: { value: string }) => <div>file: {value}</div>,
+  DiffEditor: ({
+    original,
+    modified,
+  }: {
+    original: string;
+    modified: string;
+  }) => (
+    <div>
+      diff: {original} → {modified}
+    </div>
+  ),
+}));
+
 vi.mock("../terminal/TerminalInstance", () => ({
   TerminalInstance: ({ terminalId }: { terminalId: string }) => (
     <div>terminal body {terminalId}</div>
   ),
 }));
 
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+};
+
 beforeEach(() => {
+  vi.mocked(commands.fsReadFile).mockReset();
+  vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
   vi.mocked(commands.terminalAttach).mockReset();
   vi.mocked(commands.terminalClose).mockReset();
@@ -37,6 +70,69 @@ beforeEach(() => {
     terminalSequenceByWorktree: {},
   });
   useProjectsStore.setState({ error: null });
+});
+
+describe("EditorPane resources", () => {
+  it("keeps the current diff visible across consecutive invalidations", async () => {
+    type DiffResult = {
+      path: string;
+      scope: string;
+      original: string;
+      modified: string;
+      patch: null;
+    };
+    const staleRefresh = deferred<DiffResult>();
+    const latestRefresh = deferred<DiffResult>();
+    vi.mocked(commands.gitDiffFile)
+      .mockResolvedValueOnce({
+        path: "src/example.ts",
+        scope: "unstaged",
+        original: "before",
+        modified: "first version",
+        patch: null,
+      })
+      .mockReturnValueOnce(staleRefresh.promise)
+      .mockReturnValueOnce(latestRefresh.promise);
+    useEditorStore.getState().open(
+      {
+        id: "diff:p1:unstaged:src/example.ts",
+        worktreeId: "p1",
+        type: "diff",
+        relativePath: "src/example.ts",
+        scope: "unstaged",
+        preview: true,
+      },
+      false,
+    );
+
+    render(<EditorPane worktreeId="p1" />);
+    expect(await screen.findByText(/first version/)).toBeInTheDocument();
+
+    act(() => useEditorStore.getState().invalidateDiffs("p1"));
+    act(() => useEditorStore.getState().invalidateDiffs("p1"));
+
+    expect(screen.getByText(/first version/)).toBeInTheDocument();
+    expect(screen.queryByText("Loading resource…")).not.toBeInTheDocument();
+
+    staleRefresh.resolve({
+      path: "src/example.ts",
+      scope: "unstaged",
+      original: "before",
+      modified: "stale version",
+      patch: null,
+    });
+    await act(async () => staleRefresh.promise);
+    expect(screen.queryByText(/stale version/)).not.toBeInTheDocument();
+
+    latestRefresh.resolve({
+      path: "src/example.ts",
+      scope: "unstaged",
+      original: "before",
+      modified: "latest version",
+      patch: null,
+    });
+    expect(await screen.findByText(/latest version/)).toBeInTheDocument();
+  });
 });
 
 describe("EditorPane terminals", () => {
