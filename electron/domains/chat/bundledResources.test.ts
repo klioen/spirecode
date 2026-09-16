@@ -82,7 +82,11 @@ describe("resolveBundledResources", () => {
       packageSources: [source("./pi-package", piSettingsPath, "pi")],
       extensionSources: [source("./spire-extension.ts", settingsPath)],
     });
-    expect(result.paths.slice(-2)).toEqual([piPackage, spireExtension]);
+    expect(result.paths).toEqual([
+      piPackage,
+      ...BUNDLED_PACKAGE_NAMES.map((name) => path.join(bundleRoot, name)),
+      spireExtension,
+    ]);
     expect(result.spirecodeSources).toEqual(
       new Set(["./spire-extension.ts", spireExtension]),
     );
@@ -131,7 +135,7 @@ describe("resolveBundledResources", () => {
       packageSources: [source("npm:@private/provider", piSettingsPath, "pi")],
       extensionSources: [],
     });
-    expect(result.paths.at(-1)).toBe(installed);
+    expect(result.paths[0]).toBe(installed);
   });
 
   it("passes through remote packages but rejects a bundled npm identity", async () => {
@@ -144,7 +148,7 @@ describe("resolveBundledResources", () => {
       ],
       extensionSources: [],
     });
-    expect(result.paths.at(-1)).toBe("npm:example");
+    expect(result.paths[0]).toBe("npm:example");
     expect(result.diagnostics[0]).toContain("pi-memory is bundled");
   });
 

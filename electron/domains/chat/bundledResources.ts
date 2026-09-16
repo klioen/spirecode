@@ -42,15 +42,20 @@ export function defaultBundleRoot(): string {
 export async function resolveBundledResources(
   options: BundledResourceOptions,
 ): Promise<BundledResourceResult> {
-  const paths: string[] = [];
+  const piPaths: string[] = [];
+  const spirecodePaths: string[] = [];
+  const bundledPaths: string[] = [];
   const diagnostics: string[] = [];
   const spirecodeSources = new Set<string>();
   await verifyBundle(options.bundleRoot);
   for (const name of BUNDLED_PACKAGE_NAMES) {
     const packageRoot = path.join(options.bundleRoot, name);
     await verifyPackage(packageRoot, name);
-    paths.push(packageRoot);
+    bundledPaths.push(packageRoot);
   }
+  const addPath = (value: string, layer: "pi" | "spirecode") => {
+    (layer === "pi" ? piPaths : spirecodePaths).push(value);
+  };
 
   for (const entry of options.packageSources) {
     const { source, settingsPath, layer } = entry;
@@ -67,7 +72,7 @@ export async function resolveBundledResources(
           );
           continue;
         }
-        paths.push(resolved);
+        addPath(resolved, layer);
         if (layer === "spirecode") {
           spirecodeSources.add(source);
           spirecodeSources.add(resolved);
@@ -81,7 +86,7 @@ export async function resolveBundledResources(
           layer === "pi"
             ? await installedPiNpmPackage(source, settingsPath)
             : undefined;
-        paths.push(installed ?? source);
+        addPath(installed ?? source, layer);
         if (layer === "spirecode") spirecodeSources.add(source);
       }
     } catch (error) {
@@ -91,14 +96,14 @@ export async function resolveBundledResources(
   for (const entry of options.extensionSources) {
     const { source, settingsPath, layer } = entry;
     if (!isLocalPath(source)) {
-      paths.push(source);
+      addPath(source, layer);
       if (layer === "spirecode") spirecodeSources.add(source);
       continue;
     }
     const resolved = resolveUserPath(path.dirname(settingsPath), source);
     try {
       await stat(resolved);
-      paths.push(resolved);
+      addPath(resolved, layer);
       if (layer === "spirecode") {
         spirecodeSources.add(source);
         spirecodeSources.add(resolved);
@@ -107,7 +112,11 @@ export async function resolveBundledResources(
       diagnostics.push(`Ignored ${source}: ${message(error)}`);
     }
   }
-  return { paths, diagnostics, spirecodeSources };
+  return {
+    paths: [...piPaths, ...bundledPaths, ...spirecodePaths],
+    diagnostics,
+    spirecodeSources,
+  };
 }
 
 async function verifyBundle(bundleRoot: string): Promise<void> {
