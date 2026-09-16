@@ -14,6 +14,9 @@ function historyApi(): ChatApi {
       },
     ]),
     attach: vi.fn(),
+    config: vi.fn(),
+    setModel: vi.fn(),
+    setThinkingLevel: vi.fn(),
     send: vi.fn(),
     abort: vi.fn(),
   };

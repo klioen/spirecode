@@ -4,6 +4,15 @@ import { COMMANDS, TOPICS, isCommand, isTopic } from "./contracts.js";
 describe("Electron host allowlists", () => {
   it("accepts only declared command names", () => {
     for (const command of COMMANDS) expect(isCommand(command)).toBe(true);
+    expect(COMMANDS).toEqual(
+      expect.arrayContaining([
+        "chat_session_config",
+        "chat_session_set_model",
+        "chat_session_set_thinking_level",
+      ]),
+    );
+    expect(isCommand("chat_session_invoke")).toBe(false);
+    expect(isCommand("pi_command")).toBe(false);
     expect(isCommand("fs_read_absolute")).toBe(false);
     expect(isCommand("child_process.exec")).toBe(false);
     expect(isCommand(1)).toBe(false);

@@ -7,6 +7,7 @@ import { commands } from "../../bindings";
 import type { ChatApi } from "./chatApi";
 import type {
   ChatEventEnvelope,
+  ChatSessionConfig,
   ChatSessionSummary,
   ChatSnapshot,
 } from "./types";
@@ -18,6 +19,8 @@ const snapshot = (value: WireChatSnapshot): ChatSnapshot =>
 
 const event = (value: WireChatEvent): ChatEventEnvelope =>
   value as ChatEventEnvelope;
+
+const config = (value: ChatSessionConfig): ChatSessionConfig => value;
 
 export const hostChatApi: ChatApi = {
   async create(worktreeId) {
@@ -37,6 +40,21 @@ export const hostChatApi: ChatApi = {
       detach: attachment.detach,
     };
   },
+  config: async (worktreeId, sessionId) =>
+    config(await commands.chatSessionConfig(worktreeId, sessionId)),
+  setModel: async (worktreeId, sessionId, provider, modelId) =>
+    config(
+      await commands.chatSessionSetModel(
+        worktreeId,
+        sessionId,
+        provider,
+        modelId,
+      ),
+    ),
+  setThinkingLevel: async (worktreeId, sessionId, level) =>
+    config(
+      await commands.chatSessionSetThinkingLevel(worktreeId, sessionId, level),
+    ),
   send: (worktreeId, sessionId, text) =>
     commands.chatSessionSend(worktreeId, sessionId, text),
   abort: (worktreeId, sessionId) =>

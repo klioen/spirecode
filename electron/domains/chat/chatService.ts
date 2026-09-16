@@ -12,7 +12,9 @@ import {
   type ChatEventEnvelope,
   type ChatEventSubscriber,
   type ChatRunStatus,
+  type ChatSessionConfig,
   type ChatSessionSummary,
+  type ChatThinkingLevel,
   type ChatSnapshot,
   type RootResolver,
 } from "./types.js";
@@ -121,6 +123,64 @@ export class ChatService {
     record.attaching = false;
   }
 
+  async config(
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<ChatSessionConfig> {
+    await this.root(worktreeId);
+    const record = this.requireUsable(worktreeId, sessionId);
+    try {
+      return await record.session.getConfig();
+    } catch (error) {
+      throw mapChatError(error, "Unable to load chat configuration");
+    }
+  }
+
+  async setModel(
+    worktreeId: string,
+    sessionId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<ChatSessionConfig> {
+    await this.root(worktreeId);
+    const record = this.requireIdle(worktreeId, sessionId);
+    try {
+      const config = await record.session.getConfig();
+      if (
+        !config.models.some(
+          (model) => model.provider === provider && model.id === modelId,
+        )
+      )
+        throw new ChatError(
+          "CHAT_MODEL_UNAVAILABLE",
+          "Selected model is unavailable",
+        );
+      return await record.session.setModel(provider, modelId);
+    } catch (error) {
+      throw mapChatError(error, "Unable to change chat model");
+    }
+  }
+
+  async setThinkingLevel(
+    worktreeId: string,
+    sessionId: string,
+    level: ChatThinkingLevel,
+  ): Promise<ChatSessionConfig> {
+    await this.root(worktreeId);
+    const record = this.requireIdle(worktreeId, sessionId);
+    try {
+      const config = await record.session.getConfig();
+      if (!config.availableThinkingLevels.includes(level))
+        throw new ChatError(
+          "CHAT_FAILED",
+          "Thinking level is unavailable for the selected model",
+        );
+      return await record.session.setThinkingLevel(level);
+    } catch (error) {
+      throw mapChatError(error, "Unable to change thinking level");
+    }
+  }
+
   async send(
     worktreeId: string,
     sessionId: string,
@@ -128,6 +188,22 @@ export class ChatService {
   ): Promise<ChatAccepted> {
     await this.root(worktreeId);
     validateText(text);
+    const nativeCommand = parseNativeCommand(text);
+    if (nativeCommand?.kind === "invalid")
+      throw new ChatError("CHAT_FAILED", nativeCommand.message);
+    if (nativeCommand?.kind === "model") {
+      await this.setModel(
+        worktreeId,
+        sessionId,
+        nativeCommand.provider,
+        nativeCommand.modelId,
+      );
+      return { accepted: true };
+    }
+    if (nativeCommand?.kind === "thinking") {
+      await this.setThinkingLevel(worktreeId, sessionId, nativeCommand.level);
+      return { accepted: true };
+    }
     const record = this.requireUsable(worktreeId, sessionId);
     try {
       await record.session.send(text);
@@ -351,6 +427,13 @@ export class ChatService {
     return record;
   }
 
+  private requireIdle(worktreeId: string, sessionId: string): SessionState {
+    const record = this.requireUsable(worktreeId, sessionId);
+    if (!record.session.isIdle)
+      throw new ChatError("CHAT_SESSION_BUSY", "Agent session is busy");
+    return record;
+  }
+
   private requireUsable(worktreeId: string, sessionId: string): SessionState {
     const record = this.requireOwned(worktreeId, sessionId);
     if (record.needsResnapshot) throw resnapshotError();
@@ -370,6 +453,48 @@ export class ChatService {
       throw notFound("Chat worktree is unavailable");
     }
   }
+}
+
+type NativeCommand =
+  | { kind: "model"; provider: string; modelId: string }
+  | { kind: "thinking"; level: ChatThinkingLevel }
+  | { kind: "invalid"; message: string };
+
+const THINKING_LEVELS = new Set<ChatThinkingLevel>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
+function parseNativeCommand(text: string): NativeCommand | undefined {
+  if (text.includes("\n") || text.includes("\r")) return undefined;
+  if (text === "/model" || text.startsWith("/model ")) {
+    const argument = text.slice("/model".length).trim();
+    if (!argument || /\s/.test(argument))
+      return { kind: "invalid", message: "Usage: /model <provider/model>" };
+    const separator = argument.indexOf("/");
+    if (separator <= 0 || separator === argument.length - 1)
+      return { kind: "invalid", message: "Usage: /model <provider/model>" };
+    return {
+      kind: "model",
+      provider: argument.slice(0, separator),
+      modelId: argument.slice(separator + 1),
+    };
+  }
+  if (text === "/thinking" || text.startsWith("/thinking ")) {
+    const argument = text.slice("/thinking".length).trim();
+    if (!THINKING_LEVELS.has(argument as ChatThinkingLevel))
+      return {
+        kind: "invalid",
+        message: "Usage: /thinking <off|minimal|low|medium|high|xhigh|max>",
+      };
+    return { kind: "thinking", level: argument as ChatThinkingLevel };
+  }
+  return undefined;
 }
 
 function validateText(text: string): void {

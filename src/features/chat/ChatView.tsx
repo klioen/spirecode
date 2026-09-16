@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ChatApi } from "./chatApi";
 import { chatRuntime, type ChatRuntime, useChatSession } from "./chatRuntime";
 import { ChatComposer } from "./ChatComposer";
@@ -8,6 +8,7 @@ import { ProcessFlow } from "./ProcessFlow";
 import { projectChatTimeline } from "./chatDisplayItems";
 import { toChatError } from "./sessionReducer";
 import { useChatScrollController } from "./useChatScrollController";
+import type { ChatSessionConfig, ChatThinkingLevel } from "./types";
 
 export interface ChatViewProps {
   worktreeId: string;
@@ -29,6 +30,8 @@ function ChatViewContent({
   Pick<ChatViewProps, "emptyLabel" | "onError"> & { runtime: ChatRuntime }) {
   const state = useChatSession(sessionId, runtime);
   const running = state.status === "streaming";
+  const [config, setConfig] = useState<ChatSessionConfig>();
+  const [configError, setConfigError] = useState<string>();
   const { transcriptRef, scrollToBottom, showScrollToBottom } =
     useChatScrollController(sessionId, state.sequence, running);
 
@@ -64,8 +67,38 @@ function ChatViewContent({
     };
   }, [api, onError, runtime, sessionId, worktreeId]);
 
+  useEffect(() => {
+    let active = true;
+    setConfig(undefined);
+    setConfigError(undefined);
+    void api
+      .config(worktreeId, sessionId)
+      .then((next) => {
+        if (active) setConfig(next);
+      })
+      .catch((caught: unknown) => {
+        if (active)
+          setConfigError(
+            caught instanceof Error ? caught.message : String(caught),
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, sessionId, worktreeId]);
+
   const send = async (text: string) => {
     await api.send(worktreeId, sessionId, text);
+    if (text.startsWith("/model ") || text.startsWith("/thinking "))
+      setConfig(await api.config(worktreeId, sessionId));
+  };
+
+  const setModel = async (provider: string, modelId: string) => {
+    setConfig(await api.setModel(worktreeId, sessionId, provider, modelId));
+  };
+
+  const setThinkingLevel = async (level: ChatThinkingLevel) => {
+    setConfig(await api.setThinkingLevel(worktreeId, sessionId, level));
   };
 
   const stop = async () => {
@@ -79,6 +112,7 @@ function ChatViewContent({
         <div ref={transcriptRef} className="chat-transcript" aria-live="polite">
           {state.status === "loading" && <div>Loading conversation…</div>}
           {state.status === "reconnecting" && <div>Reconnecting…</div>}
+          {configError && <div role="alert">{configError}</div>}
           {(state.status === "failed" || state.status === "auth-required") &&
             !state.items.some(
               (item) => item.type === "notice" && item.kind === "error",
@@ -134,6 +168,9 @@ function ChatViewContent({
           state.status === "failed" ||
           state.status === "auth-required"
         }
+        config={config}
+        onModelChange={setModel}
+        onThinkingLevelChange={setThinkingLevel}
         onSend={send}
         onStop={stop}
       />

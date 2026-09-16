@@ -15,6 +15,21 @@ class FakeSession implements PiSession {
   readonly calls: unknown[][] = [];
   messages: unknown[] = [];
   isStreaming = false;
+  isIdle = true;
+  configValue = {
+    model: { provider: "traex", id: "reasoning-model" },
+    models: [
+      {
+        provider: "traex",
+        id: "reasoning-model",
+        label: "Reasoning Model",
+        reasoning: true,
+      },
+    ],
+    thinkingLevel: "medium" as const,
+    availableThinkingLevels: ["off", "low", "medium", "high"] as const,
+    commands: [],
+  };
   messageGate?: Promise<void>;
   messageStarted?: () => void;
 
@@ -36,6 +51,26 @@ class FakeSession implements PiSession {
     this.messageStarted?.();
     await this.messageGate;
     return this.messages;
+  }
+
+  async getConfig() {
+    this.calls.push(["getConfig"]);
+    return {
+      ...this.configValue,
+      availableThinkingLevels: [...this.configValue.availableThinkingLevels],
+    };
+  }
+
+  async setModel(provider: string, modelId: string) {
+    this.calls.push(["setModel", provider, modelId]);
+    return this.getConfig();
+  }
+
+  async setThinkingLevel(
+    level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max",
+  ) {
+    this.calls.push(["setThinkingLevel", level]);
+    return this.getConfig();
   }
 
   async send(text: string): Promise<void> {
@@ -165,6 +200,63 @@ describe("ChatService", () => {
       ["clearQueue"],
       ["abort"],
     ]);
+  });
+
+  it("returns config and applies model and thinking mutations only while idle", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+
+    await expect(service.config("other", "s1")).rejects.toMatchObject({
+      code: "CHAT_SESSION_NOT_FOUND",
+    });
+    await expect(service.config("w1", "s1")).resolves.toMatchObject({
+      model: { provider: "traex", id: "reasoning-model" },
+    });
+    await expect(
+      service.setModel("w1", "s1", "traex", "reasoning-model"),
+    ).resolves.toMatchObject({ model: { id: "reasoning-model" } });
+    await expect(
+      service.setThinkingLevel("w1", "s1", "high"),
+    ).resolves.toMatchObject({ thinkingLevel: "medium" });
+
+    session.isIdle = false;
+    await expect(
+      service.setThinkingLevel("w1", "s1", "low"),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_BUSY" });
+  });
+
+  it("handles native slash controls without adding them to the transcript", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+
+    await expect(
+      service.send("w1", "s1", "/model traex/reasoning-model"),
+    ).resolves.toEqual({ accepted: true });
+    await expect(service.send("w1", "s1", "/thinking high")).resolves.toEqual({
+      accepted: true,
+    });
+    await service.send("w1", "s1", "/skill:security src");
+
+    expect(session.calls).toContainEqual([
+      "setModel",
+      "traex",
+      "reasoning-model",
+    ]);
+    expect(session.calls).toContainEqual(["setThinkingLevel", "high"]);
+    expect(session.calls).toContainEqual(["send", "/skill:security src"]);
+    expect(session.calls).not.toContainEqual([
+      "send",
+      "/model traex/reasoning-model",
+    ]);
+    await expect(
+      service.send("w1", "s1", "/thinking turbo"),
+    ).rejects.toMatchObject({
+      code: "CHAT_FAILED",
+    });
   });
 
   it("uses a snapshot fence and flushes only events newer than it", async () => {

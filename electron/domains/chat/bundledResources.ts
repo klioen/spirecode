@@ -6,6 +6,7 @@ import type {
   Extension,
   LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
+import type { SettingsResourceSource } from "./spireSettings.js";
 
 export const BUNDLED_PACKAGE_NAMES = [
   "pi-web-access",
@@ -20,14 +21,14 @@ export const BUNDLED_PACKAGE_NAMES = [
 
 export interface BundledResourceOptions {
   bundleRoot: string;
-  settingsPath: string;
-  packageSources: string[];
-  extensionSources: string[];
+  packageSources: SettingsResourceSource[];
+  extensionSources: SettingsResourceSource[];
 }
 
 export interface BundledResourceResult {
   paths: string[];
   diagnostics: string[];
+  spirecodeSources: Set<string>;
 }
 
 export function defaultBundleRoot(): string {
@@ -43,6 +44,7 @@ export async function resolveBundledResources(
 ): Promise<BundledResourceResult> {
   const paths: string[] = [];
   const diagnostics: string[] = [];
+  const spirecodeSources = new Set<string>();
   await verifyBundle(options.bundleRoot);
   for (const name of BUNDLED_PACKAGE_NAMES) {
     const packageRoot = path.join(options.bundleRoot, name);
@@ -50,11 +52,11 @@ export async function resolveBundledResources(
     paths.push(packageRoot);
   }
 
-  const settingsDirectory = path.dirname(options.settingsPath);
-  for (const source of options.packageSources) {
+  for (const entry of options.packageSources) {
+    const { source, settingsPath, layer } = entry;
     try {
       if (isLocalPath(source)) {
-        const resolved = resolveUserPath(settingsDirectory, source);
+        const resolved = resolveUserPath(path.dirname(settingsPath), source);
         const packageRoot = await findPackageRoot(resolved);
         const manifest = JSON.parse(
           await readFile(path.join(packageRoot, "package.json"), "utf8"),
@@ -66,31 +68,46 @@ export async function resolveBundledResources(
           continue;
         }
         paths.push(resolved);
+        if (layer === "spirecode") {
+          spirecodeSources.add(source);
+          spirecodeSources.add(resolved);
+        }
       } else if (bundledNpmPackage(source)) {
         diagnostics.push(
           `Ignored ${source}: package ${bundledNpmPackage(source)} is bundled by SpireCode`,
         );
       } else {
-        paths.push(source);
+        const installed =
+          layer === "pi"
+            ? await installedPiNpmPackage(source, settingsPath)
+            : undefined;
+        paths.push(installed ?? source);
+        if (layer === "spirecode") spirecodeSources.add(source);
       }
     } catch (error) {
       diagnostics.push(`Ignored ${source}: ${message(error)}`);
     }
   }
-  for (const source of options.extensionSources) {
+  for (const entry of options.extensionSources) {
+    const { source, settingsPath, layer } = entry;
     if (!isLocalPath(source)) {
       paths.push(source);
+      if (layer === "spirecode") spirecodeSources.add(source);
       continue;
     }
-    const resolved = resolveUserPath(settingsDirectory, source);
+    const resolved = resolveUserPath(path.dirname(settingsPath), source);
     try {
       await stat(resolved);
       paths.push(resolved);
+      if (layer === "spirecode") {
+        spirecodeSources.add(source);
+        spirecodeSources.add(resolved);
+      }
     } catch (error) {
       diagnostics.push(`Ignored ${source}: ${message(error)}`);
     }
   }
-  return { paths, diagnostics };
+  return { paths, diagnostics, spirecodeSources };
 }
 
 async function verifyBundle(bundleRoot: string): Promise<void> {
@@ -159,6 +176,41 @@ function resolveUserPath(settingsDirectory: string, source: string): string {
   return path.resolve(settingsDirectory, source);
 }
 
+export function applyExtensionPrecedence(
+  result: LoadExtensionsResult,
+  spirecodeSources: ReadonlySet<string>,
+): LoadExtensionsResult {
+  const sourcesByPath = new Map(
+    result.extensions.map((extension) => [
+      extension.resolvedPath,
+      extension.sourceInfo.source,
+    ]),
+  );
+  const isSpirecode = (extensionPath: string) =>
+    spirecodeSources.has(sourcesByPath.get(extensionPath) ?? extensionPath);
+  const spirecodeProviderNames = new Set([
+    ...result.runtime.pendingProviderRegistrations
+      .filter((entry) => isSpirecode(entry.extensionPath))
+      .map((entry) => entry.name),
+    ...result.runtime.pendingNativeProviderRegistrations
+      .filter((entry) => isSpirecode(entry.extensionPath))
+      .map((entry) => entry.provider.id),
+  ]);
+  result.runtime.pendingProviderRegistrations = preferSpirecodeProviders(
+    result.runtime.pendingProviderRegistrations,
+    (entry) => entry.name,
+    (entry) => isSpirecode(entry.extensionPath),
+    spirecodeProviderNames,
+  );
+  result.runtime.pendingNativeProviderRegistrations = preferSpirecodeProviders(
+    result.runtime.pendingNativeProviderRegistrations,
+    (entry) => entry.provider.id,
+    (entry) => isSpirecode(entry.extensionPath),
+    spirecodeProviderNames,
+  );
+  return result;
+}
+
 export function assertNoExtensionConflicts(
   result: LoadExtensionsResult,
 ): LoadExtensionsResult {
@@ -183,6 +235,17 @@ export function assertNoExtensionConflicts(
   ];
   assertUniqueOwners("Provider", providers);
   return result;
+}
+
+function preferSpirecodeProviders<T>(
+  registrations: T[],
+  nameOf: (entry: T) => string,
+  isSpirecode: (entry: T) => boolean,
+  spirecodeNames: ReadonlySet<string>,
+): T[] {
+  return registrations.filter(
+    (entry) => isSpirecode(entry) || !spirecodeNames.has(nameOf(entry)),
+  );
 }
 
 function assertUniqueRegistrations(
@@ -214,10 +277,37 @@ function assertUniqueOwners(
   }
 }
 
+async function installedPiNpmPackage(
+  source: string,
+  settingsPath: string,
+): Promise<string | undefined> {
+  const packageName = npmPackageName(source);
+  if (!packageName) return undefined;
+  const installed = path.join(
+    path.dirname(settingsPath),
+    "npm",
+    "node_modules",
+    packageName,
+  );
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(installed, "package.json"), "utf8"),
+    );
+    return manifest.name === packageName ? installed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function npmPackageName(source: string): string | undefined {
+  return /^npm:((?:@[^/]+\/)?[^@]+)(?:@.*)?$/.exec(source)?.[1];
+}
+
 function bundledNpmPackage(source: string): string | undefined {
-  const match = /^npm:((?:@[^/]+\/)?[^@]+)(?:@.*)?$/.exec(source);
-  return match && BUNDLED_PACKAGE_NAMES.some((name) => name === match[1])
-    ? match[1]
+  const packageName = npmPackageName(source);
+  return packageName &&
+    BUNDLED_PACKAGE_NAMES.some((name) => name === packageName)
+    ? packageName
     : undefined;
 }
 

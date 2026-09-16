@@ -28,6 +28,9 @@ export const COMMANDS = [
   "chat_session_list",
   "chat_session_attach",
   "chat_session_detach",
+  "chat_session_config",
+  "chat_session_set_model",
+  "chat_session_set_thinking_level",
   "chat_session_send",
   "chat_session_abort",
 ] as const;

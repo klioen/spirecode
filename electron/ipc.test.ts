@@ -26,6 +26,55 @@ describe("IPC command argument validation", () => {
     ).toThrow("relativePath is empty or too large");
   });
 
+  it("validates narrow chat configuration arguments", () => {
+    expect(
+      validateCommandArgs("chat_session_set_model", {
+        worktreeId: "w1",
+        sessionId: "s1",
+        provider: "traex",
+        modelId: "gpt-5.6-sol",
+      }),
+    ).toEqual({
+      worktreeId: "w1",
+      sessionId: "s1",
+      provider: "traex",
+      modelId: "gpt-5.6-sol",
+    });
+    for (const thinkingLevel of [
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]) {
+      expect(() =>
+        validateCommandArgs("chat_session_set_thinking_level", {
+          worktreeId: "w1",
+          sessionId: "s1",
+          thinkingLevel,
+        }),
+      ).not.toThrow();
+    }
+    expect(() =>
+      validateCommandArgs("chat_session_set_thinking_level", {
+        worktreeId: "w1",
+        sessionId: "s1",
+        thinkingLevel: "turbo",
+      }),
+    ).toThrow("thinkingLevel is invalid");
+    expect(() =>
+      validateCommandArgs("chat_session_set_model", {
+        worktreeId: "w1",
+        sessionId: "s1",
+        provider: "traex",
+        modelId: "gpt",
+        apiKey: "secret",
+      }),
+    ).toThrow("Unexpected argument: apiKey");
+  });
+
   it("retains path length limits and rejects unexpected fields", () => {
     expect(() =>
       validateCommandArgs("fs_read_dir", {

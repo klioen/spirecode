@@ -64,6 +64,111 @@ describe("ChatComposer", () => {
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 
+  it("renders model and English thinking selectors and applies changes", async () => {
+    const onModelChange = vi.fn().mockResolvedValue(undefined);
+    const onThinkingLevelChange = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatComposer
+        running={false}
+        config={{
+          model: { provider: "traex", id: "reasoning-model" },
+          models: [
+            {
+              provider: "traex",
+              id: "reasoning-model",
+              label: "Reasoning Model",
+              reasoning: true,
+            },
+            {
+              provider: "traex",
+              id: "fast-model",
+              label: "Fast Model",
+              reasoning: false,
+            },
+            {
+              provider: "local",
+              id: "plain",
+              label: "   ",
+              reasoning: false,
+            },
+          ],
+          thinkingLevel: "medium",
+          availableThinkingLevels: ["off", "low", "medium", "high", "xhigh"],
+          commands: [],
+        }}
+        onModelChange={onModelChange}
+        onThinkingLevelChange={onThinkingLevelChange}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const modelSelect = screen.getByRole("combobox", { name: "Model" });
+    const providerGroups = Array.from(modelSelect.querySelectorAll("optgroup"));
+    expect(providerGroups.map((group) => group.label)).toEqual([
+      "traex",
+      "local",
+    ]);
+    expect(
+      providerGroups.map((group) =>
+        Array.from(group.querySelectorAll("option"), (option) => option.text),
+      ),
+    ).toEqual([["Reasoning Model", "Fast Model"], ["plain"]]);
+
+    fireEvent.change(modelSelect, {
+      target: { value: "local/plain" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Thinking level" }), {
+      target: { value: "xhigh" },
+    });
+    await waitFor(() =>
+      expect(onModelChange).toHaveBeenCalledWith("local", "plain"),
+    );
+    expect(onThinkingLevelChange).toHaveBeenCalledWith("xhigh");
+    expect(screen.getByRole("option", { name: "Off" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "XHigh" })).toBeInTheDocument();
+  });
+
+  it("filters and completes runtime slash commands with keyboard controls", async () => {
+    render(
+      <ChatComposer
+        running={false}
+        config={{
+          model: null,
+          models: [],
+          thinkingLevel: "off",
+          availableThinkingLevels: ["off"],
+          commands: [
+            {
+              name: "review",
+              description: "Review code",
+              source: "extension",
+            },
+            {
+              name: "release",
+              description: "Prepare release",
+              argumentHint: "<version>",
+              source: "prompt",
+            },
+          ],
+        }}
+        onModelChange={vi.fn()}
+        onThinkingLevelChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "Chat message" });
+    fireEvent.change(input, { target: { value: "/rel" } });
+    expect(
+      screen.getByRole("listbox", { name: "Slash commands" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Prepare release")).toBeInTheDocument();
+    expect(screen.queryByText("Review code")).toBeNull();
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(input).toHaveValue("/release ");
+  });
+
   it("grows the textarea with content up to its maximum height", () => {
     render(<ChatComposer running={false} onSend={vi.fn()} onStop={vi.fn()} />);
     const input = screen.getByRole("textbox", {
