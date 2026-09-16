@@ -141,6 +141,7 @@ Slash menu 的 query、highlight index 和 open 状态属于 `ChatComposer` 局�
 
 - Renderer 只传 ID 和枚举，不传模型 endpoint、headers、API key 或 source paths。
 - Electron Main 从共享 ModelRuntime 解析模型，拒绝不可用或未认证模型。
+- GUI 启动未继承 shell 环境且缺少 `ARK_API_KEY` 时，Main 通过固定的 `/bin/zsh -ilc` 命令读取登录交互式 shell 中的 `ARK_API_KEY`；不从 `ARK_API_KEYS` 推导、不覆盖已有值、不记录凭据。
 - `~/.pi/agent/settings.json` 与 `~/.spirecode/settings.json` 均只在 Main 读取。相对资源路径分别以其所属 settings 文件目录解析，不能因合并而改变路径基准。
 - SpireCode provider 覆盖只作用于跨层同名 provider；SpireCode 层内部、pi 层内部以及非 provider 的 tool/command 冲突继续拒绝，避免不确定加载顺序。
 - 错误继续映射到既有稳定 Chat error code；不把认证值、环境变量或扩展内部异常堆栈发送给 Renderer。

@@ -15,6 +15,7 @@ import {
   defaultBundleRoot,
   resolveBundledResources,
 } from "./bundledResources.js";
+import { bootstrapArkApiKeyFromLoginShell } from "./shellEnvironment.js";
 import { loadSpireSettings } from "./spireSettings.js";
 import type {
   ChatSessionConfig,
@@ -320,6 +321,7 @@ export async function createPiAdapter(
 }
 
 async function loadDefaultResources() {
+  await bootstrapArkApiKeyFromLoginShell();
   const settings = await loadSpireSettings();
   const bundled = await resolveBundledResources({
     bundleRoot: defaultBundleRoot(),
