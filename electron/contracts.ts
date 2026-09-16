@@ -35,6 +35,7 @@ export const COMMANDS = [
   "chat_session_abort",
   "settings_extensions_list",
   "settings_extension_set_enabled",
+  "settings_memory_read",
 ] as const;
 
 export const TOPICS = [

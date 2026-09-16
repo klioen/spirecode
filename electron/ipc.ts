@@ -275,6 +275,8 @@ async function invoke(
         boolean(args, "enabled"),
       );
     }
+    case "settings_memory_read":
+      return state.memory.read(memoryDocument(args));
   }
 }
 
@@ -315,7 +317,15 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
+  settings_memory_read: ["document"],
 };
+
+function memoryDocument(args: Args): "summary" | "handbook" {
+  const value = text(args, "document");
+  if (value !== "summary" && value !== "handbook")
+    throw new TypeError("document is invalid");
+  return value;
+}
 
 const CHAT_THINKING_LEVELS = new Set([
   "off",
@@ -343,6 +353,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     if (key === "cols" || key === "rows") number(args, key);
     else if (key === "force" || key === "enabled") boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
+    else if (key === "document") memoryDocument(args);
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }
   return args;

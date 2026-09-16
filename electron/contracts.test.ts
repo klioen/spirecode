@@ -9,6 +9,7 @@ describe("Electron host allowlists", () => {
         "chat_session_config",
         "chat_session_set_model",
         "chat_session_set_thinking_level",
+        "settings_memory_read",
       ]),
     );
     expect(isCommand("chat_session_invoke")).toBe(false);

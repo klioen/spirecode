@@ -2,6 +2,7 @@ import {
   RiCloseLine,
   RiComputerLine,
   RiExternalLinkLine,
+  RiFileList3Line,
   RiRobot2Line,
   RiSettings3Line,
   RiTerminalBoxLine,
@@ -10,13 +11,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ExtensionSetting } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { useThemeStore } from "../theme/themeStore";
+import { MemorySettings } from "./MemorySettings";
 import { settingsApi } from "./settingsApi";
 
-type Section = "general" | "agent" | "extensions" | "editor" | "terminal";
+type Section =
+  "general" | "agent" | "memory" | "extensions" | "editor" | "terminal";
 
 const sections: Array<{ id: Section; label: string; icon: ReactNode }> = [
   { id: "general", label: "General", icon: <RiSettings3Line size={16} /> },
   { id: "agent", label: "Agent", icon: <RiRobot2Line size={16} /> },
+  { id: "memory", label: "Memory", icon: <RiFileList3Line size={16} /> },
   {
     id: "extensions",
     label: "Extensions",
@@ -65,14 +69,17 @@ export function SettingsDialog({
           </nav>
           <main className="settings-content">
             {section === "general" && <GeneralSettings />}
+            {section === "memory" && <MemorySettings />}
             {section === "extensions" && (
               <ExtensionsSettings worktreeId={worktreeId} />
             )}
-            {section !== "general" && section !== "extensions" && (
-              <ComingSoon
-                title={sections.find(({ id }) => id === section)!.label}
-              />
-            )}
+            {section !== "general" &&
+              section !== "memory" &&
+              section !== "extensions" && (
+                <ComingSoon
+                  title={sections.find(({ id }) => id === section)!.label}
+                />
+              )}
           </main>
         </div>
       </section>

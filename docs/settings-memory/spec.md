@@ -1,0 +1,80 @@
+# Spec: Settings Memory 文档查看
+Status: accepted。 Implements: `docs/settings-memory/intent.md`。
+
+## 1. 用户体验
+
+Settings 左侧导航在 Agent 后增加 Memory。Memory 页面全局可用，不要求当前存在 project/worktree。
+
+页面包含：
+
+- `memory_summary.md` 与 `MEMORY.md` 两个文档切换按钮；
+- 当前文档名称、大小与最后修改时间；
+- Markdown 渲染的只读正文；
+- 手动 Refresh 按钮；
+- loading、文档未生成、读取失败和空文档状态。
+
+首次进入默认展示 `memory_summary.md`。切换文档时按需读取，关闭 Settings 后不在全局 store 中保留文档正文。
+
+## 2. Memory 数据服务
+
+Electron Main 新增独立的只读 `MemoryService`，不复用 worktree `FilesystemService`，因为 Memory 根目录不属于 project。
+
+Memory 根目录解析规则：
+
+1. `PI_MEMORY_DIR` 存在且非空时使用该目录；
+2. 否则使用 `~/.pi/agent/memories`；
+3. 服务只读，不因目录或文档不存在而创建任何文件或目录。
+
+服务只接受两个枚举文档 ID：
+
+- `summary` → `memory_summary.md`
+- `handbook` → `MEMORY.md`
+
+返回字段白名单：`id`、`name`、`content`、`size`、`updatedAt`。不返回绝对路径、目录配置或其他文件内容。
+
+## 3. 文件安全
+
+- Renderer 不能传文件名、相对路径、绝对路径或 Memory root。
+- Main 从文档 ID 映射固定文件名。
+- 对 root 和目标文件执行 canonical path 校验，拒绝逃逸 root 的 symlink。
+- 目标必须是普通文件。
+- 单文档上限为 2 MiB；拒绝包含 NUL 或无效 UTF-8 的内容。
+- 不允许读取 `.git`、`raw_memories.md`、`worker.log`、rollout summaries、skills 或 SQLite。
+- `PI_MEMORY_DIR` 仅由 Main 进程环境读取，不通过 IPC 暴露。
+
+## 4. IPC
+
+新增 allowlist command：
+
+- `settings_memory_read { document: "summary" | "handbook" }`
+
+IPC 拒绝额外字段和枚举外值。响应为 `MemoryDocument` DTO。文档不存在返回稳定的 `NOT_FOUND` 错误，由 UI 显示尚未生成状态。
+
+## 5. Renderer
+
+- 新增独立 `MemorySettings` 组件，避免继续扩大 `SettingsDialog`。
+- 文档正文仅保存在组件局部 state，不写入 Zustand 或 localStorage。
+- 使用现有 `MarkdownContent` 渲染 Markdown；Memory 容器提供滚动区域。
+- 异步请求使用生命周期保护，防止切换文档或卸载后旧请求覆盖当前结果。
+- Memory 页面不接收或依赖 `worktreeId`。
+
+## 6. 非目标
+
+- 编辑或删除 Memory 文档；
+- 搜索 Memory；
+- 查看 raw memories、rollout summaries、skills、日志或数据库；
+- worker、Phase 1/Phase 2、job 状态；
+- Memory 开关或 pipeline 配置；
+- 文件系统通用浏览能力。
+
+## 7. 验收
+
+- Settings 左侧可以进入 Memory。
+- 没有打开项目时仍可查看 Memory。
+- 默认展示 `memory_summary.md`，可切换到 `MEMORY.md`。
+- Refresh 会重新读取当前文档。
+- Markdown 正确渲染，长文档可滚动。
+- 文档不存在、超限、非法 UTF-8 和读取失败有明确状态。
+- IPC 不接受路径、额外字段或未知文档 ID。
+- symlink 无法逃逸 Memory root。
+- 相关测试及 `pnpm check` 通过；若仓库存在与本变更无关的基线失败，需单独记录。

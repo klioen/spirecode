@@ -7,6 +7,7 @@ import {
   type WatchEvent,
 } from "./domains/filesystem/watcher.js";
 import { GitService } from "./domains/git/index.js";
+import { MemoryService } from "./domains/memory/index.js";
 import { ProjectService } from "./domains/projects/index.js";
 import { SettingsService } from "./domains/settings/index.js";
 import { TerminalService } from "./domains/terminal/service.js";
@@ -21,6 +22,7 @@ export interface SubscriptionEvent<T> {
 export class AppState {
   readonly filesystem: FilesystemService;
   readonly git: GitService;
+  readonly memory: MemoryService;
   readonly terminals: TerminalService;
   readonly chat: ChatService;
   readonly worktrees: WorktreeService;
@@ -34,6 +36,7 @@ export class AppState {
     const root = (id: string) => projects.root(id);
     this.filesystem = new FilesystemService(root);
     this.git = new GitService(root);
+    this.memory = new MemoryService();
     this.terminals = new TerminalService(root, (subscriptionId, payload) => {
       this.send("terminal://event", { subscriptionId, payload });
     });
