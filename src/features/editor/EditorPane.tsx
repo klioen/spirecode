@@ -35,7 +35,12 @@ const MonacoDiffEditor = lazy(() =>
     default: module.DiffEditor,
   })),
 );
-const cache = new ResourceCache<FileContent | GitDiff>();
+interface CachedResource {
+  generation: number;
+  value: FileContent | GitDiff;
+}
+
+const cache = new ResourceCache<CachedResource>();
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; value: FileContent | GitDiff }
@@ -46,8 +51,10 @@ type DocumentTab = Extract<ResourceTab, { type: "file" | "diff" }>;
 function ResourceView({ tab }: { tab: DocumentTab }) {
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const [state, setState] = useState<LoadState>(() => {
-    const value = cache.get(tab.id);
-    return value ? { status: "ready", value } : { status: "loading" };
+    const cached = cache.get(tab.id);
+    return cached
+      ? { status: "ready", value: cached.value }
+      : { status: "loading" };
   });
   const navigationGeneration = useEditorStore(
     (store) => store.navigationGeneration,
@@ -61,14 +68,13 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
   const resourceGeneration =
     tab.type === "file" ? fileGeneration : diffGeneration;
   useEffect(() => {
-    if (resourceGeneration > 0)
-      cache.deletePrefix(`${tab.type}:${tab.worktreeId}:`);
     const cached = cache.get(tab.id);
-    if (cached) {
-      setState({ status: "ready", value: cached });
+    if (cached?.generation === resourceGeneration) {
+      setState({ status: "ready", value: cached.value });
       return;
     }
-    setState({ status: "loading" });
+    if (cached) setState({ status: "ready", value: cached.value });
+    else setState({ status: "loading" });
     const request =
       tab.type === "file"
         ? commands.fsReadFile(tab.worktreeId, tab.relativePath)
@@ -81,7 +87,8 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
             ? (latest.resourceGenerationByWorktree[tab.worktreeId] ?? 0)
             : (latest.diffGenerationByWorktree[tab.worktreeId] ?? 0);
         const resourceIsCurrent = latestGeneration === resourceGeneration;
-        if (resourceIsCurrent) cache.set(tab.id, value);
+        if (resourceIsCurrent)
+          cache.set(tab.id, { generation: resourceGeneration, value });
         if (
           latest.navigationGeneration === navigationGeneration &&
           resourceIsCurrent
@@ -97,7 +104,11 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
             : (latest.diffGenerationByWorktree[tab.worktreeId] ?? 0)) ===
             resourceGeneration
         )
-          setState({ status: "error", error: commandError(error) });
+          setState((current) =>
+            current.status === "ready"
+              ? current
+              : { status: "error", error: commandError(error) },
+          );
       },
     );
   }, [navigationGeneration, resourceGeneration, tab]);
