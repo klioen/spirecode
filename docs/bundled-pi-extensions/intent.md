@@ -7,7 +7,7 @@ SpireCode 的 pi Agent 当前只使用用户和项目现有的 Pi resources。�
 
 ## Proposed outcome
 
-SpireCode 发布包固定并携带一组默认 Pi packages，开发态与正式版使用相同的 bundled resource 行为。SpireCode 不读取用户默认的 `~/.pi/agent/settings.json`，而是读取独立的 `~/.spirecode/settings.json` 作为额外用户配置。bundled resources 始终作为稳定基础层；额外配置与 bundled 发生同 package 冲突时忽略重复项，发生实际 tool、command 或 provider 注册冲突时终止 Agent session 初始化，不能静默覆盖或重复运行。
+SpireCode 发布包固定并携带一组默认 Pi packages，开发态与正式版使用相同的 bundled resource 行为。SpireCode 读取用户默认的 `~/.pi/agent/settings.json` 作为基础配置，并读取 `~/.spirecode/settings.json` 作为覆盖层。bundled resources 始终作为稳定基础层；额外配置与 bundled 发生同 package 冲突时忽略重复项。跨 pi/SpireCode 两层的同名 provider 由 SpireCode 层覆盖；其他实际 tool、command 或同层 provider 注册冲突仍终止 Agent session 初始化。
 
 默认资源：
 
@@ -35,9 +35,9 @@ SpireCode 发布包固定并携带一组默认 Pi packages，开发态与正式�
 - Renderer 不接触 extension 路径或 Node API。
 - bundled 资源只读；`pi-memory` 数据继续写入用户 Pi 目录。
 - 开发态和正式版使用同一份 SpireCode settings 与 bundled resource 规则。
-- 不读取 `~/.pi/agent/settings.json`，不自动加载 `~/.pi/agent/extensions/` 或项目 `.pi/extensions/`。
-- `~/.spirecode/settings.json` 是唯一的 SpireCode 额外 package/extension 配置入口。
-- bundled resources 优先；同 package 用户资源被忽略，实际注册名冲突时终止 Agent session 初始化并报告稳定错误。
+- 读取 `~/.pi/agent/settings.json` 中的设置与显式 packages/extensions，但仍不自动扫描 `~/.pi/agent/extensions/` 或项目 `.pi/extensions/`。
+- `~/.spirecode/settings.json` 是覆盖层：普通字段深度覆盖 pi settings，packages/extensions 合并加载，跨层同名 provider 以 SpireCode 层为准。
+- bundled resources 优先；同 package 用户资源被忽略，tool/command 或同层 provider 实际注册名冲突时终止 Agent session 初始化并报告稳定错误。
 - 模型认证、自定义模型和现有 session 仍复用 `~/.pi/agent`，本次不迁移这些数据。
 - 保持 pi SDK 版本精确锁定，并通过 lockfile 固化依赖。
 

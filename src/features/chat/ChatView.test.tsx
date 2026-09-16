@@ -64,6 +64,34 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
       },
       detach: vi.fn(),
     }),
+    config: vi.fn().mockResolvedValue({
+      model: { provider: "traex", id: "reasoning-model" },
+      models: [
+        {
+          provider: "traex",
+          id: "reasoning-model",
+          label: "Reasoning Model",
+          reasoning: true,
+        },
+      ],
+      thinkingLevel: "medium",
+      availableThinkingLevels: ["off", "low", "medium", "high"],
+      commands: [],
+    }),
+    setModel: vi.fn().mockResolvedValue({
+      model: { provider: "traex", id: "reasoning-model" },
+      models: [],
+      thinkingLevel: "medium",
+      availableThinkingLevels: ["off", "medium"],
+      commands: [],
+    }),
+    setThinkingLevel: vi.fn().mockResolvedValue({
+      model: { provider: "traex", id: "reasoning-model" },
+      models: [],
+      thinkingLevel: "high",
+      availableThinkingLevels: ["off", "high"],
+      commands: [],
+    }),
     send: vi.fn().mockResolvedValue({ accepted: true }),
     abort: vi.fn().mockResolvedValue({ accepted: true }),
     ...overrides,
@@ -158,6 +186,32 @@ describe("ChatView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(input).toHaveValue("authoritative restored"));
     expect(input).not.toHaveValue("stale local queue");
+  });
+
+  it("loads session config and wires model and thinking selectors", async () => {
+    const chatApi = api();
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={chatApi}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+
+    const model = await screen.findByRole("combobox", { name: "Model" });
+    expect(model).toHaveValue("traex/reasoning-model");
+    fireEvent.change(model, { target: { value: "traex/reasoning-model" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Thinking level" }), {
+      target: { value: "high" },
+    });
+    await waitFor(() =>
+      expect(chatApi.setThinkingLevel).toHaveBeenCalledWith(
+        "worktree-1",
+        "session-1",
+        "high",
+      ),
+    );
   });
 
   it.each([

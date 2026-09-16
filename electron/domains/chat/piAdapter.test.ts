@@ -3,33 +3,69 @@ import { createPiAdapter, type PiSdk } from "./piAdapter.js";
 
 function sessionFixture() {
   let streaming = false;
+  let model: unknown = {
+    provider: "traex",
+    id: "reasoning-model",
+    name: "Reasoning Model",
+    reasoning: true,
+  };
+  let thinkingLevel = "medium";
   const calls: unknown[] = [];
+  const session = {
+    sessionId: "s1",
+    sessionName: undefined,
+    get isStreaming() {
+      return streaming;
+    },
+    get isIdle() {
+      return !streaming;
+    },
+    get model() {
+      return model;
+    },
+    get thinkingLevel() {
+      return thinkingLevel;
+    },
+    promptTemplates: [
+      {
+        name: "release",
+        description: "Prepare release",
+        argumentHint: "<version>",
+        content: "private prompt body",
+        filePath: "/private/release.md",
+      },
+    ],
+    getAvailableThinkingLevels: () => ["off", "low", "medium", "high"],
+    setModel: async (next: unknown) => {
+      calls.push(["setModel", next]);
+      model = next;
+      thinkingLevel = "low";
+    },
+    setThinkingLevel: (level: string) => {
+      calls.push(["setThinkingLevel", level]);
+      thinkingLevel = level === "max" ? "high" : level;
+    },
+    messages: [],
+    subscribe: () => () => undefined,
+    prompt: (
+      _text: string,
+      options: {
+        streamingBehavior?: string;
+        preflightResult?: (success: boolean) => void;
+      },
+    ) => {
+      calls.push(["prompt", options.streamingBehavior]);
+      options.preflightResult?.(true);
+      return new Promise<void>(() => undefined);
+    },
+    followUp: async () => undefined,
+    clearQueue: () => ({ steering: [], followUp: [] }),
+    abort: async () => undefined,
+    dispose: () => undefined,
+  };
   return {
     calls,
-    session: {
-      sessionId: "s1",
-      sessionName: undefined,
-      get isStreaming() {
-        return streaming;
-      },
-      messages: [],
-      subscribe: () => () => undefined,
-      prompt: (
-        _text: string,
-        options: {
-          streamingBehavior?: string;
-          preflightResult?: (success: boolean) => void;
-        },
-      ) => {
-        calls.push(["prompt", options.streamingBehavior]);
-        options.preflightResult?.(true);
-        return new Promise<void>(() => undefined);
-      },
-      followUp: async () => undefined,
-      clearQueue: () => ({ steering: [], followUp: [] }),
-      abort: async () => undefined,
-      dispose: () => undefined,
-    },
+    session,
     setStreaming(value: boolean) {
       streaming = value;
     },
@@ -42,6 +78,7 @@ function sdkFixture(options: {
   defaultModel?: string;
   resolvedModel?: unknown;
   configuredAuth?: boolean;
+  availableModels?: unknown[];
 }) {
   const runtime = {
     getModel: (provider: string, model: string) => {
@@ -52,6 +89,7 @@ function sdkFixture(options: {
       calls.push(["hasConfiguredAuth", provider]);
       return options.configuredAuth ?? true;
     },
+    getAvailable: async () => options.availableModels ?? [],
   };
   const settings = {
     getDefaultProvider: () => options.defaultProvider,
@@ -97,7 +135,33 @@ function sdkFixture(options: {
       model?: unknown;
     }) => {
       calls.push(["session", input.sessionManager, input.model]);
-      return { session: fixture.session };
+      return {
+        session: fixture.session,
+        extensionsResult: {
+          runtime: {
+            getCommands: () => [
+              {
+                name: "review",
+                description: "Review code",
+                source: "extension",
+                sourceInfo: { path: "/private/ext.ts" },
+              },
+              {
+                name: "release",
+                description: "Prepare release",
+                source: "prompt",
+                sourceInfo: { path: "/private/release.md" },
+              },
+              {
+                name: "skill:security",
+                description: "Security checks",
+                source: "skill",
+                sourceInfo: { path: "/private/SKILL.md" },
+              },
+            ],
+          },
+        },
+      };
     },
   } as unknown as PiSdk;
   const loadResources = async () => ({
@@ -181,6 +245,87 @@ describe("piAdapter", () => {
     expect(
       calls.some((call) => Array.isArray(call) && call[0] === "session"),
     ).toBe(false);
+  });
+
+  it("projects safe session config and runtime slash commands", async () => {
+    const secretModel = {
+      provider: "traex",
+      id: "reasoning-model",
+      name: "Reasoning Model",
+      reasoning: true,
+      baseUrl: "https://secret.example",
+      headers: { Authorization: "secret" },
+    };
+    const { sdk, loadResources } = sdkFixture({
+      availableModels: [secretModel],
+      resolvedModel: secretModel,
+    });
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    const created = await adapter.create("/repo");
+
+    const config = await created.session.getConfig();
+    expect(config).toMatchObject({
+      model: { provider: "traex", id: "reasoning-model" },
+      models: [
+        {
+          provider: "traex",
+          id: "reasoning-model",
+          label: "Reasoning Model",
+          reasoning: true,
+        },
+      ],
+      thinkingLevel: "medium",
+      availableThinkingLevels: ["off", "low", "medium", "high"],
+    });
+    expect(config.commands).toEqual(
+      expect.arrayContaining([
+        {
+          name: "release",
+          description: "Prepare release",
+          argumentHint: "<version>",
+          source: "prompt",
+        },
+        {
+          name: "model",
+          description: "Select model",
+          argumentHint: "<provider/model>",
+          source: "builtin",
+        },
+        {
+          name: "thinking",
+          description: "Set thinking level",
+          argumentHint: "<off|minimal|low|medium|high|xhigh|max>",
+          source: "builtin",
+        },
+      ]),
+    );
+    expect(JSON.stringify(config)).not.toContain("secret.example");
+    expect(JSON.stringify(config)).not.toContain("/private/");
+  });
+
+  it("uses SDK mutations and returns their authoritative clamped config", async () => {
+    const nextModel = {
+      provider: "local",
+      id: "plain",
+      name: "Plain",
+      reasoning: false,
+    };
+    const { sdk, fixture, loadResources } = sdkFixture({
+      resolvedModel: nextModel,
+      availableModels: [nextModel],
+    });
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    const created = await adapter.create("/repo");
+
+    expect(await created.session.setModel("local", "plain")).toMatchObject({
+      model: { provider: "local", id: "plain" },
+      thinkingLevel: "low",
+    });
+    expect(await created.session.setThinkingLevel("max")).toMatchObject({
+      thinkingLevel: "high",
+    });
+    expect(fixture.calls).toContainEqual(["setModel", nextModel]);
+    expect(fixture.calls).toContainEqual(["setThinkingLevel", "max"]);
   });
 
   it("acknowledges send during prompt preflight and queues follow-ups", async () => {

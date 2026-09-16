@@ -3,6 +3,7 @@ import { isCommand, type CommandName } from "./contracts.js";
 import { KeyedQueue } from "./core/asyncQueue.js";
 import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
+import type { ChatThinkingLevel } from "./domains/chat/types.js";
 import {
   isAllowedRendererUrl,
   type RendererLocationPolicy,
@@ -26,6 +27,9 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     terminalId: 128,
     sessionId: 256,
     subscriptionId: 128,
+    provider: 128,
+    modelId: 256,
+    thinkingLevel: 16,
   };
   if (
     (!allowEmpty && !value) ||
@@ -229,6 +233,24 @@ async function invoke(
       }
       return undefined;
     }
+    case "chat_session_config":
+      return state.chat.config(
+        text(args, "worktreeId"),
+        text(args, "sessionId"),
+      );
+    case "chat_session_set_model":
+      return state.chat.setModel(
+        text(args, "worktreeId"),
+        text(args, "sessionId"),
+        text(args, "provider"),
+        text(args, "modelId"),
+      );
+    case "chat_session_set_thinking_level":
+      return state.chat.setThinkingLevel(
+        text(args, "worktreeId"),
+        text(args, "sessionId"),
+        thinkingLevel(args),
+      );
     case "chat_session_send":
       return state.chat.send(
         text(args, "worktreeId"),
@@ -273,9 +295,29 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_list: ["worktreeId"],
   chat_session_attach: ["worktreeId", "sessionId", "subscriptionId"],
   chat_session_detach: ["worktreeId", "sessionId", "subscriptionId"],
+  chat_session_config: ["worktreeId", "sessionId"],
+  chat_session_set_model: ["worktreeId", "sessionId", "provider", "modelId"],
+  chat_session_set_thinking_level: ["worktreeId", "sessionId", "thinkingLevel"],
   chat_session_send: ["worktreeId", "sessionId", "text"],
   chat_session_abort: ["worktreeId", "sessionId"],
 };
+
+const CHAT_THINKING_LEVELS = new Set([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
+function thinkingLevel(args: Args): ChatThinkingLevel {
+  const value = text(args, "thinkingLevel");
+  if (!CHAT_THINKING_LEVELS.has(value))
+    throw new TypeError("thinkingLevel is invalid");
+  return value as ChatThinkingLevel;
+}
 
 export function validateCommandArgs(command: CommandName, args: Args): Args {
   const allowed = new Set(ALLOWED_FIELDS[command]);
@@ -285,6 +327,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
   for (const key of allowed) {
     if (key === "cols" || key === "rows") number(args, key);
     else if (key === "force") boolean(args, key);
+    else if (key === "thinkingLevel") thinkingLevel(args);
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }
   return args;

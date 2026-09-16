@@ -1,7 +1,9 @@
 import type {
   ChatAccepted,
   ChatEventEnvelope,
+  ChatSessionConfig,
   ChatSessionSummary,
+  ChatThinkingLevel,
   ChatSnapshot,
 } from "./types";
 
@@ -24,6 +26,18 @@ export interface ChatApi {
     sessionId: string,
     onEvent: ChatEventListener,
   ): Promise<ChatAttachment>;
+  config(worktreeId: string, sessionId: string): Promise<ChatSessionConfig>;
+  setModel(
+    worktreeId: string,
+    sessionId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<ChatSessionConfig>;
+  setThinkingLevel(
+    worktreeId: string,
+    sessionId: string,
+    level: ChatThinkingLevel,
+  ): Promise<ChatSessionConfig>;
   send(
     worktreeId: string,
     sessionId: string,
@@ -40,6 +54,9 @@ export const unavailableChatApi: ChatApi = {
   create: async () => unavailable(),
   list: async () => unavailable(),
   attach: async () => unavailable(),
+  config: async () => unavailable(),
+  setModel: async () => unavailable(),
+  setThinkingLevel: async () => unavailable(),
   send: async () => unavailable(),
   abort: async () => unavailable(),
 };

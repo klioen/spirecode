@@ -10,18 +10,28 @@ import {
   createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
 import {
+  applyExtensionPrecedence,
   assertNoExtensionConflicts,
   defaultBundleRoot,
   resolveBundledResources,
 } from "./bundledResources.js";
 import { loadSpireSettings } from "./spireSettings.js";
+import type {
+  ChatSessionConfig,
+  ChatSlashCommand,
+  ChatThinkingLevel,
+} from "./types.js";
 
 export interface PiSession {
   readonly sessionId: string;
   readonly name?: string;
   readonly isStreaming: boolean;
+  readonly isIdle: boolean;
   subscribe(listener: (event: unknown) => void): () => void;
   getMessages(): Promise<unknown[]>;
+  getConfig(): Promise<ChatSessionConfig>;
+  setModel(provider: string, modelId: string): Promise<ChatSessionConfig>;
+  setThinkingLevel(level: ChatThinkingLevel): Promise<ChatSessionConfig>;
   send(text: string): Promise<void>;
   followUp(text: string): Promise<void>;
   clearQueue(): { steering?: readonly string[]; followUp?: readonly string[] };
@@ -53,8 +63,16 @@ export interface PiAdapter {
   open(info: PiSessionInfo, cwd: string): Promise<PiSessionRecord>;
 }
 
+interface PiModel {
+  provider: string;
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+}
+
 interface PiModelRuntime {
   getModel(provider: string, modelId: string): unknown;
+  getAvailable(): Promise<readonly unknown[]>;
   hasConfiguredAuth(provider: string): boolean;
 }
 
@@ -100,7 +118,12 @@ export interface PiSdk {
     services: PiServices;
     sessionManager: PiSessionManager;
     model?: unknown;
-  }): Promise<{ session: AgentSession }>;
+  }): Promise<{
+    session: AgentSession;
+    extensionsResult?: {
+      runtime?: { getCommands(): unknown[] };
+    };
+  }>;
 }
 
 export interface PiAdapterOptions {
@@ -123,22 +146,108 @@ export async function createPiAdapter(
   const modelRuntime = await sdk.ModelRuntime.create();
   const loadResources = options.loadResources ?? loadDefaultResources;
 
-  const wrap = (session: AgentSession): PiSession => ({
-    sessionId: session.sessionId,
-    name: session.sessionName,
-    get isStreaming() {
-      return session.isStreaming;
-    },
-    subscribe: (listener) =>
-      session.subscribe(listener as (event: AgentSessionEvent) => void),
-    getMessages: async () => session.messages,
-    send: (text) =>
-      acceptPrompt(session, text, session.isStreaming ? "followUp" : undefined),
-    followUp: (text) => session.followUp(text),
-    clearQueue: () => session.clearQueue(),
-    abort: () => session.abort(),
-    dispose: () => session.dispose(),
-  });
+  const wrap = (
+    session: AgentSession,
+    runtimeCommands: () => unknown[],
+  ): PiSession => {
+    const getConfig = async (): Promise<ChatSessionConfig> => {
+      const models = (await modelRuntime.getAvailable())
+        .filter(isPiModel)
+        .map((model) => ({
+          provider: model.provider,
+          id: model.id,
+          label: model.name || model.id,
+          reasoning: model.reasoning === true,
+        }));
+      const promptHints = new Map(
+        session.promptTemplates.map((template) => [
+          template.name,
+          template.argumentHint,
+        ]),
+      );
+      const commands = runtimeCommands()
+        .map(normalizeCommand)
+        .filter(
+          (command): command is ChatSlashCommand =>
+            Boolean(command) &&
+            command?.name !== "model" &&
+            command?.name !== "thinking",
+        )
+        .map((command) =>
+          command.source === "prompt" && promptHints.get(command.name)
+            ? { ...command, argumentHint: promptHints.get(command.name) }
+            : command,
+        );
+      commands.push(
+        {
+          name: "model",
+          description: "Select model",
+          argumentHint: "<provider/model>",
+          source: "builtin",
+        },
+        {
+          name: "thinking",
+          description: "Set thinking level",
+          argumentHint: "<off|minimal|low|medium|high|xhigh|max>",
+          source: "builtin",
+        },
+      );
+      return {
+        model: session.model
+          ? { provider: session.model.provider, id: session.model.id }
+          : null,
+        models,
+        thinkingLevel: session.thinkingLevel,
+        availableThinkingLevels: session.getAvailableThinkingLevels(),
+        commands,
+      };
+    };
+
+    return {
+      sessionId: session.sessionId,
+      name: session.sessionName,
+      get isStreaming() {
+        return session.isStreaming;
+      },
+      get isIdle() {
+        return session.isIdle;
+      },
+      subscribe: (listener) =>
+        session.subscribe(listener as (event: AgentSessionEvent) => void),
+      getMessages: async () => session.messages,
+      getConfig,
+      async setModel(provider, modelId) {
+        const model = (await modelRuntime.getAvailable()).find(
+          (candidate) =>
+            isPiModel(candidate) &&
+            candidate.provider === provider &&
+            candidate.id === modelId,
+        );
+        if (!model)
+          throw new Error(
+            `Configured model ${provider}/${modelId} is unavailable`,
+          );
+        await session.setModel(
+          model as Parameters<AgentSession["setModel"]>[0],
+        );
+        return getConfig();
+      },
+      async setThinkingLevel(level) {
+        session.setThinkingLevel(level);
+        return getConfig();
+      },
+      send: (text) =>
+        acceptPrompt(
+          session,
+          text,
+          session.isStreaming ? "followUp" : undefined,
+        ),
+      followUp: (text) => session.followUp(text),
+      clearQueue: () => session.clearQueue(),
+      abort: () => session.abort(),
+      dispose: () => session.dispose(),
+    };
+  };
 
   const load = async (
     sessionManager: PiSessionManager,
@@ -158,14 +267,18 @@ export async function createPiAdapter(
     const model = hasExistingMessages
       ? undefined
       : configuredDefaultModel(services);
-    const { session } = await sdk.createAgentSessionFromServices({
+    const created = await sdk.createAgentSessionFromServices({
       services,
       sessionManager,
       model,
     });
+    const { session } = created;
     const now = Date.now();
     return {
-      session: wrap(session),
+      session: wrap(
+        session,
+        () => created.extensionsResult?.runtime?.getCommands() ?? [],
+      ),
       sessionId: session.sessionId,
       cwd,
       title: session.sessionName ?? metadata.title ?? "New chat",
@@ -210,7 +323,6 @@ async function loadDefaultResources() {
   const settings = await loadSpireSettings();
   const bundled = await resolveBundledResources({
     bundleRoot: defaultBundleRoot(),
-    settingsPath: settings.settingsPath,
     packageSources: settings.packageSources,
     extensionSources: settings.extensionSources,
   });
@@ -222,7 +334,10 @@ async function loadDefaultResources() {
     resourceLoaderOptions: {
       noExtensions: true,
       additionalExtensionPaths: bundled.paths,
-      extensionsOverride: assertNoExtensionConflicts,
+      extensionsOverride: (result: LoadExtensionsResult) =>
+        assertNoExtensionConflicts(
+          applyExtensionPrecedence(result, bundled.spirecodeSources),
+        ),
     },
     diagnostics: bundled.diagnostics,
   };
@@ -260,6 +375,7 @@ function acceptPrompt(
   return new Promise((resolve, reject) => {
     let accepted = false;
     const run = session.prompt(text, {
+      expandPromptTemplates: true,
       ...(streamingBehavior ? { streamingBehavior } : {}),
       preflightResult(success) {
         if (success) {
@@ -274,6 +390,32 @@ function acceptPrompt(
       if (!accepted) reject(error);
     });
   });
+}
+
+function isPiModel(value: unknown): value is PiModel {
+  return (
+    isRecord(value) &&
+    typeof value.provider === "string" &&
+    typeof value.id === "string"
+  );
+}
+
+function normalizeCommand(value: unknown): ChatSlashCommand | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    (value.source !== "extension" &&
+      value.source !== "prompt" &&
+      value.source !== "skill")
+  )
+    return undefined;
+  return {
+    name: value.name,
+    ...(typeof value.description === "string"
+      ? { description: value.description }
+      : {}),
+    source: value.source,
+  };
 }
 
 function dateValue(value: unknown): number | undefined {

@@ -6,8 +6,8 @@ Status: accepted。 Implements: `docs/bundled-pi-extensions/intent.md`。
 - 生产构建携带七个 extension packages 和一个 skills package 的完整运行文件。
 - bundled resources 来自锁定的 `pi-extensions` Git commit，构建不依赖 `~/Code/pi-extensions` checkout。
 - 开发态和正式版使用同一套 bundled resource 与 settings 行为。
-- SpireCode 不读取 `~/.pi/agent/settings.json`，不自动加载 `~/.pi/agent/extensions/`、项目 `.pi/extensions/` 或项目 `.pi/settings.json` 中的 packages/extensions。
-- SpireCode 使用 `~/.spirecode/settings.json` 作为开发态与正式版的额外用户配置入口。
+- SpireCode 读取 `~/.pi/agent/settings.json` 作为基础配置，但不自动扫描 `~/.pi/agent/extensions/`、项目 `.pi/extensions/` 或项目 `.pi/settings.json` 中的 packages/extensions。
+- SpireCode 使用 `~/.spirecode/settings.json` 作为开发态与正式版的覆盖配置：普通字段深度覆盖，packages/extensions 合并，跨层同名 provider 以 SpireCode 层为准。
 - bundled package 不可被同名用户 package 重复加载；不同 package 的实际 tool、command 或 provider 注册重名时，在创建 AgentSession 前终止初始化并报告错误，不能静默覆盖。
 - 模型认证、自定义模型和 durable sessions 继续复用 `~/.pi/agent`，不要求用户重新登录或迁移历史。
 - `pi-memory` 数据继续写入其既有 `~/.pi/agent` 或环境变量覆盖目录，不写应用 bundle。
@@ -40,15 +40,15 @@ SpireCode 依赖固定到 `https://github.com/klioen/pi-extensions.git` 的 comm
 
 不能把 SDK `agentDir` 改成 `~/.spirecode`，因为这会同时迁移 auth、models 和 sessions。
 
-SpireCode 自己读取 `~/.spirecode/settings.json`，删除其中的 `packages` 与 `extensions` 后用 `SettingsManager.inMemory()` 创建 cwd-aware settings。这样不会读取 `~/.pi/agent/settings.json` 或项目 `.pi/settings.json`，但 ModelRuntime 和 SessionManager 仍使用标准 Pi 数据目录。
+SpireCode 分别读取 `~/.pi/agent/settings.json` 与 `~/.spirecode/settings.json`，普通字段递归合并且 SpireCode 值优先；删除合并结果中的 `packages` 与 `extensions` 后用 `SettingsManager.inMemory()` 创建 cwd-aware settings。两层 packages/extensions 保留来源和各自 settings 目录，合并后显式加载，因此相对路径不会因配置合并改变含义。项目 `.pi/settings.json` 仍不参与该配置层。
 
-ResourceLoader 设置 `noExtensions: true`，关闭 Pi 全局和项目 extension 自动发现；bundled roots 与 SpireCode settings 中的用户 package/extension sources统一通过 `additionalExtensionPaths` 显式加载。项目 AGENTS.md 与 skills 继续按 Pi 标准发现。
+ResourceLoader 设置 `noExtensions: true`，关闭 Pi 全局和项目 extension 目录自动发现；bundled roots 与两层 settings 中的用户 package/extension sources 统一通过 `additionalExtensionPaths` 显式加载。项目 AGENTS.md 与 skills 继续按 Pi 标准发现。
 
 ### Conflict handling
 
 加载前读取本地 package manifest；若 package name 与 bundled package 相同则忽略该用户 source并记录诊断。npm source 的明确同名 identity 同样被忽略。
 
-不同 package 的内部注册名无法在不执行 extension factory 的情况下可靠获知。SDK 只执行一次 factory 后，SpireCode 通过 `extensionsOverride` 检查实际的 tool、command 和 extension provider registrations。发现重名或 extension loader error 时立即抛错，尚未创建 AgentSession，也不会进入 `session_start` 生命周期。
+不同 package 的内部注册名无法在不执行 extension factory 的情况下可靠获知。SDK 只执行一次 factory 后，SpireCode 通过 `extensionsOverride` 检查实际的 tool、command 和 extension provider registrations。跨 pi/SpireCode 两层出现同名 provider 时删除 pi 层 registration，确定性保留 SpireCode 层；tool/command、同层 provider 重名或 extension loader error 仍立即抛错，尚未创建 AgentSession，也不会进入 `session_start` 生命周期。
 
 ### Verification
 

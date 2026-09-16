@@ -2,7 +2,9 @@ import "./host";
 import type {
   ChatAccepted,
   ChatEvent,
+  ChatSessionConfig,
   ChatSessionSummary,
+  ChatThinkingLevel,
   ChatSnapshot,
   FileContent,
   FileEntry,
@@ -184,6 +186,33 @@ export const commands = {
       throw error;
     }
   },
+  chatSessionConfig: (worktreeId: string, sessionId: string) =>
+    command<ChatSessionConfig>("chat_session_config", {
+      worktreeId,
+      sessionId,
+    }),
+  chatSessionSetModel: (
+    worktreeId: string,
+    sessionId: string,
+    provider: string,
+    modelId: string,
+  ) =>
+    command<ChatSessionConfig>("chat_session_set_model", {
+      worktreeId,
+      sessionId,
+      provider,
+      modelId,
+    }),
+  chatSessionSetThinkingLevel: (
+    worktreeId: string,
+    sessionId: string,
+    thinkingLevel: ChatThinkingLevel,
+  ) =>
+    command<ChatSessionConfig>("chat_session_set_thinking_level", {
+      worktreeId,
+      sessionId,
+      thinkingLevel,
+    }),
   chatSessionSend: (worktreeId: string, sessionId: string, text: string) =>
     command<ChatAccepted>("chat_session_send", {
       worktreeId,

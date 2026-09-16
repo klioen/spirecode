@@ -22,6 +22,34 @@ export class ChatError extends Error {
 
 export type ChatRunStatus = "idle" | "streaming" | "failed" | "auth-required";
 
+export type ChatThinkingLevel =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface ChatModelRef {
+  provider: string;
+  id: string;
+}
+
+export interface ChatModelOption extends ChatModelRef {
+  label: string;
+  reasoning: boolean;
+}
+
+export interface ChatSlashCommand {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  source: "extension" | "prompt" | "skill" | "builtin";
+}
+
+export interface ChatSessionConfig {
+  model: ChatModelRef | null;
+  models: ChatModelOption[];
+  thinkingLevel: ChatThinkingLevel;
+  availableThinkingLevels: ChatThinkingLevel[];
+  commands: ChatSlashCommand[];
+}
+
 export interface ChatSessionSummary {
   sessionId: string;
   worktreeId: string;

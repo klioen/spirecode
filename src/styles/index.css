@@ -1251,6 +1251,7 @@ details[open] > summary > .chat-disclosure-icon {
   margin: 0 auto 18px;
 }
 .chat-composer {
+  position: relative;
   min-height: 126px;
   padding: 14px 16px 12px;
   border: 1px solid var(--border-default);
@@ -1290,13 +1291,96 @@ details[open] > summary > .chat-disclosure-icon {
   gap: 8px;
   padding-top: 7px;
 }
+.chat-composer-config {
+  min-width: 0;
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-composer-config select {
+  max-width: 190px;
+  height: 28px;
+  padding: 0 22px 0 8px;
+  border: 0;
+  border-radius: 8px;
+  outline: 0;
+  background: var(--control-bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.chat-composer-config select:hover:not(:disabled),
+.chat-composer-config select:focus-visible {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.chat-composer-config select:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.chat-slash-menu {
+  position: absolute;
+  z-index: 10;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  max-height: 260px;
+  padding: 5px;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--elevated-bg);
+  box-shadow: 0 12px 32px var(--shadow);
+}
+.chat-slash-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.chat-slash-menu button.active,
+.chat-slash-menu button:hover {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.chat-slash-name {
+  color: var(--text-default);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.chat-slash-hint,
+.chat-slash-source {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+.chat-slash-description {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-slash-source {
+  margin-left: auto;
+}
 .chat-composer-hint,
 .chat-composer-count {
   color: var(--text-subtle);
   font-size: 10px;
 }
 .chat-composer-hint {
-  margin-right: auto;
+  flex: 0 0 auto;
 }
 .chat-composer-count {
   color: var(--warning);
@@ -1391,6 +1475,9 @@ details[open] > summary > .chat-disclosure-icon {
   }
   .chat-composer-hint {
     display: none;
+  }
+  .chat-composer-config select {
+    max-width: 130px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
