@@ -154,6 +154,15 @@ export function sessionReducer(
           status: event.error ? "error" : "done",
         })),
       };
+    case "todo_update":
+      return {
+        ...next,
+        items: upsertItem(
+          state.items,
+          (item) => item.type === "todo" && item.id === event.todo.id,
+          { type: "todo", ...event.todo },
+        ),
+      };
     case "queue_update":
       return { ...next, queue: [...event.queue] };
     case "compaction_start":

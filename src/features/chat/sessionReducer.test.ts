@@ -8,6 +8,37 @@ const reduce = (
 ) => sessionReducer(state, { sequence, event });
 
 describe("sessionReducer", () => {
+  it("adds and idempotently updates todo timeline snapshots", () => {
+    const initial = createInitialChatState("s1", "w1", "idle");
+    const first = sessionReducer(initial, {
+      sequence: 1,
+      event: {
+        type: "todo_update",
+        todo: {
+          id: "todo-1",
+          todos: [{ id: "a", step: "Inspect", status: "pending" }],
+        },
+      },
+    });
+    const updated = sessionReducer(first, {
+      sequence: 2,
+      event: {
+        type: "todo_update",
+        todo: {
+          id: "todo-1",
+          todos: [{ id: "a", step: "Inspect", status: "completed" }],
+        },
+      },
+    });
+
+    expect(updated.items).toEqual([
+      {
+        type: "todo",
+        id: "todo-1",
+        todos: [{ id: "a", step: "Inspect", status: "completed" }],
+      },
+    ]);
+  });
   it("stays busy after agent_end and becomes idle only after agent_settled", () => {
     let state = createInitialChatState("session-1", "worktree-1", "idle");
     state = reduce(state, 1, { type: "agent_start" });

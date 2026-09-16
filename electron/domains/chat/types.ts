@@ -59,6 +59,16 @@ export interface ChatSessionSummary {
   status?: ChatRunStatus;
 }
 
+export type ChatTodoStatus =
+  "pending" | "in_progress" | "completed" | "blocked";
+
+export interface ChatTodoModel {
+  id: string;
+  todos: Array<{ id: string; step: string; status: ChatTodoStatus }>;
+  explanation?: string;
+  createdAt?: number;
+}
+
 export interface ChatSnapshotError {
   code: ChatErrorCode;
   message: string;

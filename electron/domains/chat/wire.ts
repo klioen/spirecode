@@ -50,12 +50,70 @@ export function normalizeSummary(record: Record<string, unknown>): {
   };
 }
 
+const TODO_STATUSES = new Set([
+  "pending",
+  "in_progress",
+  "completed",
+  "blocked",
+]);
+
+function normalizeTodoEntry(
+  entry: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (
+    entry.type !== "custom" ||
+    entry.customType !== "pi-todo-state" ||
+    typeof entry.id !== "string" ||
+    !entry.id ||
+    !isRecord(entry.data) ||
+    !Array.isArray(entry.data.todos)
+  )
+    return undefined;
+
+  const todos = entry.data.todos
+    .filter(
+      (todo): todo is Record<string, unknown> =>
+        isRecord(todo) &&
+        typeof todo.id === "string" &&
+        Boolean(todo.id.trim()) &&
+        typeof todo.step === "string" &&
+        Boolean(todo.step.trim()) &&
+        typeof todo.status === "string" &&
+        TODO_STATUSES.has(todo.status),
+    )
+    .slice(0, 20)
+    .map((todo) => ({
+      id: (todo.id as string).trim(),
+      step: (todo.step as string).trim(),
+      status: todo.status,
+    }));
+  if (todos.length === 0) return undefined;
+
+  const explanation =
+    typeof entry.data.explanation === "string"
+      ? entry.data.explanation.trim()
+      : "";
+  const createdAt = epoch(entry.timestamp);
+  return {
+    type: "todo",
+    id: entry.id,
+    todos,
+    ...(explanation ? { explanation } : {}),
+    ...(createdAt === undefined ? {} : { createdAt }),
+  };
+}
+
 export function normalizeMessages(messages: unknown): unknown[] {
   const items: Array<Record<string, unknown>> = [];
   const tools = new Map<string, Record<string, unknown>>();
   const values = Array.isArray(messages) ? messages : [];
   values.forEach((raw, index) => {
     if (!isRecord(raw)) return;
+    const todo = normalizeTodoEntry(raw);
+    if (todo) {
+      items.push(todo);
+      return;
+    }
     const base = messageId(raw, index);
     if (raw.role === "user") {
       items.push({
@@ -130,6 +188,38 @@ export function normalizeMessages(messages: unknown): unknown[] {
       }
     }
   });
+  return items;
+}
+
+export function normalizeTimeline(
+  messages: unknown,
+  entries: unknown,
+): unknown[] {
+  const items = normalizeMessages(messages) as Array<Record<string, unknown>>;
+  if (!Array.isArray(entries)) return items;
+
+  const todos = entries
+    .filter(isRecord)
+    .map(normalizeTodoEntry)
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .sort(
+      (left, right) =>
+        (epoch(left.createdAt) ?? Number.MAX_SAFE_INTEGER) -
+        (epoch(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
+    );
+
+  for (const todo of todos) {
+    const timestamp = epoch(todo.createdAt);
+    const insertAt =
+      timestamp === undefined
+        ? -1
+        : items.findIndex((item) => {
+            const itemTimestamp = epoch(item.createdAt);
+            return itemTimestamp !== undefined && itemTimestamp > timestamp;
+          });
+    if (insertAt < 0) items.push(todo);
+    else items.splice(insertAt, 0, todo);
+  }
   return items;
 }
 
@@ -243,6 +333,13 @@ export function normalizeEvent(raw: unknown): Array<Record<string, unknown>> {
         ...(raw.isError ? { error } : {}),
       },
     ];
+  }
+  if (raw.type === "entry_appended" && isRecord(raw.entry)) {
+    const item = normalizeTodoEntry(raw.entry);
+    if (!item) return [];
+    const todo = { ...item };
+    delete todo.type;
+    return [{ type: "todo_update", todo }];
   }
   if (raw.type === "queue_update") {
     const steering = Array.isArray(raw.steering) ? raw.steering : [];

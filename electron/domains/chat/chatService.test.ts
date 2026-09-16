@@ -14,6 +14,7 @@ class FakeSession implements PiSession {
   readonly events = new EventEmitter();
   readonly calls: unknown[][] = [];
   messages: unknown[] = [];
+  entries: unknown[] = [];
   isStreaming = false;
   isIdle = true;
   configValue = {
@@ -48,9 +49,13 @@ class FakeSession implements PiSession {
   }
 
   async getMessages(): Promise<unknown[]> {
+    return this.messages;
+  }
+
+  async getEntries(): Promise<unknown[]> {
     this.messageStarted?.();
     await this.messageGate;
-    return this.messages;
+    return this.entries;
   }
 
   async getConfig() {
@@ -177,13 +182,33 @@ describe("ChatService", () => {
     });
 
     const session = records.get("s1")?.session as FakeSession;
+    session.emit({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        id: "todo-1",
+        customType: "pi-todo-state",
+        data: { todos: [{ id: "a", step: "Inspect", status: "pending" }] },
+      },
+    });
     session.emit({ type: "agent_start" });
     session.emit({ type: "agent_end", messages: [{ content: "secret" }] });
     session.emit({ type: "agent_settled" });
     expect(events).toEqual([
-      { sessionId: "s1", sequence: 1, event: { type: "agent_start" } },
-      { sessionId: "s1", sequence: 2, event: { type: "agent_end" } },
-      { sessionId: "s1", sequence: 3, event: { type: "agent_settled" } },
+      {
+        sessionId: "s1",
+        sequence: 1,
+        event: {
+          type: "todo_update",
+          todo: {
+            id: "todo-1",
+            todos: [{ id: "a", step: "Inspect", status: "pending" }],
+          },
+        },
+      },
+      { sessionId: "s1", sequence: 2, event: { type: "agent_start" } },
+      { sessionId: "s1", sequence: 3, event: { type: "agent_end" } },
+      { sessionId: "s1", sequence: 4, event: { type: "agent_settled" } },
     ]);
     expect(JSON.stringify(events)).not.toContain("secret");
 
@@ -256,6 +281,33 @@ describe("ChatService", () => {
       service.send("w1", "s1", "/thinking turbo"),
     ).rejects.toMatchObject({
       code: "CHAT_FAILED",
+    });
+  });
+
+  it("restores todo entries from the active branch snapshot", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+    session.entries = [
+      {
+        type: "custom",
+        id: "todo-history",
+        customType: "pi-todo-state",
+        data: { todos: [{ id: "a", step: "Inspect", status: "completed" }] },
+      },
+    ];
+
+    await expect(
+      service.attach("w1", "s1", () => undefined),
+    ).resolves.toMatchObject({
+      items: [
+        {
+          type: "todo",
+          id: "todo-history",
+          todos: [{ id: "a", step: "Inspect", status: "completed" }],
+        },
+      ],
     });
   });
 
