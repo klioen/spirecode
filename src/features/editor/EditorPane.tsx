@@ -1,4 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   RiChatNewLine,
   RiChatHistoryLine,
@@ -215,6 +223,42 @@ function DiffView({ diff }: { diff: GitDiff }) {
 export function EditorPane({ worktreeId }: { worktreeId: string }) {
   const view = useEditorStore((state) => state.views[worktreeId]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const historyId = useId();
+  const historyTriggerRef = useRef<HTMLButtonElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+  const closeHistoryWithFocus = () => {
+    setHistoryOpen(false);
+    historyTriggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    setHistoryOpen(false);
+  }, [worktreeId]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const path = event.composedPath();
+      if (
+        !path.includes(historyRef.current as EventTarget) &&
+        !path.includes(historyTriggerRef.current as EventTarget)
+      )
+        setHistoryOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setHistoryOpen(false);
+      historyTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [historyOpen]);
+
   const createChat = async () => {
     const navigation = useEditorStore.getState().beginNavigation();
     try {
@@ -313,8 +357,11 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
         </div>
         <div className="editor-resource-actions">
           <button
+            ref={historyTriggerRef}
             title="Chat history"
             aria-label="Chat history"
+            aria-expanded={historyOpen}
+            aria-controls={historyOpen ? historyId : undefined}
             onClick={() => setHistoryOpen((open) => !open)}
           >
             <RiChatHistoryLine size={16} />
@@ -337,16 +384,22 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
       </div>
       <div className="editor-content">
         {historyOpen && (
-          <ChatHistory
-            worktreeId={worktreeId}
-            api={hostChatApi}
-            onOpen={(session) => {
-              useEditorStore
-                .getState()
-                .openChat(worktreeId, session.sessionId, session.title);
-              setHistoryOpen(false);
-            }}
-          />
+          <div ref={historyRef} id={historyId} className="chat-history-popover">
+            <ChatHistory
+              worktreeId={worktreeId}
+              api={hostChatApi}
+              activeSessionId={
+                active?.type === "chat" ? active.sessionId : undefined
+              }
+              onClose={closeHistoryWithFocus}
+              onOpen={(session) => {
+                useEditorStore
+                  .getState()
+                  .openChat(worktreeId, session.sessionId, session.title);
+                setHistoryOpen(false);
+              }}
+            />
+          </div>
         )}
         {active ? (
           active.type === "terminal" ? (

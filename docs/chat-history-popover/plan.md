@@ -33,9 +33,19 @@ From `docs/chat-history-popover/spec.md`。Status: approved，用户已确认按
 ## Proof
 
 ```bash
-pnpm test -- src/features/chat/ChatHistory.test.tsx src/features/editor/EditorPane.test.tsx
+pnpm exec vitest run src/features/chat/ChatHistory.test.tsx src/features/editor/EditorPane.test.tsx
 pnpm check
 pnpm build:renderer
 ```
 
 验收：上述测试及构建退出 0；外部点击、Esc、入口切换及选择后关闭正确；搜索/分组/活动项与状态展示正确；明暗主题和窄面板没有横向溢出，外部操作正常响应。
+
+## Execution results
+
+- Red：旧实现 7 个新增用例失败，包括外部 pointerdown、Escape、搜索/分组、worktree 切换；无效日期触发 `RangeError: Invalid time value`。测试基线提交 `f274691`，实现阶段未修改该测试基线。
+- Green：针对性测试 `2 passed` / `15 passed`。
+- 最终 `pnpm check`：格式、品牌、lint、双端类型检查全部通过；`Test Files 47 passed (47)` / `Tests 220 passed (220)`。首次全量运行 watcher 的 native recursive 测试超时，单独重跑及最终完整检查均通过；未改 watcher 代码或测试。
+- `pnpm build:renderer` 退出 0；保留现有 Monaco 混合动态/静态导入与 chunk 体积警告。
+- 使用临时 Vite 预览及 sandboxed Electron BrowserWindow，加载真实 ChatHistory 组件和项目 CSS、24 条 mock 会话，查看 dark/light/narrow 三张截图。标准列表 clientWidth/scrollWidth 均 358，窄面板均 260，无横向溢出；窄面板高 300 时浮层高 282、列表独立滚动。截图在 `/tmp/chat-history-{dark,light,narrow}.png`，未加入仓库。
+- 视觉验证是隔离组件预览，不是已打包应用的真实会话端到端验证；EditorPane 的关闭、回焦、选择会话及外部操作通过集成测试验证。
+- 命令调整：`pnpm test -- <paths>` 在当前脚本下仍执行全套测试，因此针对性验证改用 `pnpm exec vitest run <paths>`。
