@@ -212,6 +212,32 @@ describe("piAdapter", () => {
     ]);
   });
 
+  it("loads only extensions selected from the resolved resource set", async () => {
+    const { sdk, calls, runtime, loadResources } = sdkFixture({});
+    const adapter = await createPiAdapter(sdk, {
+      loadResources,
+      selectExtensionPaths: async (_cwd, basePaths) => [
+        ...basePaths,
+        "/extensions/enabled.ts",
+      ],
+    });
+
+    await adapter.create("/repo");
+
+    expect(calls).toContainEqual([
+      "services",
+      "/repo",
+      runtime,
+      {
+        noExtensions: true,
+        additionalExtensionPaths: [
+          "/bundle/pi-memory",
+          "/extensions/enabled.ts",
+        ],
+      },
+    ]);
+  });
+
   it("preserves the saved model when opening a session with messages", async () => {
     const { sdk, calls, manager, loadResources } = sdkFixture({
       existingMessages: [{ role: "user", content: "existing" }],

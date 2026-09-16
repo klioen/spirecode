@@ -1,8 +1,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatApi } from "./chatApi";
 import { ChatRuntime } from "./chatRuntime";
 import { ChatView } from "./ChatView";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((complete, fail) => {
+    resolve = complete;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 
 function api(overrides: Partial<ChatApi> = {}): ChatApi {
   return {
@@ -197,6 +208,90 @@ describe("ChatView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(input).toHaveValue("authoritative restored"));
     expect(input).not.toHaveValue("stale local queue");
+  });
+
+  it("loads config only after the authoritative attachment succeeds", async () => {
+    const attachment = deferred<Awaited<ReturnType<ChatApi["attach"]>>>();
+    const chatApi = api({
+      attach: vi.fn().mockReturnValue(attachment.promise),
+    });
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={chatApi}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+
+    await waitFor(() => expect(chatApi.attach).toHaveBeenCalledOnce());
+    expect(chatApi.config).not.toHaveBeenCalled();
+
+    attachment.resolve({
+      snapshot: {
+        sessionId: "session-1",
+        worktreeId: "worktree-1",
+        status: "idle",
+        items: [],
+        queue: [],
+        sequence: 1,
+      },
+      detach: vi.fn(),
+    });
+    await waitFor(() =>
+      expect(chatApi.config).toHaveBeenCalledWith("worktree-1", "session-1"),
+    );
+  });
+
+  it("cleans up the superseded attachment under StrictMode", async () => {
+    const firstDetach = vi.fn();
+    const secondDetach = vi.fn();
+    const chatApi = api({
+      attach: vi
+        .fn()
+        .mockResolvedValueOnce({
+          snapshot: {
+            sessionId: "session-1",
+            worktreeId: "worktree-1",
+            status: "idle",
+            items: [],
+            queue: [],
+            sequence: 1,
+          },
+          detach: firstDetach,
+        })
+        .mockResolvedValueOnce({
+          snapshot: {
+            sessionId: "session-1",
+            worktreeId: "worktree-1",
+            status: "idle",
+            items: [],
+            queue: [],
+            sequence: 1,
+          },
+          detach: secondDetach,
+        }),
+    });
+    const onError = vi.fn();
+    const { unmount } = render(
+      <StrictMode>
+        <ChatView
+          worktreeId="worktree-1"
+          sessionId="session-1"
+          api={chatApi}
+          runtime={new ChatRuntime({ batchMs: 0 })}
+          onError={onError}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(chatApi.attach).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(firstDetach).toHaveBeenCalledOnce());
+    await waitFor(() => expect(chatApi.config).toHaveBeenCalledOnce());
+    expect(onError).not.toHaveBeenCalled();
+
+    unmount();
+    expect(secondDetach).toHaveBeenCalledOnce();
   });
 
   it("loads session config and wires model and thinking selectors", async () => {

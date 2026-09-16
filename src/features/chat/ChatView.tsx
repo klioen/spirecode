@@ -41,15 +41,26 @@ function ChatViewContent({
     let detach: (() => void) | undefined;
     if (runtime.getSnapshot(sessionId).status === "loading")
       runtime.setStatus(sessionId, "loading");
+    setConfig(undefined);
+    setConfigError(undefined);
     void api
       .attach(worktreeId, sessionId, (event) => runtime.push(event))
-      .then((attachment) => {
+      .then(async (attachment) => {
         if (!active) {
           attachment.detach();
           return;
         }
         detach = attachment.detach;
         runtime.hydrate(attachment.snapshot);
+        try {
+          const next = await api.config(worktreeId, sessionId);
+          if (active) setConfig(next);
+        } catch (caught: unknown) {
+          if (active)
+            setConfigError(
+              caught instanceof Error ? caught.message : String(caught),
+            );
+        }
       })
       .catch((caught: unknown) => {
         if (!active) return;
@@ -67,26 +78,6 @@ function ChatViewContent({
       detach?.();
     };
   }, [api, onError, runtime, sessionId, worktreeId]);
-
-  useEffect(() => {
-    let active = true;
-    setConfig(undefined);
-    setConfigError(undefined);
-    void api
-      .config(worktreeId, sessionId)
-      .then((next) => {
-        if (active) setConfig(next);
-      })
-      .catch((caught: unknown) => {
-        if (active)
-          setConfigError(
-            caught instanceof Error ? caught.message : String(caught),
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, sessionId, worktreeId]);
 
   const send = async (text: string) => {
     await api.send(worktreeId, sessionId, text);

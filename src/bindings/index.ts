@@ -6,6 +6,7 @@ import type {
   ChatSessionSummary,
   ChatThinkingLevel,
   ChatSnapshot,
+  ExtensionSetting,
   FileContent,
   FileEntry,
   GitDiff,
@@ -57,6 +58,19 @@ export const commands = {
   projectCopyPath: (projectId: string) =>
     command<void>("project_copy_path", { projectId }),
   projectCatalog: () => command<ProjectCatalog>("project_catalog"),
+
+  settingsExtensionsList: (worktreeId: string) =>
+    command<ExtensionSetting[]>("settings_extensions_list", { worktreeId }),
+  settingsExtensionSetEnabled: (
+    worktreeId: string,
+    extensionId: string,
+    enabled: boolean,
+  ) =>
+    command<ExtensionSetting[]>("settings_extension_set_enabled", {
+      worktreeId,
+      extensionId,
+      enabled,
+    }),
 
   gitListOriginBranches: (projectId: string) =>
     command<OriginBranchCatalog>("git_list_origin_branches", { projectId }),

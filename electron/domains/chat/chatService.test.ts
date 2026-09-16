@@ -357,6 +357,19 @@ describe("ChatService", () => {
     });
   });
 
+  it("treats detach cleanup as idempotent without weakening ownership", async () => {
+    const { root, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+
+    expect(() => service.detach("w1", "missing")).not.toThrow();
+    await service.create("w1");
+    expect(() => service.detach("w1", "s1")).not.toThrow();
+    expect(() => service.detach("w1", "s1")).not.toThrow();
+    expect(() => service.detach("other", "s1")).toThrowError(
+      expect.objectContaining({ code: "CHAT_SESSION_NOT_FOUND" }),
+    );
+  });
+
   it("disposes worktree sessions and permits ownership to be established again", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(() => root, { adapter });

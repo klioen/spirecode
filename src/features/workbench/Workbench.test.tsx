@@ -14,6 +14,13 @@ vi.mock("../changes/ChangesPanel", () => ({
 vi.mock("../editor/EditorPane", () => ({
   EditorPane: () => <main>Editor</main>,
 }));
+vi.mock("../settings/SettingsDialog", () => ({
+  SettingsDialog: ({ onClose }: { onClose: () => void }) => (
+    <div role="dialog" aria-label="Settings dialog">
+      <button onClick={onClose}>Close mocked settings</button>
+    </div>
+  ),
+}));
 
 beforeEach(() => {
   localStorage.clear();
@@ -89,6 +96,22 @@ describe("Workbench panel handles", () => {
     expect(
       screen.getByRole("separator", { name: "Resize projects panel" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens settings from the top-right action", () => {
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      screen.getByRole("dialog", { name: "Settings dialog" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close mocked settings" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Settings dialog" }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the projects panel and separator when collapsed", () => {
