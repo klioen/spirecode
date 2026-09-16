@@ -11,6 +11,8 @@ import type {
   FileEntry,
   GitDiff,
   GitStatus,
+  MemoryDocument,
+  MemoryDocumentId,
   OkResponse,
   OriginBranchCatalog,
   ProjectCatalog,
@@ -71,6 +73,8 @@ export const commands = {
       extensionId,
       enabled,
     }),
+  settingsMemoryRead: (document: MemoryDocumentId) =>
+    command<MemoryDocument>("settings_memory_read", { document }),
 
   gitListOriginBranches: (projectId: string) =>
     command<OriginBranchCatalog>("git_list_origin_branches", { projectId }),

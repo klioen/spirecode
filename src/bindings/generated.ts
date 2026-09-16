@@ -2,6 +2,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "PERMISSION_DENIED"
   | "OUTSIDE_PROJECT"
+  | "OUTSIDE_MEMORY"
   | "NOT_A_GIT_REPOSITORY"
   | "UNSUPPORTED_FILE"
   | "FILE_TOO_LARGE"
@@ -196,4 +197,14 @@ export interface ExtensionSetting {
   displayPath: string;
   enabled: boolean;
   status: "enabled" | "disabled";
+}
+
+export type MemoryDocumentId = "summary" | "handbook";
+
+export interface MemoryDocument {
+  id: MemoryDocumentId;
+  name: string;
+  content: string;
+  size: number;
+  updatedAt: number;
 }

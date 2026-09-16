@@ -95,6 +95,24 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: path");
   });
 
+  it("validates memory document IDs without accepting paths", () => {
+    expect(
+      validateCommandArgs("settings_memory_read", { document: "summary" }),
+    ).toEqual({ document: "summary" });
+    expect(
+      validateCommandArgs("settings_memory_read", { document: "handbook" }),
+    ).toEqual({ document: "handbook" });
+    expect(() =>
+      validateCommandArgs("settings_memory_read", { document: "raw" }),
+    ).toThrow("document is invalid");
+    expect(() =>
+      validateCommandArgs("settings_memory_read", {
+        document: "summary",
+        path: "/tmp/memory_summary.md",
+      }),
+    ).toThrow("Unexpected argument: path");
+  });
+
   it("retains path length limits and rejects unexpected fields", () => {
     expect(() =>
       validateCommandArgs("fs_read_dir", {
