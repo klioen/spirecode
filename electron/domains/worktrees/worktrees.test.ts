@@ -157,7 +157,7 @@ describe("WorktreeService", () => {
     );
     expect(
       await readFile(
-        path.join(value.managedHome, "repo", OWNER_MARKER),
+        path.join(value.managedHome, "worktrees", "repo", OWNER_MARKER),
         "utf8",
       ),
     ).toContain(value.project.id);
@@ -297,7 +297,12 @@ describe("WorktreeService", () => {
     });
     const marker = JSON.parse(
       await readFile(
-        path.join(value.managedHome, value.project.name, OWNER_MARKER),
+        path.join(
+          value.managedHome,
+          "worktrees",
+          value.project.name,
+          OWNER_MARKER,
+        ),
         "utf8",
       ),
     ) as { projectId: string; gitCommonDir: string };
@@ -305,14 +310,25 @@ describe("WorktreeService", () => {
     expect(marker.projectId).not.toBe(oldProjectId);
     expect(
       await git(value.project.path, ["worktree", "list", "--porcelain"]),
-    ).toContain(path.join(value.managedHome, value.project.name, "worktree1"));
+    ).toContain(
+      path.join(
+        value.managedHome,
+        "worktrees",
+        value.project.name,
+        "worktree1",
+      ),
+    );
   });
 
   it.runIf(process.platform !== "win32")(
     "rejects symlinked and foreign managed roots",
     async () => {
       const linked = await fixture();
-      const linkedRoot = path.join(linked.managedHome, linked.project.name);
+      const linkedRoot = path.join(
+        linked.managedHome,
+        "worktrees",
+        linked.project.name,
+      );
       await mkdir(path.dirname(linkedRoot), { recursive: true });
       await symlink(os.tmpdir(), linkedRoot);
       await expect(
@@ -322,7 +338,11 @@ describe("WorktreeService", () => {
       });
 
       const foreign = await fixture();
-      const foreignRoot = path.join(foreign.managedHome, foreign.project.name);
+      const foreignRoot = path.join(
+        foreign.managedHome,
+        "worktrees",
+        foreign.project.name,
+      );
       await mkdir(foreignRoot, { recursive: true });
       await writeFile(
         path.join(foreignRoot, OWNER_MARKER),
