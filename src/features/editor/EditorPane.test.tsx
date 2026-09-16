@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../bindings";
 import { useProjectsStore } from "../projects/projectsStore";
 import { terminalStream } from "../terminal/terminalStream";
+import { hostChatApi } from "../chat";
+import userEvent from "@testing-library/user-event";
 import { EditorPane } from "./EditorPane";
 import { useEditorStore } from "./editorStore";
 
@@ -47,6 +49,17 @@ vi.mock("../terminal/TerminalInstance", () => ({
     <div>terminal body {terminalId}</div>
   ),
 }));
+
+vi.mock("../chat", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../chat")>();
+  return {
+    ...actual,
+    hostChatApi: { ...actual.hostChatApi, list: vi.fn().mockResolvedValue([]) },
+    ChatView: ({ sessionId }: { sessionId: string }) => (
+      <div>chat body {sessionId}</div>
+    ),
+  };
+});
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -207,5 +220,109 @@ describe("EditorPane terminals", () => {
       expect(screen.queryByText("Terminal1")).not.toBeInTheDocument(),
     );
     expect(useProjectsStore.getState().error).toBeNull();
+  });
+});
+
+describe("Chat history popover", () => {
+  it("closes on an outside pointer and preserves the outside action", async () => {
+    const user = userEvent.setup();
+    const outside = vi.fn();
+    render(
+      <>
+        <button onClick={outside}>Outside action</button>
+        <EditorPane worktreeId="p1" />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    expect(await screen.findByText("No chat history")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Outside action" }));
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+    expect(outside).toHaveBeenCalledOnce();
+  });
+
+  it("closes on editor content pointerdown even if the target stops bubbling", async () => {
+    render(<EditorPane worktreeId="p1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+    await screen.findByText("No chat history");
+    const target = screen.getByText("Your code, in focus.");
+    target.addEventListener("pointerdown", (event) => event.stopPropagation());
+    fireEvent.pointerDown(target);
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps inside interactions open and toggles closed without reopening", async () => {
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+    const trigger = screen.getByRole("button", { name: "Chat history" });
+    await user.click(trigger);
+    await screen.findByText("No chat history");
+    const search = screen.getByRole("searchbox", { name: "Search chats" });
+    expect(search).toHaveFocus();
+    await user.click(search);
+    await user.type(search, "test");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await user.click(trigger);
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("returns focus to the trigger on Escape and explicit close", async () => {
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+    const trigger = screen.getByRole("button", { name: "Chat history" });
+    await user.click(trigger);
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(
+      screen.getByRole("button", { name: "Close chat history" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes on worktree changes and resets the search when reopened", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<EditorPane worktreeId="p1" />);
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search chats" }),
+      "old",
+    );
+    rerender(<EditorPane worktreeId="p2" />);
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).toHaveValue(
+      "",
+    );
+  });
+
+  it("opens a selected session and closes history", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValueOnce([
+      { sessionId: "s1", worktreeId: "p1", title: "Selected session" },
+    ]);
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    await user.click(
+      await screen.findByRole("button", { name: /Selected session/ }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Chat history" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("chat body s1")).toBeInTheDocument();
   });
 });
