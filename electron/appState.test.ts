@@ -5,6 +5,7 @@ import { applyMemoryConfig } from "./appState.js";
 const originalModel = process.env.PI_MEMORY_EXTRACT_MODEL;
 const originalPhase2Model = process.env.PI_MEMORY_PHASE2_MODEL;
 const originalThinking = process.env.PI_MEMORY_EXTRACT_THINKING;
+const originalPhase2Thinking = process.env.PI_MEMORY_PHASE2_THINKING;
 
 afterEach(() => {
   if (originalModel === undefined) delete process.env.PI_MEMORY_EXTRACT_MODEL;
@@ -15,6 +16,9 @@ afterEach(() => {
   if (originalThinking === undefined)
     delete process.env.PI_MEMORY_EXTRACT_THINKING;
   else process.env.PI_MEMORY_EXTRACT_THINKING = originalThinking;
+  if (originalPhase2Thinking === undefined)
+    delete process.env.PI_MEMORY_PHASE2_THINKING;
+  else process.env.PI_MEMORY_PHASE2_THINKING = originalPhase2Thinking;
 });
 
 describe("applyMemoryConfig", () => {
@@ -22,13 +26,15 @@ describe("applyMemoryConfig", () => {
     applyMemoryConfig({
       phase1Provider: "openai",
       phase1ModelId: "gpt-5.6",
+      phase1ReasoningEffort: "high",
       phase2Provider: "traex",
       phase2ModelId: "DeepSeek-V4-Flash",
-      reasoningEffort: "high",
+      phase2ReasoningEffort: "max",
     });
 
     expect(process.env.PI_MEMORY_EXTRACT_MODEL).toBe("openai/gpt-5.6");
     expect(process.env.PI_MEMORY_PHASE2_MODEL).toBe("traex/DeepSeek-V4-Flash");
     expect(process.env.PI_MEMORY_EXTRACT_THINKING).toBe("high");
+    expect(process.env.PI_MEMORY_PHASE2_THINKING).toBe("max");
   });
 });

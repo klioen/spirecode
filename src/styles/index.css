@@ -522,7 +522,7 @@ body.panel-resizing-vertical * {
 }
 .memory-config-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 132px;
+  grid-template-columns: minmax(0, 1fr) 116px minmax(0, 1fr) 116px;
   align-items: end;
   gap: 10px;
 }

@@ -218,7 +218,8 @@ export class AppState {
 export function applyMemoryConfig(config: MemoryConfig): void {
   process.env.PI_MEMORY_EXTRACT_MODEL = `${config.phase1Provider}/${config.phase1ModelId}`;
   process.env.PI_MEMORY_PHASE2_MODEL = `${config.phase2Provider}/${config.phase2ModelId}`;
-  process.env.PI_MEMORY_EXTRACT_THINKING = config.reasoningEffort;
+  process.env.PI_MEMORY_EXTRACT_THINKING = config.phase1ReasoningEffort;
+  process.env.PI_MEMORY_PHASE2_THINKING = config.phase2ReasoningEffort;
 }
 
 function withTimeout<T>(

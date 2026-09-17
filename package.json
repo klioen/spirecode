@@ -65,7 +65,7 @@
     "eslint": "10.10.0",
     "globals": "17.12.0",
     "jsdom": "30.0.1",
-    "pi-extensions": "github:klioen/pi-extensions#c664acff4107aee8714bc8b118a78df57c71ed5f",
+    "pi-extensions": "github:klioen/pi-extensions#e5937af0cd7d2f22907e6a31a2aa338c96316771",
     "prettier": "3.9.6",
     "tailwindcss": "4.3.3",
     "tsup": "8.5.1",

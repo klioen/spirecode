@@ -1,4 +1,4 @@
-export const PI_EXTENSIONS_COMMIT = "c664acff4107aee8714bc8b118a78df57c71ed5f";
+export const PI_EXTENSIONS_COMMIT = "e5937af0cd7d2f22907e6a31a2aa338c96316771";
 
 export const BUNDLED_PACKAGES = [
   ["web-access", "pi-web-access"],

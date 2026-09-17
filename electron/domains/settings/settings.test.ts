@@ -68,33 +68,37 @@ describe("SettingsService", () => {
     await expect(service.memoryConfig()).resolves.toEqual({
       phase1Provider: "traex",
       phase1ModelId: "DeepSeek-V4-Flash",
+      phase1ReasoningEffort: "low",
       phase2Provider: "traex",
       phase2ModelId: "DeepSeek-V4-Flash",
-      reasoningEffort: "low",
+      phase2ReasoningEffort: "medium",
     });
     await expect(
       service.setMemoryConfig(
         "openai",
         "gpt-5.6",
+        "high",
         "traex",
         "DeepSeek-V4-Flash",
-        "high",
+        "max",
       ),
     ).resolves.toEqual({
       phase1Provider: "openai",
       phase1ModelId: "gpt-5.6",
+      phase1ReasoningEffort: "high",
       phase2Provider: "traex",
       phase2ModelId: "DeepSeek-V4-Flash",
-      reasoningEffort: "high",
+      phase2ReasoningEffort: "max",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 3,
+      version: 4,
       memoryConfig: {
         phase1Provider: "openai",
         phase1ModelId: "gpt-5.6",
+        phase1ReasoningEffort: "high",
         phase2Provider: "traex",
         phase2ModelId: "DeepSeek-V4-Flash",
-        reasoningEffort: "high",
+        phase2ReasoningEffort: "max",
       },
     });
     await expect(
@@ -102,9 +106,10 @@ describe("SettingsService", () => {
     ).resolves.toEqual({
       phase1Provider: "openai",
       phase1ModelId: "gpt-5.6",
+      phase1ReasoningEffort: "high",
       phase2Provider: "traex",
       phase2ModelId: "DeepSeek-V4-Flash",
-      reasoningEffort: "high",
+      phase2ReasoningEffort: "max",
     });
   });
 
@@ -129,9 +134,10 @@ describe("SettingsService", () => {
     ).resolves.toEqual({
       phase1Provider: "openai",
       phase1ModelId: "gpt-5.6",
+      phase1ReasoningEffort: "medium",
       phase2Provider: "openai",
       phase2ModelId: "gpt-5.6",
-      reasoningEffort: "medium",
+      phase2ReasoningEffort: "medium",
     });
   });
 
@@ -140,27 +146,43 @@ describe("SettingsService", () => {
     const service = await SettingsService.load(statePath, agentDir);
 
     await expect(
-      service.setMemoryConfig("bad/provider", "model", "traex", "model", "low"),
+      service.setMemoryConfig(
+        "bad/provider",
+        "model",
+        "low",
+        "traex",
+        "model",
+        "medium",
+      ),
     ).rejects.toThrow("provider is invalid");
     await expect(
-      service.setMemoryConfig("traex", " model", "traex", "model", "low"),
+      service.setMemoryConfig(
+        "traex",
+        " model",
+        "low",
+        "traex",
+        "model",
+        "medium",
+      ),
     ).rejects.toThrow("modelId is invalid");
     await expect(
       service.setMemoryConfig(
         "traex",
         "model\u0085name",
+        "low",
         "traex",
         "model",
-        "low",
+        "medium",
       ),
     ).rejects.toThrow("modelId is invalid");
     await expect(
       service.setMemoryConfig(
         "traex",
         "model",
+        "turbo" as "low",
         "traex",
         "model",
-        "turbo" as "low",
+        "medium",
       ),
     ).rejects.toThrow("reasoningEffort is invalid");
   });
@@ -205,7 +227,7 @@ describe("SettingsService", () => {
     const updated = await service.setEnabled(cwd, extension.id, false);
     expect(updated.find(({ id }) => id === extension.id)?.enabled).toBe(false);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 3,
+      version: 4,
       overrides: { [extension.id]: false },
     });
 

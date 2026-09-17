@@ -85,9 +85,10 @@ export const commands = {
     command<MemoryConfig>("settings_memory_config_set", {
       phase1Provider: config.phase1Provider,
       phase1ModelId: config.phase1ModelId,
+      phase1ReasoningEffort: config.phase1ReasoningEffort,
       phase2Provider: config.phase2Provider,
       phase2ModelId: config.phase2ModelId,
-      reasoningEffort: config.reasoningEffort,
+      phase2ReasoningEffort: config.phase2ReasoningEffort,
     }),
 
   gitListOriginBranches: (projectId: string) =>

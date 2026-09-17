@@ -30,13 +30,14 @@ export type MemoryReasoningEffort =
 export interface MemoryConfig {
   phase1Provider: string;
   phase1ModelId: string;
+  phase1ReasoningEffort: MemoryReasoningEffort;
   phase2Provider: string;
   phase2ModelId: string;
-  reasoningEffort: MemoryReasoningEffort;
+  phase2ReasoningEffort: MemoryReasoningEffort;
 }
 
 interface SettingsState {
-  version: 3;
+  version: 4;
   overrides: Record<string, boolean>;
   memoryConfig: MemoryConfig;
 }
@@ -44,9 +45,10 @@ interface SettingsState {
 const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
   phase1Provider: "traex",
   phase1ModelId: "DeepSeek-V4-Flash",
+  phase1ReasoningEffort: "low",
   phase2Provider: "traex",
   phase2ModelId: "DeepSeek-V4-Flash",
-  reasoningEffort: "low",
+  phase2ReasoningEffort: "medium",
 };
 
 const MEMORY_REASONING_EFFORTS = new Set<MemoryReasoningEffort>([
@@ -83,7 +85,7 @@ export class SettingsService {
     agentDir = path.join(homedir(), ".pi", "agent"),
   ): Promise<SettingsService> {
     const loaded = await loadOrDefault<unknown>(statePath, () => ({
-      version: 3,
+      version: 4,
       overrides: {},
       memoryConfig: DEFAULT_MEMORY_CONFIG,
     }));
@@ -101,17 +103,19 @@ export class SettingsService {
   setMemoryConfig(
     phase1Provider: string,
     phase1ModelId: string,
+    phase1ReasoningEffort: MemoryReasoningEffort,
     phase2Provider: string,
     phase2ModelId: string,
-    reasoningEffort: MemoryReasoningEffort,
+    phase2ReasoningEffort: MemoryReasoningEffort,
   ): Promise<MemoryConfig> {
     return this.queue.run(async () => {
       const memoryConfig = validateMemoryConfig({
         phase1Provider,
         phase1ModelId,
+        phase1ReasoningEffort,
         phase2Provider,
         phase2ModelId,
-        reasoningEffort,
+        phase2ReasoningEffort,
       });
       const next: SettingsState = { ...this.state, memoryConfig };
       await saveAtomic(this.statePath, next);
@@ -422,7 +426,10 @@ function validateMemoryConfig(value: MemoryConfig): MemoryConfig {
     )
       throw new CommandError("INVALID_ARGUMENT", "modelId is invalid");
   }
-  if (!MEMORY_REASONING_EFFORTS.has(value.reasoningEffort))
+  if (
+    !MEMORY_REASONING_EFFORTS.has(value.phase1ReasoningEffort) ||
+    !MEMORY_REASONING_EFFORTS.has(value.phase2ReasoningEffort)
+  )
     throw new CommandError("INVALID_ARGUMENT", "reasoningEffort is invalid");
   return { ...value };
 }
@@ -449,15 +456,22 @@ function sanitizeState(value: unknown): SettingsState {
           (candidate.phase1Provider as string | undefined) ?? legacyProvider!,
         phase1ModelId:
           (candidate.phase1ModelId as string | undefined) ?? legacyModelId!,
+        phase1ReasoningEffort:
+          (candidate.phase1ReasoningEffort as
+            MemoryReasoningEffort | undefined) ??
+          (candidate.reasoningEffort as MemoryReasoningEffort | undefined) ??
+          "low",
         phase2Provider:
           (candidate.phase2Provider as string | undefined) ?? legacyProvider!,
         phase2ModelId:
           (candidate.phase2ModelId as string | undefined) ?? legacyModelId!,
-        reasoningEffort: candidate.reasoningEffort as MemoryReasoningEffort,
+        phase2ReasoningEffort:
+          (candidate.phase2ReasoningEffort as
+            MemoryReasoningEffort | undefined) ?? "medium",
       });
     } catch {
       memoryConfig = DEFAULT_MEMORY_CONFIG;
     }
   }
-  return { version: 3, overrides, memoryConfig: { ...memoryConfig } };
+  return { version: 4, overrides, memoryConfig: { ...memoryConfig } };
 }

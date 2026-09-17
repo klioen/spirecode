@@ -42,9 +42,10 @@ beforeEach(() => {
   vi.mocked(memoryApi.getConfig).mockResolvedValue({
     phase1Provider: "traex",
     phase1ModelId: "DeepSeek-V4-Flash",
+    phase1ReasoningEffort: "low",
     phase2Provider: "traex",
     phase2ModelId: "DeepSeek-V4-Flash",
-    reasoningEffort: "low",
+    phase2ReasoningEffort: "medium",
   });
   vi.mocked(memoryApi.read).mockResolvedValue({
     id: "summary",

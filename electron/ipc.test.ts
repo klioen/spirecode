@@ -146,9 +146,10 @@ describe("IPC command argument validation", () => {
     const config = {
       phase1Provider: "openai",
       phase1ModelId: "gpt-5.6",
+      phase1ReasoningEffort: "high",
       phase2Provider: "traex",
       phase2ModelId: "DeepSeek-V4-Flash",
-      reasoningEffort: "high",
+      phase2ReasoningEffort: "medium",
     };
     expect(validateCommandArgs("settings_memory_config_set", config)).toEqual(
       config,
@@ -156,9 +157,9 @@ describe("IPC command argument validation", () => {
     expect(() =>
       validateCommandArgs("settings_memory_config_set", {
         ...config,
-        reasoningEffort: "turbo",
+        phase2ReasoningEffort: "turbo",
       }),
-    ).toThrow("reasoningEffort is invalid");
+    ).toThrow("phase2ReasoningEffort is invalid");
     expect(() =>
       validateCommandArgs("settings_memory_config_set", {
         ...config,

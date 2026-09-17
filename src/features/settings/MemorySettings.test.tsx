@@ -29,9 +29,10 @@ const handbook = {
 const config = {
   phase1Provider: "traex",
   phase1ModelId: "DeepSeek-V4-Flash",
+  phase1ReasoningEffort: "low" as const,
   phase2Provider: "traex",
   phase2ModelId: "DeepSeek-V4-Flash",
-  reasoningEffort: "low" as const,
+  phase2ReasoningEffort: "medium" as const,
 };
 const models = [
   { provider: "openai", id: "gpt-5.6", label: "GPT 5.6", reasoning: true },
@@ -52,9 +53,10 @@ beforeEach(() => {
   vi.mocked(memoryApi.setConfig).mockResolvedValue({
     phase1Provider: "openai",
     phase1ModelId: "gpt-5.6",
+    phase1ReasoningEffort: "high",
     phase2Provider: "traex",
     phase2ModelId: "DeepSeek-V4-Flash",
-    reasoningEffort: "high",
+    phase2ReasoningEffort: "max",
   });
 });
 
@@ -87,8 +89,12 @@ describe("MemorySettings", () => {
 
     fireEvent.change(phase1, { target: { value: "openai/gpt-5.6" } });
     fireEvent.change(
-      screen.getByRole("combobox", { name: "Reasoning Effort" }),
+      screen.getByRole("combobox", { name: "Phase 1 Reasoning Effort" }),
       { target: { value: "high" } },
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Phase 2 Reasoning Effort" }),
+      { target: { value: "max" } },
     );
     const save = screen.getByRole("button", {
       name: "Save Memory configuration",
@@ -100,9 +106,10 @@ describe("MemorySettings", () => {
       expect(memoryApi.setConfig).toHaveBeenCalledWith({
         phase1Provider: "openai",
         phase1ModelId: "gpt-5.6",
+        phase1ReasoningEffort: "high",
         phase2Provider: "traex",
         phase2ModelId: "DeepSeek-V4-Flash",
-        reasoningEffort: "high",
+        phase2ReasoningEffort: "max",
       }),
     );
   });

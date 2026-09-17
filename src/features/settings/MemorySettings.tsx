@@ -105,9 +105,11 @@ export function MemorySettings() {
   > | null>(null);
   const [models, setModels] = useState<ChatModelOption[]>([]);
   const [phase1Model, setPhase1Model] = useState("");
-  const [phase2Model, setPhase2Model] = useState("");
-  const [reasoningEffort, setReasoningEffort] =
+  const [phase1ReasoningEffort, setPhase1ReasoningEffort] =
     useState<MemoryReasoningEffort>("low");
+  const [phase2Model, setPhase2Model] = useState("");
+  const [phase2ReasoningEffort, setPhase2ReasoningEffort] =
+    useState<MemoryReasoningEffort>("medium");
   const [persistedConfig, setPersistedConfig] = useState<MemoryConfig | null>(
     null,
   );
@@ -152,8 +154,9 @@ export function MemorySettings() {
       if (configResult.status === "fulfilled") {
         const config = configResult.value;
         setPhase1Model(modelValue(config.phase1Provider, config.phase1ModelId));
+        setPhase1ReasoningEffort(config.phase1ReasoningEffort);
         setPhase2Model(modelValue(config.phase2Provider, config.phase2ModelId));
-        setReasoningEffort(config.reasoningEffort);
+        setPhase2ReasoningEffort(config.phase2ReasoningEffort);
         setPersistedConfig(config);
       } else setConfigError(commandError(configResult.reason).message);
       if (modelsResult.status === "fulfilled") setModels(modelsResult.value);
@@ -189,13 +192,15 @@ export function MemorySettings() {
       const config = await memoryApi.setConfig({
         phase1Provider: phase1.provider,
         phase1ModelId: phase1.id,
+        phase1ReasoningEffort,
         phase2Provider: phase2.provider,
         phase2ModelId: phase2.id,
-        reasoningEffort,
+        phase2ReasoningEffort,
       });
       setPhase1Model(modelValue(config.phase1Provider, config.phase1ModelId));
+      setPhase1ReasoningEffort(config.phase1ReasoningEffort);
       setPhase2Model(modelValue(config.phase2Provider, config.phase2ModelId));
-      setReasoningEffort(config.reasoningEffort);
+      setPhase2ReasoningEffort(config.phase2ReasoningEffort);
       setPersistedConfig(config);
       setSaved(true);
     } catch (failure) {
@@ -206,13 +211,14 @@ export function MemorySettings() {
             persistedConfig.phase1ModelId,
           ),
         );
+        setPhase1ReasoningEffort(persistedConfig.phase1ReasoningEffort);
         setPhase2Model(
           modelValue(
             persistedConfig.phase2Provider,
             persistedConfig.phase2ModelId,
           ),
         );
-        setReasoningEffort(persistedConfig.reasoningEffort);
+        setPhase2ReasoningEffort(persistedConfig.phase2ReasoningEffort);
       }
       setConfigError(commandError(failure).message);
     } finally {
@@ -244,6 +250,26 @@ export function MemorySettings() {
               setSaved(false);
             }}
           />
+          <label>
+            <span>Phase 1 Reasoning</span>
+            <select
+              aria-label="Phase 1 Reasoning Effort"
+              value={phase1ReasoningEffort}
+              disabled={configLoading || saving}
+              onChange={(event) => {
+                setPhase1ReasoningEffort(
+                  event.target.value as MemoryReasoningEffort,
+                );
+                setSaved(false);
+              }}
+            >
+              {reasoningEfforts.map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort}
+                </option>
+              ))}
+            </select>
+          </label>
           <ModelSelect
             label="Phase 2 Model"
             value={phase2Model}
@@ -255,13 +281,15 @@ export function MemorySettings() {
             }}
           />
           <label>
-            <span>Reasoning Effort</span>
+            <span>Phase 2 Reasoning</span>
             <select
-              aria-label="Reasoning Effort"
-              value={reasoningEffort}
+              aria-label="Phase 2 Reasoning Effort"
+              value={phase2ReasoningEffort}
               disabled={configLoading || saving}
               onChange={(event) => {
-                setReasoningEffort(event.target.value as MemoryReasoningEffort);
+                setPhase2ReasoningEffort(
+                  event.target.value as MemoryReasoningEffort,
+                );
                 setSaved(false);
               }}
             >
@@ -273,9 +301,7 @@ export function MemorySettings() {
             </select>
           </label>
         </div>
-        <small>
-          Reasoning applies to Phase 1. Restart SpireCode after saving.
-        </small>
+        <small>Restart SpireCode after saving.</small>
         {modelsError && (
           <div className="dialog-error" role="alert">
             Unable to load models: {modelsError}
