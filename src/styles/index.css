@@ -1000,6 +1000,11 @@ body.panel-resizing-vertical * {
 .preview-label {
   font-style: italic;
 }
+.tab-dirty {
+  color: var(--accent);
+  font-size: 8px;
+  line-height: 1;
+}
 .tab-close {
   margin-left: auto;
   display: grid;
@@ -1023,6 +1028,26 @@ body.panel-resizing-vertical * {
 }
 .editor-content > .terminal-instance {
   padding: 8px 10px;
+}
+.editable-file-view {
+  position: relative;
+  height: 100%;
+}
+.editable-file-view > .monaco-editor {
+  height: 100%;
+}
+.file-save-error {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 20px;
+  max-width: min(480px, calc(100% - 40px));
+  padding: 6px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
 }
 .chat-view {
   --chat-thread-width: 960px;

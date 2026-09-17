@@ -281,7 +281,8 @@ export class FilesystemService {
         version: fileVersion(nextBytes),
       };
     } catch (error) {
-      if (temporaryPath) await rm(temporaryPath, { force: true }).catch(() => {});
+      if (temporaryPath)
+        await rm(temporaryPath, { force: true }).catch(() => {});
       throw toCommandError(error);
     }
   }

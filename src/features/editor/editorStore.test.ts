@@ -54,11 +54,7 @@ describe("preview and keep tabs", () => {
     const store = useEditorStore.getState() as ReturnType<
       typeof useEditorStore.getState
     > & {
-      setFileDirty: (
-        worktreeId: string,
-        tabId: string,
-        dirty: boolean,
-      ) => void;
+      setFileDirty: (worktreeId: string, tabId: string, dirty: boolean) => void;
     };
 
     store.setFileDirty("p1", fileResourceId("p1", "a.ts"), true);
