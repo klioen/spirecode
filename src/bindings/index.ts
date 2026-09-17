@@ -103,6 +103,18 @@ export const commands = {
     command<FileEntry[]>("fs_read_dir", { worktreeId, relativePath }),
   fsReadFile: (worktreeId: string, relativePath: string) =>
     command<FileContent>("fs_read_file", { worktreeId, relativePath }),
+  fsWriteFile: (
+    worktreeId: string,
+    relativePath: string,
+    content: string,
+    expectedVersion: string,
+  ) =>
+    command<FileContent>("fs_write_file", {
+      worktreeId,
+      relativePath,
+      content,
+      expectedVersion,
+    }),
 
   gitStatus: (worktreeId: string) =>
     command<GitStatus>("git_status", { worktreeId }),

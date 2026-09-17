@@ -118,6 +118,7 @@ describe("FilesystemService", () => {
       relativePath: "hello.txt",
       content: "你好\n",
       size: Buffer.byteLength("你好\n"),
+      version: expect.any(String),
     });
     expect(resolver).toHaveBeenCalledWith("worktree-1");
   });
