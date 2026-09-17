@@ -8,8 +8,12 @@ import {
 } from "./domains/filesystem/watcher.js";
 import { GitService } from "./domains/git/index.js";
 import { MemoryService } from "./domains/memory/index.js";
+import { ModelCatalogService } from "./domains/models/modelCatalog.js";
 import { ProjectService } from "./domains/projects/index.js";
-import { SettingsService } from "./domains/settings/index.js";
+import {
+  SettingsService,
+  type MemoryConfig,
+} from "./domains/settings/index.js";
 import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
@@ -23,6 +27,7 @@ export class AppState {
   readonly filesystem: FilesystemService;
   readonly git: GitService;
   readonly memory: MemoryService;
+  readonly models: ModelCatalogService;
   readonly terminals: TerminalService;
   readonly chat: ChatService;
   readonly worktrees: WorktreeService;
@@ -37,6 +42,7 @@ export class AppState {
     this.filesystem = new FilesystemService(root);
     this.git = new GitService(root);
     this.memory = new MemoryService();
+    this.models = new ModelCatalogService();
     this.terminals = new TerminalService(root, (subscriptionId, payload) => {
       this.send("terminal://event", { subscriptionId, payload });
     });
@@ -55,6 +61,7 @@ export class AppState {
       ProjectService.load(path.join(dataDirectory, "state.json")),
       SettingsService.load(path.join(dataDirectory, "extension-settings.json")),
     ]);
+    applyMemoryConfig(await settings.memoryConfig());
     const state = new AppState(projects, settings, window);
     for (const project of await projects.list()) {
       for (const worktree of project.worktrees) {
@@ -206,6 +213,13 @@ export class AppState {
     if (!this.window.isDestroyed())
       this.window.webContents.send(`spire:event:${topic}`, payload);
   }
+}
+
+export function applyMemoryConfig(config: MemoryConfig): void {
+  process.env.PI_MEMORY_EXTRACT_MODEL = `${config.phase1Provider}/${config.phase1ModelId}`;
+  process.env.PI_MEMORY_PHASE2_MODEL = `${config.phase2Provider}/${config.phase2ModelId}`;
+  process.env.PI_MEMORY_EXTRACT_THINKING = config.phase1ReasoningEffort;
+  process.env.PI_MEMORY_PHASE2_THINKING = config.phase2ReasoningEffort;
 }
 
 function withTimeout<T>(

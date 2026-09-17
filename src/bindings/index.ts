@@ -2,6 +2,7 @@ import "./host";
 import type {
   ChatAccepted,
   ChatEvent,
+  ChatModelOption,
   ChatSessionConfig,
   ChatSessionSummary,
   ChatThinkingLevel,
@@ -11,6 +12,7 @@ import type {
   FileEntry,
   GitDiff,
   GitStatus,
+  MemoryConfig,
   MemoryDocument,
   MemoryDocumentId,
   OkResponse,
@@ -75,6 +77,19 @@ export const commands = {
     }),
   settingsMemoryRead: (document: MemoryDocumentId) =>
     command<MemoryDocument>("settings_memory_read", { document }),
+  settingsMemoryModelsList: () =>
+    command<ChatModelOption[]>("settings_memory_models_list"),
+  settingsMemoryConfigGet: () =>
+    command<MemoryConfig>("settings_memory_config_get"),
+  settingsMemoryConfigSet: (config: MemoryConfig) =>
+    command<MemoryConfig>("settings_memory_config_set", {
+      phase1Provider: config.phase1Provider,
+      phase1ModelId: config.phase1ModelId,
+      phase1ReasoningEffort: config.phase1ReasoningEffort,
+      phase2Provider: config.phase2Provider,
+      phase2ModelId: config.phase2ModelId,
+      phase2ReasoningEffort: config.phase2ReasoningEffort,
+    }),
 
   gitListOriginBranches: (projectId: string) =>
     command<OriginBranchCatalog>("git_list_origin_branches", { projectId }),

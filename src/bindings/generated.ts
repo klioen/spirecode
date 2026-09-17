@@ -201,6 +201,16 @@ export interface ExtensionSetting {
 }
 
 export type MemoryDocumentId = "summary" | "handbook";
+export type MemoryReasoningEffort = ChatThinkingLevel;
+
+export interface MemoryConfig {
+  phase1Provider: string;
+  phase1ModelId: string;
+  phase1ReasoningEffort: MemoryReasoningEffort;
+  phase2Provider: string;
+  phase2ModelId: string;
+  phase2ReasoningEffort: MemoryReasoningEffort;
+}
 
 export interface MemoryDocument {
   id: MemoryDocumentId;

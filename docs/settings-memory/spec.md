@@ -10,10 +10,10 @@ Settings 左侧导航在 Agent 后增加 Memory。Memory 页面全局可用，�
 - `memory_summary.md` 与 `MEMORY.md` 两个文档切换按钮；
 - 当前文档名称、大小与最后修改时间；
 - Markdown 渲染的只读正文；
-- 手动 Refresh 按钮；
+- Phase 1 Model、Phase 1 Reasoning Effort、Phase 2 Model 与 Phase 2 Reasoning Effort 配置及保存操作；
 - loading、文档未生成、读取失败和空文档状态。
 
-首次进入默认展示 `memory_summary.md`。切换文档时按需读取，关闭 Settings 后不在全局 store 中保留文档正文。
+页面不提供 Refresh 按钮。首次进入默认展示 `memory_summary.md`，切换文档时按需重新读取。关闭 Settings 后不在全局 store 中保留文档正文。
 
 ## 2. Memory 数据服务
 
@@ -42,15 +42,34 @@ Memory 根目录解析规则：
 - 不允许读取 `.git`、`raw_memories.md`、`worker.log`、rollout summaries、skills 或 SQLite。
 - `PI_MEMORY_DIR` 仅由 Main 进程环境读取，不通过 IPC 暴露。
 
-## 4. IPC
+## 4. Memory 配置
+
+SpireCode 在自身 user data 的设置文件中持久化 Phase 1/Phase 2 各自的 Model 和 Reasoning Effort。两个模型默认值均为 `traex/DeepSeek-V4-Flash`，UI 使用模型下拉框，不允许手动输入。Phase 1 Reasoning 默认 `low`，Phase 2 Reasoning 默认 `medium`；两者可选值均为 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。旧版单模型/单 reasoning 配置迁移时保留 Phase 1 值，并为 Phase 2 reasoning 使用 `medium`。
+
+- 模型选项来自 Pi `ModelRuntime.getAvailable()`，只返回当前运行环境可用且认证条件满足的模型；
+- 新增全局模型目录，不依赖 worktree 或 Chat session，也不创建隐藏 session；
+- 下拉按 provider 分组，显示模型 label，提交稳定的 provider/id；
+- 已持久化但当前不可用的模型仍作为 `Unavailable` 选项显示，不能静默改为其他模型；
+- Main 保存前验证 Phase 1/Phase 2 Model 均存在于最新可用目录；不可用模型不能作为新值保存；
+- 保存使用已有原子持久化能力，不修改 `~/.pi/agent/settings.json` 或 Memory 文档；
+- SpireCode 启动且任何 Pi extension 加载前，将配置映射到 `PI_MEMORY_EXTRACT_MODEL`、`PI_MEMORY_PHASE2_MODEL`、`PI_MEMORY_EXTRACT_THINKING` 和 `PI_MEMORY_PHASE2_THINKING`；
+- pi-memory 的 Phase 1/Phase 2 subprocess 分别读取对应 `--thinking`；非法值分别回退 `low` / `medium`；
+- 已加载 extension 和长生命周期 worker 无法可靠热更新，因此保存后明确提示“Restart SpireCode to apply”。
+
+本次分别控制 Phase 1 和 Phase 2 的模型与 reasoning。
+
+## 5. IPC
 
 新增 allowlist command：
 
 - `settings_memory_read { document: "summary" | "handbook" }`
+- `settings_memory_models_list {}`
+- `settings_memory_config_get {}`
+- `settings_memory_config_set { phase1Provider, phase1ModelId, phase1ReasoningEffort, phase2Provider, phase2ModelId, phase2ReasoningEffort }`
 
-IPC 拒绝额外字段和枚举外值。响应为 `MemoryDocument` DTO。文档不存在返回稳定的 `NOT_FOUND` 错误，由 UI 显示尚未生成状态。
+模型目录响应复用字段白名单 DTO：`provider`、`id`、`label`、`reasoning`，不返回认证信息、配置路径或 SDK 对象。IPC 拒绝额外字段、目录外模型和未知 reasoning effort。响应分别为 `MemoryDocument`、`ChatModelOption[]` 和 `MemoryConfig` DTO。文档不存在返回稳定的 `NOT_FOUND` 错误，由 UI 显示尚未生成状态。
 
-## 5. Renderer
+## 6. Renderer
 
 - 新增独立 `MemorySettings` 组件，避免继续扩大 `SettingsDialog`。
 - 文档正文仅保存在组件局部 state，不写入 Zustand 或 localStorage。
@@ -58,21 +77,34 @@ IPC 拒绝额外字段和枚举外值。响应为 `MemoryDocument` DTO。文档�
 - 异步请求使用生命周期保护，防止切换文档或卸载后旧请求覆盖当前结果。
 - Memory 页面不接收或依赖 `worktreeId`。
 
-## 6. 非目标
+- Phase 1/Phase 2 Model 使用下拉框，按 provider 分组展示 Pi 当前可用模型；不提供自由文本输入。
+- 每个阶段在对应模型旁提供独立 Reasoning Effort 下拉。
+- 模型目录加载、两个阶段的 Model 与 Reasoning Effort 编辑和保存状态保存在组件局部 state；保存中禁用控件，失败时保留已持久化值并显示错误。
+- 模型目录为空或加载失败时显示明确状态，但不影响下方 Memory 文档阅读。
+- Save 位于配置区右下角，使用低强调的紧凑次级按钮，不使用 accent 填充。
+- 移除 Refresh 按钮及相关样式和测试。
+
+## 7. 非目标
 
 - 编辑或删除 Memory 文档；
 - 搜索 Memory；
 - 查看 raw memories、rollout summaries、skills、日志或数据库；
 - worker、Phase 1/Phase 2、job 状态；
-- Memory 开关或 pipeline 配置；
+- Recall、Automatic Processing、token limit 或其他 pipeline 配置；
+- Memory 配置热重载或 worker 重启；
 - 文件系统通用浏览能力。
 
-## 7. 验收
+## 8. 验收
 
 - Settings 左侧可以进入 Memory。
 - 没有打开项目时仍可查看 Memory。
 - 默认展示 `memory_summary.md`，可切换到 `MEMORY.md`。
-- Refresh 会重新读取当前文档。
+- 页面不存在 Refresh 按钮；切换文档时读取选中文档。
+- Phase 1/Phase 2 使用模型下拉，按 provider 展示当前可用模型，不存在自由文本输入。
+- Phase 1/Phase 2 默认均选择 `traex/DeepSeek-V4-Flash`；Reasoning Effort 默认分别为 `low` / `medium`，四项配置重开应用后仍保留。
+- 已保存模型暂时不可用时仍显示原值并标记 `Unavailable`；模型目录为空或加载失败时不能提交新配置。
+- 非法或额外配置参数被拒绝，保存后提示重启 SpireCode 生效。
+- 新启动的 Phase 1/Phase 2 subprocess 分别使用各自配置的 Model 和 `--thinking`。
 - Markdown 正确渲染，长文档可滚动。
 - 文档不存在、超限、非法 UTF-8 和读取失败有明确状态。
 - IPC 不接受路径、额外字段或未知文档 ID。

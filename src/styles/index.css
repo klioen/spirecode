@@ -511,26 +511,72 @@ body.panel-resizing-vertical * {
   justify-content: space-between;
   gap: 16px;
 }
-.memory-refresh {
+.memory-config {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--header-bg);
+}
+.memory-config-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px minmax(0, 1fr) 116px;
+  align-items: end;
+  gap: 10px;
+}
+.memory-config-fields label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.memory-config-fields select {
+  min-width: 0;
   height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font-size: 11px;
+}
+.memory-config-fields :disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.memory-config small,
+.memory-config-saved {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+.memory-config-saved {
+  color: var(--accent);
+}
+.memory-config-actions {
+  margin-top: 4px;
+  display: flex;
+  justify-content: flex-end;
+}
+.memory-config-actions button {
+  height: 26px;
   padding: 0 10px;
   border: 1px solid var(--border-default);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--control-bg);
+  border-radius: 5px;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
 }
-.memory-refresh:hover:not(:disabled) {
+.memory-config-actions button:hover:not(:disabled) {
   background: var(--control-hover);
   color: var(--text-default);
 }
-.memory-refresh:disabled {
-  cursor: wait;
-  opacity: 0.6;
+.memory-config-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 .memory-tabs {
   margin-bottom: 14px;

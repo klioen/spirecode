@@ -24,10 +24,42 @@ export interface ExtensionSetting {
   status: "enabled" | "disabled";
 }
 
-interface ExtensionState {
-  version: 1;
-  overrides: Record<string, boolean>;
+export type MemoryReasoningEffort =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface MemoryConfig {
+  phase1Provider: string;
+  phase1ModelId: string;
+  phase1ReasoningEffort: MemoryReasoningEffort;
+  phase2Provider: string;
+  phase2ModelId: string;
+  phase2ReasoningEffort: MemoryReasoningEffort;
 }
+
+interface SettingsState {
+  version: 4;
+  overrides: Record<string, boolean>;
+  memoryConfig: MemoryConfig;
+}
+
+const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
+  phase1Provider: "traex",
+  phase1ModelId: "DeepSeek-V4-Flash",
+  phase1ReasoningEffort: "low",
+  phase2Provider: "traex",
+  phase2ModelId: "DeepSeek-V4-Flash",
+  phase2ReasoningEffort: "medium",
+};
+
+const MEMORY_REASONING_EFFORTS = new Set<MemoryReasoningEffort>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
 
 interface Candidate {
   path: string;
@@ -45,22 +77,51 @@ export class SettingsService {
   private constructor(
     private readonly statePath: string,
     private readonly agentDir: string,
-    private state: ExtensionState,
+    private state: SettingsState,
   ) {}
 
   static async load(
     statePath: string,
     agentDir = path.join(homedir(), ".pi", "agent"),
   ): Promise<SettingsService> {
-    const loaded = await loadOrDefault<ExtensionState>(statePath, () => ({
-      version: 1,
+    const loaded = await loadOrDefault<unknown>(statePath, () => ({
+      version: 4,
       overrides: {},
+      memoryConfig: DEFAULT_MEMORY_CONFIG,
     }));
     return new SettingsService(statePath, agentDir, sanitizeState(loaded));
   }
 
   list(cwd: string): Promise<ExtensionSetting[]> {
     return this.queue.run(async () => this.catalog(cwd));
+  }
+
+  memoryConfig(): Promise<MemoryConfig> {
+    return this.queue.run(async () => ({ ...this.state.memoryConfig }));
+  }
+
+  setMemoryConfig(
+    phase1Provider: string,
+    phase1ModelId: string,
+    phase1ReasoningEffort: MemoryReasoningEffort,
+    phase2Provider: string,
+    phase2ModelId: string,
+    phase2ReasoningEffort: MemoryReasoningEffort,
+  ): Promise<MemoryConfig> {
+    return this.queue.run(async () => {
+      const memoryConfig = validateMemoryConfig({
+        phase1Provider,
+        phase1ModelId,
+        phase1ReasoningEffort,
+        phase2Provider,
+        phase2ModelId,
+        phase2ReasoningEffort,
+      });
+      const next: SettingsState = { ...this.state, memoryConfig };
+      await saveAtomic(this.statePath, next);
+      this.state = next;
+      return { ...memoryConfig };
+    });
   }
 
   setEnabled(
@@ -345,12 +406,72 @@ function abbreviateHome(value: string): string {
     : value;
 }
 
-function sanitizeState(value: ExtensionState): ExtensionState {
+function validateMemoryConfig(value: MemoryConfig): MemoryConfig {
+  for (const provider of [value.phase1Provider, value.phase2Provider]) {
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider) ||
+      Buffer.byteLength(provider, "utf8") > 128
+    )
+      throw new CommandError("INVALID_ARGUMENT", "provider is invalid");
+  }
+  for (const modelId of [value.phase1ModelId, value.phase2ModelId]) {
+    if (
+      !modelId ||
+      modelId.trim() !== modelId ||
+      [...modelId].some((character) => {
+        const code = character.charCodeAt(0);
+        return code <= 31 || (code >= 127 && code <= 159);
+      }) ||
+      Buffer.byteLength(modelId, "utf8") > 256
+    )
+      throw new CommandError("INVALID_ARGUMENT", "modelId is invalid");
+  }
+  if (
+    !MEMORY_REASONING_EFFORTS.has(value.phase1ReasoningEffort) ||
+    !MEMORY_REASONING_EFFORTS.has(value.phase2ReasoningEffort)
+  )
+    throw new CommandError("INVALID_ARGUMENT", "reasoningEffort is invalid");
+  return { ...value };
+}
+
+function sanitizeState(value: unknown): SettingsState {
+  const record =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
   const overrides: Record<string, boolean> = {};
-  if (value && typeof value.overrides === "object" && value.overrides) {
-    for (const [key, enabled] of Object.entries(value.overrides))
+  if (typeof record.overrides === "object" && record.overrides) {
+    for (const [key, enabled] of Object.entries(record.overrides))
       if (/^[a-f0-9]{24}$/.test(key) && typeof enabled === "boolean")
         overrides[key] = enabled;
   }
-  return { version: 1, overrides };
+  let memoryConfig = DEFAULT_MEMORY_CONFIG;
+  if (record.memoryConfig && typeof record.memoryConfig === "object") {
+    const candidate = record.memoryConfig as Record<string, unknown>;
+    try {
+      const legacyProvider = candidate.provider as string | undefined;
+      const legacyModelId = candidate.modelId as string | undefined;
+      memoryConfig = validateMemoryConfig({
+        phase1Provider:
+          (candidate.phase1Provider as string | undefined) ?? legacyProvider!,
+        phase1ModelId:
+          (candidate.phase1ModelId as string | undefined) ?? legacyModelId!,
+        phase1ReasoningEffort:
+          (candidate.phase1ReasoningEffort as
+            MemoryReasoningEffort | undefined) ??
+          (candidate.reasoningEffort as MemoryReasoningEffort | undefined) ??
+          "low",
+        phase2Provider:
+          (candidate.phase2Provider as string | undefined) ?? legacyProvider!,
+        phase2ModelId:
+          (candidate.phase2ModelId as string | undefined) ?? legacyModelId!,
+        phase2ReasoningEffort:
+          (candidate.phase2ReasoningEffort as
+            MemoryReasoningEffort | undefined) ?? "medium",
+      });
+    } catch {
+      memoryConfig = DEFAULT_MEMORY_CONFIG;
+    }
+  }
+  return { version: 4, overrides, memoryConfig: { ...memoryConfig } };
 }

@@ -5,6 +5,7 @@ import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
 import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
+import type { MemoryReasoningEffort } from "./domains/settings/index.js";
 import {
   isAllowedRendererUrl,
   type RendererLocationPolicy,
@@ -30,6 +31,12 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     subscriptionId: 128,
     provider: 128,
     modelId: 256,
+    phase1Provider: 128,
+    phase1ModelId: 256,
+    phase1ReasoningEffort: 16,
+    phase2Provider: 128,
+    phase2ModelId: 256,
+    phase2ReasoningEffort: 16,
     thinkingLevel: 16,
     extensionId: 128,
   };
@@ -295,6 +302,38 @@ async function invoke(
     }
     case "settings_memory_read":
       return state.memory.read(memoryDocument(args));
+    case "settings_memory_models_list":
+      return state.models.list();
+    case "settings_memory_config_get":
+      return state.settings.memoryConfig();
+    case "settings_memory_config_set": {
+      const config = {
+        phase1Provider: text(args, "phase1Provider"),
+        phase1ModelId: text(args, "phase1ModelId"),
+        phase1ReasoningEffort: memoryReasoningEffort(
+          args,
+          "phase1ReasoningEffort",
+        ),
+        phase2Provider: text(args, "phase2Provider"),
+        phase2ModelId: text(args, "phase2ModelId"),
+        phase2ReasoningEffort: memoryReasoningEffort(
+          args,
+          "phase2ReasoningEffort",
+        ),
+      };
+      await state.models.assertAvailable([
+        { provider: config.phase1Provider, id: config.phase1ModelId },
+        { provider: config.phase2Provider, id: config.phase2ModelId },
+      ]);
+      return state.settings.setMemoryConfig(
+        config.phase1Provider,
+        config.phase1ModelId,
+        config.phase1ReasoningEffort,
+        config.phase2Provider,
+        config.phase2ModelId,
+        config.phase2ReasoningEffort,
+      );
+    }
   }
 }
 
@@ -337,7 +376,27 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
   settings_memory_read: ["document"],
+  settings_memory_models_list: [],
+  settings_memory_config_get: [],
+  settings_memory_config_set: [
+    "phase1Provider",
+    "phase1ModelId",
+    "phase1ReasoningEffort",
+    "phase2Provider",
+    "phase2ModelId",
+    "phase2ReasoningEffort",
+  ],
 };
+
+function memoryReasoningEffort(
+  args: Args,
+  key: "phase1ReasoningEffort" | "phase2ReasoningEffort",
+): MemoryReasoningEffort {
+  const value = text(args, key);
+  if (!CHAT_THINKING_LEVELS.has(value))
+    throw new TypeError(`${key} is invalid`);
+  return value as MemoryReasoningEffort;
+}
 
 function memoryDocument(args: Args): "summary" | "handbook" {
   const value = text(args, "document");
@@ -374,6 +433,8 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     else if (key === "thinkingLevel") thinkingLevel(args);
     else if (key === "document") memoryDocument(args);
     else if (key === "content") fileContent(args);
+    else if (key === "phase1ReasoningEffort" || key === "phase2ReasoningEffort")
+      memoryReasoningEffort(args, key);
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }
   return args;

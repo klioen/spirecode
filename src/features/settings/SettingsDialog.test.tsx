@@ -5,7 +5,12 @@ import { memoryApi } from "./memoryApi";
 import { settingsApi } from "./settingsApi";
 
 vi.mock("./memoryApi", () => ({
-  memoryApi: { read: vi.fn() },
+  memoryApi: {
+    read: vi.fn(),
+    listModels: vi.fn(),
+    getConfig: vi.fn(),
+    setConfig: vi.fn(),
+  },
 }));
 
 vi.mock("./settingsApi", () => ({
@@ -26,6 +31,22 @@ const extension = {
 };
 
 beforeEach(() => {
+  vi.mocked(memoryApi.listModels).mockResolvedValue([
+    {
+      provider: "traex",
+      id: "DeepSeek-V4-Flash",
+      label: "DeepSeek V4",
+      reasoning: true,
+    },
+  ]);
+  vi.mocked(memoryApi.getConfig).mockResolvedValue({
+    phase1Provider: "traex",
+    phase1ModelId: "DeepSeek-V4-Flash",
+    phase1ReasoningEffort: "low",
+    phase2Provider: "traex",
+    phase2ModelId: "DeepSeek-V4-Flash",
+    phase2ReasoningEffort: "medium",
+  });
   vi.mocked(memoryApi.read).mockResolvedValue({
     id: "summary",
     name: "memory_summary.md",

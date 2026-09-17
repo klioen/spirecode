@@ -140,6 +140,37 @@ describe("IPC command argument validation", () => {
     ).toThrow("content is too large");
   });
 
+  it("validates global Memory configuration without accepting secrets", () => {
+    expect(validateCommandArgs("settings_memory_models_list", {})).toEqual({});
+    expect(validateCommandArgs("settings_memory_config_get", {})).toEqual({});
+    const config = {
+      phase1Provider: "openai",
+      phase1ModelId: "gpt-5.6",
+      phase1ReasoningEffort: "high",
+      phase2Provider: "traex",
+      phase2ModelId: "DeepSeek-V4-Flash",
+      phase2ReasoningEffort: "medium",
+    };
+    expect(validateCommandArgs("settings_memory_config_set", config)).toEqual(
+      config,
+    );
+    expect(() =>
+      validateCommandArgs("settings_memory_config_set", {
+        ...config,
+        phase2ReasoningEffort: "turbo",
+      }),
+    ).toThrow("phase2ReasoningEffort is invalid");
+    expect(() =>
+      validateCommandArgs("settings_memory_config_set", {
+        ...config,
+        apiKey: "secret",
+      }),
+    ).toThrow("Unexpected argument: apiKey");
+    expect(() =>
+      validateCommandArgs("settings_memory_models_list", { worktreeId: "w1" }),
+    ).toThrow("Unexpected argument: worktreeId");
+  });
+
   it("retains path length limits and rejects unexpected fields", () => {
     expect(() =>
       validateCommandArgs("fs_read_dir", {
