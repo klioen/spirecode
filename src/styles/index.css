@@ -511,26 +511,53 @@ body.panel-resizing-vertical * {
   justify-content: space-between;
   gap: 16px;
 }
-.memory-refresh {
-  height: 30px;
-  padding: 0 10px;
+.memory-config {
+  margin-bottom: 18px;
+  padding: 14px;
   border: 1px solid var(--border-default);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--header-bg);
+}
+.memory-config-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 148px;
+  align-items: end;
+  gap: 10px;
+}
+.memory-config-fields label {
+  min-width: 0;
+  display: grid;
   gap: 6px;
-  background: var(--control-bg);
   color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
+  font-size: 10px;
 }
-.memory-refresh:hover:not(:disabled) {
-  background: var(--control-hover);
+.memory-config-fields input,
+.memory-config-fields select {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--control-bg);
   color: var(--text-default);
+  font-size: 11px;
 }
-.memory-refresh:disabled {
+.memory-config-fields :disabled {
   cursor: wait;
   opacity: 0.6;
+}
+.memory-config small,
+.memory-config-saved {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+.memory-config-saved {
+  color: var(--accent);
+}
+.memory-config-actions {
+  margin-top: 4px;
 }
 .memory-tabs {
   margin-bottom: 14px;

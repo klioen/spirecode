@@ -37,6 +37,8 @@ export const COMMANDS = [
   "settings_extensions_list",
   "settings_extension_set_enabled",
   "settings_memory_read",
+  "settings_memory_config_get",
+  "settings_memory_config_set",
 ] as const;
 
 export const TOPICS = [

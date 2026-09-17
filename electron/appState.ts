@@ -9,7 +9,10 @@ import {
 import { GitService } from "./domains/git/index.js";
 import { MemoryService } from "./domains/memory/index.js";
 import { ProjectService } from "./domains/projects/index.js";
-import { SettingsService } from "./domains/settings/index.js";
+import {
+  SettingsService,
+  type MemoryConfig,
+} from "./domains/settings/index.js";
 import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
@@ -55,6 +58,7 @@ export class AppState {
       ProjectService.load(path.join(dataDirectory, "state.json")),
       SettingsService.load(path.join(dataDirectory, "extension-settings.json")),
     ]);
+    applyMemoryConfig(await settings.memoryConfig());
     const state = new AppState(projects, settings, window);
     for (const project of await projects.list()) {
       for (const worktree of project.worktrees) {
@@ -206,6 +210,11 @@ export class AppState {
     if (!this.window.isDestroyed())
       this.window.webContents.send(`spire:event:${topic}`, payload);
   }
+}
+
+export function applyMemoryConfig(config: MemoryConfig): void {
+  process.env.PI_MEMORY_EXTRACT_MODEL = `${config.provider}/${config.modelId}`;
+  process.env.PI_MEMORY_EXTRACT_THINKING = config.reasoningEffort;
 }
 
 function withTimeout<T>(

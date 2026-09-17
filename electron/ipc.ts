@@ -5,6 +5,7 @@ import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
 import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
+import type { MemoryReasoningEffort } from "./domains/settings/index.js";
 import {
   isAllowedRendererUrl,
   type RendererLocationPolicy,
@@ -295,6 +296,14 @@ async function invoke(
     }
     case "settings_memory_read":
       return state.memory.read(memoryDocument(args));
+    case "settings_memory_config_get":
+      return state.settings.memoryConfig();
+    case "settings_memory_config_set":
+      return state.settings.setMemoryConfig(
+        text(args, "provider"),
+        text(args, "modelId"),
+        memoryReasoningEffort(args),
+      );
   }
 }
 
@@ -337,7 +346,16 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
   settings_memory_read: ["document"],
+  settings_memory_config_get: [],
+  settings_memory_config_set: ["provider", "modelId", "reasoningEffort"],
 };
+
+function memoryReasoningEffort(args: Args): MemoryReasoningEffort {
+  const value = text(args, "reasoningEffort");
+  if (!CHAT_THINKING_LEVELS.has(value))
+    throw new TypeError("reasoningEffort is invalid");
+  return value as MemoryReasoningEffort;
+}
 
 function memoryDocument(args: Args): "summary" | "handbook" {
   const value = text(args, "document");
@@ -374,6 +392,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     else if (key === "thinkingLevel") thinkingLevel(args);
     else if (key === "document") memoryDocument(args);
     else if (key === "content") fileContent(args);
+    else if (key === "reasoningEffort") memoryReasoningEffort(args);
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }
   return args;

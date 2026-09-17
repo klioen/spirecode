@@ -5,7 +5,7 @@ import { memoryApi } from "./memoryApi";
 import { settingsApi } from "./settingsApi";
 
 vi.mock("./memoryApi", () => ({
-  memoryApi: { read: vi.fn() },
+  memoryApi: { read: vi.fn(), getConfig: vi.fn(), setConfig: vi.fn() },
 }));
 
 vi.mock("./settingsApi", () => ({
@@ -26,6 +26,11 @@ const extension = {
 };
 
 beforeEach(() => {
+  vi.mocked(memoryApi.getConfig).mockResolvedValue({
+    provider: "traex",
+    modelId: "DeepSeek-V4-Flash",
+    reasoningEffort: "low",
+  });
   vi.mocked(memoryApi.read).mockResolvedValue({
     id: "summary",
     name: "memory_summary.md",

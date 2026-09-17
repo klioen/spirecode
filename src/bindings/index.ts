@@ -11,6 +11,7 @@ import type {
   FileEntry,
   GitDiff,
   GitStatus,
+  MemoryConfig,
   MemoryDocument,
   MemoryDocumentId,
   OkResponse,
@@ -75,6 +76,14 @@ export const commands = {
     }),
   settingsMemoryRead: (document: MemoryDocumentId) =>
     command<MemoryDocument>("settings_memory_read", { document }),
+  settingsMemoryConfigGet: () =>
+    command<MemoryConfig>("settings_memory_config_get"),
+  settingsMemoryConfigSet: (config: MemoryConfig) =>
+    command<MemoryConfig>("settings_memory_config_set", {
+      provider: config.provider,
+      modelId: config.modelId,
+      reasoningEffort: config.reasoningEffort,
+    }),
 
   gitListOriginBranches: (projectId: string) =>
     command<OriginBranchCatalog>("git_list_origin_branches", { projectId }),

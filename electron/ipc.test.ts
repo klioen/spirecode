@@ -140,6 +140,36 @@ describe("IPC command argument validation", () => {
     ).toThrow("content is too large");
   });
 
+  it("validates global Memory configuration without accepting secrets", () => {
+    expect(validateCommandArgs("settings_memory_config_get", {})).toEqual({});
+    expect(
+      validateCommandArgs("settings_memory_config_set", {
+        provider: "traex",
+        modelId: "DeepSeek-V4-Flash",
+        reasoningEffort: "high",
+      }),
+    ).toEqual({
+      provider: "traex",
+      modelId: "DeepSeek-V4-Flash",
+      reasoningEffort: "high",
+    });
+    expect(() =>
+      validateCommandArgs("settings_memory_config_set", {
+        provider: "traex",
+        modelId: "DeepSeek-V4-Flash",
+        reasoningEffort: "turbo",
+      }),
+    ).toThrow("reasoningEffort is invalid");
+    expect(() =>
+      validateCommandArgs("settings_memory_config_set", {
+        provider: "traex",
+        modelId: "DeepSeek-V4-Flash",
+        reasoningEffort: "low",
+        apiKey: "secret",
+      }),
+    ).toThrow("Unexpected argument: apiKey");
+  });
+
   it("retains path length limits and rejects unexpected fields", () => {
     expect(() =>
       validateCommandArgs("fs_read_dir", {

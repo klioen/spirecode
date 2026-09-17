@@ -24,10 +24,36 @@ export interface ExtensionSetting {
   status: "enabled" | "disabled";
 }
 
-interface ExtensionState {
-  version: 1;
-  overrides: Record<string, boolean>;
+export type MemoryReasoningEffort =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface MemoryConfig {
+  provider: string;
+  modelId: string;
+  reasoningEffort: MemoryReasoningEffort;
 }
+
+interface SettingsState {
+  version: 2;
+  overrides: Record<string, boolean>;
+  memoryConfig: MemoryConfig;
+}
+
+const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
+  provider: "traex",
+  modelId: "DeepSeek-V4-Flash",
+  reasoningEffort: "low",
+};
+
+const MEMORY_REASONING_EFFORTS = new Set<MemoryReasoningEffort>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
 
 interface Candidate {
   path: string;
@@ -45,22 +71,45 @@ export class SettingsService {
   private constructor(
     private readonly statePath: string,
     private readonly agentDir: string,
-    private state: ExtensionState,
+    private state: SettingsState,
   ) {}
 
   static async load(
     statePath: string,
     agentDir = path.join(homedir(), ".pi", "agent"),
   ): Promise<SettingsService> {
-    const loaded = await loadOrDefault<ExtensionState>(statePath, () => ({
-      version: 1,
+    const loaded = await loadOrDefault<unknown>(statePath, () => ({
+      version: 2,
       overrides: {},
+      memoryConfig: DEFAULT_MEMORY_CONFIG,
     }));
     return new SettingsService(statePath, agentDir, sanitizeState(loaded));
   }
 
   list(cwd: string): Promise<ExtensionSetting[]> {
     return this.queue.run(async () => this.catalog(cwd));
+  }
+
+  memoryConfig(): Promise<MemoryConfig> {
+    return this.queue.run(async () => ({ ...this.state.memoryConfig }));
+  }
+
+  setMemoryConfig(
+    provider: string,
+    modelId: string,
+    reasoningEffort: MemoryReasoningEffort,
+  ): Promise<MemoryConfig> {
+    return this.queue.run(async () => {
+      const memoryConfig = validateMemoryConfig({
+        provider,
+        modelId,
+        reasoningEffort,
+      });
+      const next: SettingsState = { ...this.state, memoryConfig };
+      await saveAtomic(this.statePath, next);
+      this.state = next;
+      return { ...memoryConfig };
+    });
   }
 
   setEnabled(
@@ -345,12 +394,50 @@ function abbreviateHome(value: string): string {
     : value;
 }
 
-function sanitizeState(value: ExtensionState): ExtensionState {
+function validateMemoryConfig(value: MemoryConfig): MemoryConfig {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.provider) ||
+    Buffer.byteLength(value.provider, "utf8") > 128
+  )
+    throw new CommandError("INVALID_ARGUMENT", "provider is invalid");
+  if (
+    !value.modelId ||
+    value.modelId.trim() !== value.modelId ||
+    [...value.modelId].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || (code >= 127 && code <= 159);
+    }) ||
+    Buffer.byteLength(value.modelId, "utf8") > 256
+  )
+    throw new CommandError("INVALID_ARGUMENT", "modelId is invalid");
+  if (!MEMORY_REASONING_EFFORTS.has(value.reasoningEffort))
+    throw new CommandError("INVALID_ARGUMENT", "reasoningEffort is invalid");
+  return { ...value };
+}
+
+function sanitizeState(value: unknown): SettingsState {
+  const record =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
   const overrides: Record<string, boolean> = {};
-  if (value && typeof value.overrides === "object" && value.overrides) {
-    for (const [key, enabled] of Object.entries(value.overrides))
+  if (typeof record.overrides === "object" && record.overrides) {
+    for (const [key, enabled] of Object.entries(record.overrides))
       if (/^[a-f0-9]{24}$/.test(key) && typeof enabled === "boolean")
         overrides[key] = enabled;
   }
-  return { version: 1, overrides };
+  let memoryConfig = DEFAULT_MEMORY_CONFIG;
+  if (record.memoryConfig && typeof record.memoryConfig === "object") {
+    const candidate = record.memoryConfig as Record<string, unknown>;
+    try {
+      memoryConfig = validateMemoryConfig({
+        provider: candidate.provider as string,
+        modelId: candidate.modelId as string,
+        reasoningEffort: candidate.reasoningEffort as MemoryReasoningEffort,
+      });
+    } catch {
+      memoryConfig = DEFAULT_MEMORY_CONFIG;
+    }
+  }
+  return { version: 2, overrides, memoryConfig: { ...memoryConfig } };
 }

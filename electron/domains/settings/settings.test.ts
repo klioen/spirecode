@@ -61,6 +61,57 @@ async function fixture() {
 }
 
 describe("SettingsService", () => {
+  it("loads, persists, and migrates the global Memory configuration", async () => {
+    const { agentDir, statePath } = await fixture();
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.memoryConfig()).resolves.toEqual({
+      provider: "traex",
+      modelId: "DeepSeek-V4-Flash",
+      reasoningEffort: "low",
+    });
+    await expect(
+      service.setMemoryConfig("openai", "gpt-5.6", "high"),
+    ).resolves.toEqual({
+      provider: "openai",
+      modelId: "gpt-5.6",
+      reasoningEffort: "high",
+    });
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      version: 2,
+      memoryConfig: {
+        provider: "openai",
+        modelId: "gpt-5.6",
+        reasoningEffort: "high",
+      },
+    });
+    await expect(
+      (await SettingsService.load(statePath, agentDir)).memoryConfig(),
+    ).resolves.toEqual({
+      provider: "openai",
+      modelId: "gpt-5.6",
+      reasoningEffort: "high",
+    });
+  });
+
+  it("rejects invalid Memory configuration", async () => {
+    const { agentDir, statePath } = await fixture();
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(
+      service.setMemoryConfig("bad/provider", "model", "low"),
+    ).rejects.toThrow("provider is invalid");
+    await expect(
+      service.setMemoryConfig("traex", " model", "low"),
+    ).rejects.toThrow("modelId is invalid");
+    await expect(
+      service.setMemoryConfig("traex", "model\u0085name", "low"),
+    ).rejects.toThrow("modelId is invalid");
+    await expect(
+      service.setMemoryConfig("traex", "model", "turbo" as "low"),
+    ).rejects.toThrow("reasoningEffort is invalid");
+  });
+
   it("discovers SpireCode and Pi extensions with scope metadata", async () => {
     const { cwd, agentDir, statePath } = await fixture();
     const service = await SettingsService.load(statePath, agentDir);
@@ -101,7 +152,7 @@ describe("SettingsService", () => {
     const updated = await service.setEnabled(cwd, extension.id, false);
     expect(updated.find(({ id }) => id === extension.id)?.enabled).toBe(false);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 1,
+      version: 2,
       overrides: { [extension.id]: false },
     });
 
