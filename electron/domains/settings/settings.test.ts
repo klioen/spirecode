@@ -66,31 +66,72 @@ describe("SettingsService", () => {
     const service = await SettingsService.load(statePath, agentDir);
 
     await expect(service.memoryConfig()).resolves.toEqual({
-      provider: "traex",
-      modelId: "DeepSeek-V4-Flash",
+      phase1Provider: "traex",
+      phase1ModelId: "DeepSeek-V4-Flash",
+      phase2Provider: "traex",
+      phase2ModelId: "DeepSeek-V4-Flash",
       reasoningEffort: "low",
     });
     await expect(
-      service.setMemoryConfig("openai", "gpt-5.6", "high"),
+      service.setMemoryConfig(
+        "openai",
+        "gpt-5.6",
+        "traex",
+        "DeepSeek-V4-Flash",
+        "high",
+      ),
     ).resolves.toEqual({
-      provider: "openai",
-      modelId: "gpt-5.6",
+      phase1Provider: "openai",
+      phase1ModelId: "gpt-5.6",
+      phase2Provider: "traex",
+      phase2ModelId: "DeepSeek-V4-Flash",
       reasoningEffort: "high",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 2,
+      version: 3,
       memoryConfig: {
-        provider: "openai",
-        modelId: "gpt-5.6",
+        phase1Provider: "openai",
+        phase1ModelId: "gpt-5.6",
+        phase2Provider: "traex",
+        phase2ModelId: "DeepSeek-V4-Flash",
         reasoningEffort: "high",
       },
     });
     await expect(
       (await SettingsService.load(statePath, agentDir)).memoryConfig(),
     ).resolves.toEqual({
-      provider: "openai",
-      modelId: "gpt-5.6",
+      phase1Provider: "openai",
+      phase1ModelId: "gpt-5.6",
+      phase2Provider: "traex",
+      phase2ModelId: "DeepSeek-V4-Flash",
       reasoningEffort: "high",
+    });
+  });
+
+  it("migrates the legacy single model to both phases", async () => {
+    const { agentDir, statePath } = await fixture();
+    await mkdir(path.dirname(statePath), { recursive: true });
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 2,
+        overrides: {},
+        memoryConfig: {
+          provider: "openai",
+          modelId: "gpt-5.6",
+          reasoningEffort: "medium",
+        },
+      }),
+    );
+
+    await expect(
+      (await SettingsService.load(statePath, agentDir)).memoryConfig(),
+    ).resolves.toEqual({
+      phase1Provider: "openai",
+      phase1ModelId: "gpt-5.6",
+      phase2Provider: "openai",
+      phase2ModelId: "gpt-5.6",
+      reasoningEffort: "medium",
     });
   });
 
@@ -99,16 +140,28 @@ describe("SettingsService", () => {
     const service = await SettingsService.load(statePath, agentDir);
 
     await expect(
-      service.setMemoryConfig("bad/provider", "model", "low"),
+      service.setMemoryConfig("bad/provider", "model", "traex", "model", "low"),
     ).rejects.toThrow("provider is invalid");
     await expect(
-      service.setMemoryConfig("traex", " model", "low"),
+      service.setMemoryConfig("traex", " model", "traex", "model", "low"),
     ).rejects.toThrow("modelId is invalid");
     await expect(
-      service.setMemoryConfig("traex", "model\u0085name", "low"),
+      service.setMemoryConfig(
+        "traex",
+        "model\u0085name",
+        "traex",
+        "model",
+        "low",
+      ),
     ).rejects.toThrow("modelId is invalid");
     await expect(
-      service.setMemoryConfig("traex", "model", "turbo" as "low"),
+      service.setMemoryConfig(
+        "traex",
+        "model",
+        "traex",
+        "model",
+        "turbo" as "low",
+      ),
     ).rejects.toThrow("reasoningEffort is invalid");
   });
 
@@ -152,7 +205,7 @@ describe("SettingsService", () => {
     const updated = await service.setEnabled(cwd, extension.id, false);
     expect(updated.find(({ id }) => id === extension.id)?.enabled).toBe(false);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 2,
+      version: 3,
       overrides: { [extension.id]: false },
     });
 

@@ -522,7 +522,7 @@ body.panel-resizing-vertical * {
 }
 .memory-config-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 148px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 132px;
   align-items: end;
   gap: 10px;
 }
@@ -533,7 +533,6 @@ body.panel-resizing-vertical * {
   color: var(--text-muted);
   font-size: 10px;
 }
-.memory-config-fields input,
 .memory-config-fields select {
   min-width: 0;
   height: 30px;
@@ -558,6 +557,26 @@ body.panel-resizing-vertical * {
 }
 .memory-config-actions {
   margin-top: 4px;
+  display: flex;
+  justify-content: flex-end;
+}
+.memory-config-actions button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.memory-config-actions button:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.memory-config-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 .memory-tabs {
   margin-bottom: 14px;

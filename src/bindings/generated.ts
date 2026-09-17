@@ -204,8 +204,10 @@ export type MemoryDocumentId = "summary" | "handbook";
 export type MemoryReasoningEffort = ChatThinkingLevel;
 
 export interface MemoryConfig {
-  provider: string;
-  modelId: string;
+  phase1Provider: string;
+  phase1ModelId: string;
+  phase2Provider: string;
+  phase2ModelId: string;
   reasoningEffort: MemoryReasoningEffort;
 }
 

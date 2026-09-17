@@ -141,33 +141,33 @@ describe("IPC command argument validation", () => {
   });
 
   it("validates global Memory configuration without accepting secrets", () => {
+    expect(validateCommandArgs("settings_memory_models_list", {})).toEqual({});
     expect(validateCommandArgs("settings_memory_config_get", {})).toEqual({});
-    expect(
-      validateCommandArgs("settings_memory_config_set", {
-        provider: "traex",
-        modelId: "DeepSeek-V4-Flash",
-        reasoningEffort: "high",
-      }),
-    ).toEqual({
-      provider: "traex",
-      modelId: "DeepSeek-V4-Flash",
+    const config = {
+      phase1Provider: "openai",
+      phase1ModelId: "gpt-5.6",
+      phase2Provider: "traex",
+      phase2ModelId: "DeepSeek-V4-Flash",
       reasoningEffort: "high",
-    });
+    };
+    expect(validateCommandArgs("settings_memory_config_set", config)).toEqual(
+      config,
+    );
     expect(() =>
       validateCommandArgs("settings_memory_config_set", {
-        provider: "traex",
-        modelId: "DeepSeek-V4-Flash",
+        ...config,
         reasoningEffort: "turbo",
       }),
     ).toThrow("reasoningEffort is invalid");
     expect(() =>
       validateCommandArgs("settings_memory_config_set", {
-        provider: "traex",
-        modelId: "DeepSeek-V4-Flash",
-        reasoningEffort: "low",
+        ...config,
         apiKey: "secret",
       }),
     ).toThrow("Unexpected argument: apiKey");
+    expect(() =>
+      validateCommandArgs("settings_memory_models_list", { worktreeId: "w1" }),
+    ).toThrow("Unexpected argument: worktreeId");
   });
 
   it("retains path length limits and rejects unexpected fields", () => {

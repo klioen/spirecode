@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ChatModelOption,
   MemoryConfig,
   MemoryDocument,
   MemoryDocumentId,
@@ -28,15 +29,71 @@ function formatBytes(size: number): string {
   return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`;
 }
 
-function splitModel(
-  value: string,
-): Pick<MemoryConfig, "provider" | "modelId"> | null {
+function modelValue(provider: string, id: string): string {
+  return `${provider}/${id}`;
+}
+
+function splitModel(value: string): { provider: string; id: string } | null {
   const separator = value.indexOf("/");
   if (separator <= 0 || separator === value.length - 1) return null;
   return {
     provider: value.slice(0, separator),
-    modelId: value.slice(separator + 1),
+    id: value.slice(separator + 1),
   };
+}
+
+function ModelSelect({
+  label,
+  value,
+  models,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  models: ChatModelOption[];
+  disabled: boolean;
+  onChange(value: string): void;
+}) {
+  const available = models.some(
+    (model) => modelValue(model.provider, model.id) === value,
+  );
+  const groups = models.reduce<Map<string, ChatModelOption[]>>(
+    (result, model) => {
+      const entries = result.get(model.provider) ?? [];
+      entries.push(model);
+      result.set(model.provider, entries);
+      return result;
+    },
+    new Map(),
+  );
+  return (
+    <label>
+      <span>{label}</span>
+      <select
+        aria-label={label}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {!available && value && (
+          <option value={value}>{value} (Unavailable)</option>
+        )}
+        {[...groups].map(([provider, entries]) => (
+          <optgroup key={provider} label={provider}>
+            {entries.map((model) => (
+              <option
+                key={modelValue(model.provider, model.id)}
+                value={modelValue(model.provider, model.id)}
+              >
+                {model.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 export function MemorySettings() {
@@ -46,13 +103,16 @@ export function MemorySettings() {
   const [documentError, setDocumentError] = useState<ReturnType<
     typeof commandError
   > | null>(null);
-  const [model, setModel] = useState("");
+  const [models, setModels] = useState<ChatModelOption[]>([]);
+  const [phase1Model, setPhase1Model] = useState("");
+  const [phase2Model, setPhase2Model] = useState("");
   const [reasoningEffort, setReasoningEffort] =
     useState<MemoryReasoningEffort>("low");
   const [persistedConfig, setPersistedConfig] = useState<MemoryConfig | null>(
     null,
   );
   const [configLoading, setConfigLoading] = useState(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -84,43 +144,74 @@ export function MemorySettings() {
 
   useEffect(() => {
     let disposed = false;
-    memoryApi.getConfig().then(
-      (config) => {
-        if (disposed) return;
-        setModel(`${config.provider}/${config.modelId}`);
+    void Promise.allSettled([
+      memoryApi.getConfig(),
+      memoryApi.listModels(),
+    ]).then(([configResult, modelsResult]) => {
+      if (disposed) return;
+      if (configResult.status === "fulfilled") {
+        const config = configResult.value;
+        setPhase1Model(modelValue(config.phase1Provider, config.phase1ModelId));
+        setPhase2Model(modelValue(config.phase2Provider, config.phase2ModelId));
         setReasoningEffort(config.reasoningEffort);
         setPersistedConfig(config);
-        setConfigLoading(false);
-      },
-      (failure) => {
-        if (disposed) return;
-        setConfigError(commandError(failure).message);
-        setConfigLoading(false);
-      },
-    );
+      } else setConfigError(commandError(configResult.reason).message);
+      if (modelsResult.status === "fulfilled") setModels(modelsResult.value);
+      else setModelsError(commandError(modelsResult.reason).message);
+      setConfigLoading(false);
+    });
     return () => {
       disposed = true;
     };
   }, []);
 
+  const availableValues = useMemo(
+    () => new Set(models.map((model) => modelValue(model.provider, model.id))),
+    [models],
+  );
+  const canSave =
+    !configLoading &&
+    !saving &&
+    availableValues.has(phase1Model) &&
+    availableValues.has(phase2Model);
+
   const saveConfig = async () => {
-    const parsed = splitModel(model);
-    if (!parsed) {
-      setConfigError("Use a full provider/model identifier.");
+    const phase1 = splitModel(phase1Model);
+    const phase2 = splitModel(phase2Model);
+    if (!phase1 || !phase2 || !canSave) {
+      setConfigError("Select available Phase 1 and Phase 2 models.");
       return;
     }
     setSaving(true);
     setSaved(false);
     setConfigError(null);
     try {
-      const config = await memoryApi.setConfig({ ...parsed, reasoningEffort });
-      setModel(`${config.provider}/${config.modelId}`);
+      const config = await memoryApi.setConfig({
+        phase1Provider: phase1.provider,
+        phase1ModelId: phase1.id,
+        phase2Provider: phase2.provider,
+        phase2ModelId: phase2.id,
+        reasoningEffort,
+      });
+      setPhase1Model(modelValue(config.phase1Provider, config.phase1ModelId));
+      setPhase2Model(modelValue(config.phase2Provider, config.phase2ModelId));
       setReasoningEffort(config.reasoningEffort);
       setPersistedConfig(config);
       setSaved(true);
     } catch (failure) {
       if (persistedConfig) {
-        setModel(`${persistedConfig.provider}/${persistedConfig.modelId}`);
+        setPhase1Model(
+          modelValue(
+            persistedConfig.phase1Provider,
+            persistedConfig.phase1ModelId,
+          ),
+        );
+        setPhase2Model(
+          modelValue(
+            persistedConfig.phase2Provider,
+            persistedConfig.phase2ModelId,
+          ),
+        );
         setReasoningEffort(persistedConfig.reasoningEffort);
       }
       setConfigError(commandError(failure).message);
@@ -136,26 +227,33 @@ export function MemorySettings() {
         <div>
           <h3>Memory</h3>
           <p className="settings-description">
-            Configure extraction and read the global documents generated by Pi
+            Configure processing and read the global documents generated by Pi
             Memory.
           </p>
         </div>
       </div>
       <div className="memory-config">
         <div className="memory-config-fields">
-          <label>
-            <span>Memory Model</span>
-            <input
-              aria-label="Memory Model"
-              value={model}
-              disabled={configLoading || saving}
-              placeholder="provider/model"
-              onChange={(event) => {
-                setModel(event.target.value);
-                setSaved(false);
-              }}
-            />
-          </label>
+          <ModelSelect
+            label="Phase 1 Model"
+            value={phase1Model}
+            models={models}
+            disabled={configLoading || saving}
+            onChange={(value) => {
+              setPhase1Model(value);
+              setSaved(false);
+            }}
+          />
+          <ModelSelect
+            label="Phase 2 Model"
+            value={phase2Model}
+            models={models}
+            disabled={configLoading || saving}
+            onChange={(value) => {
+              setPhase2Model(value);
+              setSaved(false);
+            }}
+          />
           <label>
             <span>Reasoning Effort</span>
             <select
@@ -176,8 +274,18 @@ export function MemorySettings() {
           </label>
         </div>
         <small>
-          Controls Phase 1 extraction. Restart SpireCode after saving.
+          Reasoning applies to Phase 1. Restart SpireCode after saving.
         </small>
+        {modelsError && (
+          <div className="dialog-error" role="alert">
+            Unable to load models: {modelsError}
+          </div>
+        )}
+        {!configLoading && !modelsError && models.length === 0 && (
+          <div className="settings-empty">
+            No available authenticated models.
+          </div>
+        )}
         {configError && (
           <div className="dialog-error" role="alert">
             {configError}
@@ -188,11 +296,10 @@ export function MemorySettings() {
             Restart SpireCode to apply these changes.
           </div>
         )}
-        <div className="dialog-actions memory-config-actions">
+        <div className="memory-config-actions">
           <button
-            className="primary"
             type="button"
-            disabled={configLoading || saving}
+            disabled={!canSave}
             aria-label="Save Memory configuration"
             onClick={() => void saveConfig()}
           >

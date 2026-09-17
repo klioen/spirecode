@@ -2,6 +2,7 @@ import "./host";
 import type {
   ChatAccepted,
   ChatEvent,
+  ChatModelOption,
   ChatSessionConfig,
   ChatSessionSummary,
   ChatThinkingLevel,
@@ -76,12 +77,16 @@ export const commands = {
     }),
   settingsMemoryRead: (document: MemoryDocumentId) =>
     command<MemoryDocument>("settings_memory_read", { document }),
+  settingsMemoryModelsList: () =>
+    command<ChatModelOption[]>("settings_memory_models_list"),
   settingsMemoryConfigGet: () =>
     command<MemoryConfig>("settings_memory_config_get"),
   settingsMemoryConfigSet: (config: MemoryConfig) =>
     command<MemoryConfig>("settings_memory_config_set", {
-      provider: config.provider,
-      modelId: config.modelId,
+      phase1Provider: config.phase1Provider,
+      phase1ModelId: config.phase1ModelId,
+      phase2Provider: config.phase2Provider,
+      phase2ModelId: config.phase2ModelId,
       reasoningEffort: config.reasoningEffort,
     }),
 

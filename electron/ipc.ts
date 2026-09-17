@@ -31,6 +31,10 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     subscriptionId: 128,
     provider: 128,
     modelId: 256,
+    phase1Provider: 128,
+    phase1ModelId: 256,
+    phase2Provider: 128,
+    phase2ModelId: 256,
     thinkingLevel: 16,
     extensionId: 128,
   };
@@ -296,14 +300,30 @@ async function invoke(
     }
     case "settings_memory_read":
       return state.memory.read(memoryDocument(args));
+    case "settings_memory_models_list":
+      return state.models.list();
     case "settings_memory_config_get":
       return state.settings.memoryConfig();
-    case "settings_memory_config_set":
+    case "settings_memory_config_set": {
+      const config = {
+        phase1Provider: text(args, "phase1Provider"),
+        phase1ModelId: text(args, "phase1ModelId"),
+        phase2Provider: text(args, "phase2Provider"),
+        phase2ModelId: text(args, "phase2ModelId"),
+        reasoningEffort: memoryReasoningEffort(args),
+      };
+      await state.models.assertAvailable([
+        { provider: config.phase1Provider, id: config.phase1ModelId },
+        { provider: config.phase2Provider, id: config.phase2ModelId },
+      ]);
       return state.settings.setMemoryConfig(
-        text(args, "provider"),
-        text(args, "modelId"),
-        memoryReasoningEffort(args),
+        config.phase1Provider,
+        config.phase1ModelId,
+        config.phase2Provider,
+        config.phase2ModelId,
+        config.reasoningEffort,
       );
+    }
   }
 }
 
@@ -346,8 +366,15 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
   settings_memory_read: ["document"],
+  settings_memory_models_list: [],
   settings_memory_config_get: [],
-  settings_memory_config_set: ["provider", "modelId", "reasoningEffort"],
+  settings_memory_config_set: [
+    "phase1Provider",
+    "phase1ModelId",
+    "phase2Provider",
+    "phase2ModelId",
+    "reasoningEffort",
+  ],
 };
 
 function memoryReasoningEffort(args: Args): MemoryReasoningEffort {

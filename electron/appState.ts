@@ -8,6 +8,7 @@ import {
 } from "./domains/filesystem/watcher.js";
 import { GitService } from "./domains/git/index.js";
 import { MemoryService } from "./domains/memory/index.js";
+import { ModelCatalogService } from "./domains/models/modelCatalog.js";
 import { ProjectService } from "./domains/projects/index.js";
 import {
   SettingsService,
@@ -26,6 +27,7 @@ export class AppState {
   readonly filesystem: FilesystemService;
   readonly git: GitService;
   readonly memory: MemoryService;
+  readonly models: ModelCatalogService;
   readonly terminals: TerminalService;
   readonly chat: ChatService;
   readonly worktrees: WorktreeService;
@@ -40,6 +42,7 @@ export class AppState {
     this.filesystem = new FilesystemService(root);
     this.git = new GitService(root);
     this.memory = new MemoryService();
+    this.models = new ModelCatalogService();
     this.terminals = new TerminalService(root, (subscriptionId, payload) => {
       this.send("terminal://event", { subscriptionId, payload });
     });
@@ -213,7 +216,8 @@ export class AppState {
 }
 
 export function applyMemoryConfig(config: MemoryConfig): void {
-  process.env.PI_MEMORY_EXTRACT_MODEL = `${config.provider}/${config.modelId}`;
+  process.env.PI_MEMORY_EXTRACT_MODEL = `${config.phase1Provider}/${config.phase1ModelId}`;
+  process.env.PI_MEMORY_PHASE2_MODEL = `${config.phase2Provider}/${config.phase2ModelId}`;
   process.env.PI_MEMORY_EXTRACT_THINKING = config.reasoningEffort;
 }
 
