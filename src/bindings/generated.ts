@@ -6,6 +6,7 @@ export type ErrorCode =
   | "NOT_A_GIT_REPOSITORY"
   | "UNSUPPORTED_FILE"
   | "FILE_TOO_LARGE"
+  | "FILE_CONFLICT"
   | "GIT_FAILED"
   | "GIT_TIMED_OUT"
   | "TERMINAL_NOT_FOUND"
@@ -86,7 +87,7 @@ export interface FileContent {
   relativePath: string;
   content: string;
   language?: string | null;
-  version?: string | number;
+  version: string;
 }
 
 export type DiffScope = "staged" | "unstaged" | "untracked";

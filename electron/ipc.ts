@@ -4,6 +4,7 @@ import { KeyedQueue } from "./core/asyncQueue.js";
 import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
+import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
 import {
   isAllowedRendererUrl,
   type RendererLocationPolicy,
@@ -37,6 +38,14 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     Buffer.byteLength(value, "utf8") > (limits[key] ?? 4 * 1024)
   )
     throw new TypeError(`${key} is empty or too large`);
+  return value;
+};
+const fileContent = (args: Args): string => {
+  const value = args.content;
+  if (typeof value !== "string")
+    throw new TypeError("content must be a string");
+  if (Buffer.byteLength(value, "utf8") > MAX_TEXT_BYTES)
+    throw new TypeError("content is too large");
   return value;
 };
 const number = (args: Args, key: string): number => {
@@ -119,10 +128,19 @@ async function invoke(
         text(args, "worktreeId"),
         text(args, "relativePath", true),
       );
-    case "fs_read_file":
-      return state.filesystem.readFile(
+    case "fs_read_file": {
+      const file = await state.filesystem.readFile(
         text(args, "worktreeId"),
         text(args, "relativePath"),
+      );
+      return { ...file, version: file.version };
+    }
+    case "fs_write_file":
+      return state.filesystem.writeFile(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+        fileContent(args),
+        text(args, "expectedVersion"),
       );
     case "git_status":
       return state.git.status(text(args, "worktreeId"));
@@ -289,6 +307,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   project_copy_path: ["projectId"],
   fs_read_dir: ["worktreeId", "relativePath"],
   fs_read_file: ["worktreeId", "relativePath"],
+  fs_write_file: ["worktreeId", "relativePath", "content", "expectedVersion"],
   git_status: ["worktreeId"],
   git_diff_file: ["worktreeId", "relativePath", "scope"],
   git_list_origin_branches: ["projectId"],
@@ -354,6 +373,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     else if (key === "force" || key === "enabled") boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
     else if (key === "document") memoryDocument(args);
+    else if (key === "content") fileContent(args);
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }
   return args;

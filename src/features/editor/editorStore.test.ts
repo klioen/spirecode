@@ -49,6 +49,26 @@ describe("preview and keep tabs", () => {
     ).toBe(false);
   });
 
+  it("tracks dirty metadata for file tabs and clears it after save", () => {
+    useEditorStore.getState().open(tab("a.ts"));
+    const store = useEditorStore.getState() as ReturnType<
+      typeof useEditorStore.getState
+    > & {
+      setFileDirty: (worktreeId: string, tabId: string, dirty: boolean) => void;
+    };
+
+    store.setFileDirty("p1", fileResourceId("p1", "a.ts"), true);
+    expect(useEditorStore.getState().views.p1.tabs[0]).toMatchObject({
+      type: "file",
+      dirty: true,
+    });
+    store.setFileDirty("p1", fileResourceId("p1", "a.ts"), false);
+    expect(useEditorStore.getState().views.p1.tabs[0]).toMatchObject({
+      type: "file",
+      dirty: false,
+    });
+  });
+
   it("opens numbered terminal tabs without replacing file previews", () => {
     useEditorStore.getState().open(tab("a.ts"));
     const first = useEditorStore.getState().openTerminal("p1", "terminal-a");

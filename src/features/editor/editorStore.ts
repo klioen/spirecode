@@ -8,6 +8,7 @@ export type ResourceTab =
       type: "file";
       relativePath: string;
       preview: boolean;
+      dirty?: boolean;
     }
   | {
       id: string;
@@ -69,6 +70,7 @@ interface EditorState {
     terminalId: string,
     status: "running" | "exited" | "error",
   ) => void;
+  setFileDirty: (worktreeId: string, tabId: string, dirty: boolean) => void;
   keep: (worktreeId: string, tabId: string) => void;
   close: (worktreeId: string, tabId: string) => void;
   activate: (worktreeId: string, tabId: string) => void;
@@ -161,6 +163,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             tabs: view.tabs.map((tab) =>
               tab.type === "terminal" && tab.terminalId === terminalId
                 ? { ...tab, status }
+                : tab,
+            ),
+          },
+        },
+      };
+    }),
+  setFileDirty: (worktreeId, tabId, dirty) =>
+    set((state) => {
+      const view = state.views[worktreeId] ?? emptyView();
+      return {
+        views: {
+          ...state.views,
+          [worktreeId]: {
+            ...view,
+            tabs: view.tabs.map((tab) =>
+              tab.type === "file" && tab.id === tabId
+                ? { ...tab, dirty, preview: dirty ? false : tab.preview }
                 : tab,
             ),
           },

@@ -113,6 +113,33 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: path");
   });
 
+  it("validates file writes with a dedicated 5 MiB content limit", () => {
+    const command = "fs_write_file" as Parameters<
+      typeof validateCommandArgs
+    >[0];
+    expect(
+      validateCommandArgs(command, {
+        worktreeId: "worktree-1",
+        relativePath: "hello.txt",
+        content: "updated",
+        expectedVersion: "version-1",
+      }),
+    ).toEqual({
+      worktreeId: "worktree-1",
+      relativePath: "hello.txt",
+      content: "updated",
+      expectedVersion: "version-1",
+    });
+    expect(() =>
+      validateCommandArgs(command, {
+        worktreeId: "worktree-1",
+        relativePath: "hello.txt",
+        content: "x".repeat(5 * 1024 * 1024 + 1),
+        expectedVersion: "version-1",
+      }),
+    ).toThrow("content is too large");
+  });
+
   it("retains path length limits and rejects unexpected fields", () => {
     expect(() =>
       validateCommandArgs("fs_read_dir", {

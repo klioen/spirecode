@@ -49,6 +49,12 @@ interface CachedResource {
 }
 
 const cache = new ResourceCache<CachedResource>();
+interface FileDraft {
+  content: string;
+  savedContent: string;
+  version: string;
+}
+const fileDrafts = new Map<string, FileDraft>();
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; value: FileContent | GitDiff }
@@ -57,7 +63,6 @@ type LoadState =
 type DocumentTab = Extract<ResourceTab, { type: "file" | "diff" }>;
 
 function ResourceView({ tab }: { tab: DocumentTab }) {
-  const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const [state, setState] = useState<LoadState>(() => {
     const cached = cache.get(tab.id);
     return cached
@@ -97,9 +102,13 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
         const resourceIsCurrent = latestGeneration === resourceGeneration;
         if (resourceIsCurrent)
           cache.set(tab.id, { generation: resourceGeneration, value });
+        const openTab = latest.views[tab.worktreeId]?.tabs.find(
+          (candidate) => candidate.id === tab.id,
+        );
         if (
           latest.navigationGeneration === navigationGeneration &&
-          resourceIsCurrent
+          resourceIsCurrent &&
+          !(openTab?.type === "file" && openTab.dirty)
         )
           setState({ status: "ready", value });
       },
@@ -119,7 +128,15 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
           );
       },
     );
-  }, [navigationGeneration, resourceGeneration, tab]);
+  }, [
+    navigationGeneration,
+    resourceGeneration,
+    tab.id,
+    tab.relativePath,
+    tab.type === "diff" ? tab.scope : undefined,
+    tab.type,
+    tab.worktreeId,
+  ]);
   if (state.status === "loading")
     return (
       <div className="viewer-state">
@@ -139,23 +156,135 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
     "language" in state.value ? (state.value.language ?? undefined) : undefined;
   if (tab.type === "diff" && "scope" in state.value)
     return <DiffView diff={state.value} />;
-  const content = "content" in state.value ? state.value.content : "";
+  if (!("content" in state.value)) return null;
   return (
-    <Suspense fallback={<div className="viewer-state">Loading editor…</div>}>
-      <MonacoEditor
-        value={content}
-        language={language}
-        theme={monacoThemeName(resolvedTheme)}
-        beforeMount={(monaco) => defineMonacoTheme(monaco, resolvedTheme)}
-        options={{
-          readOnly: true,
-          domReadOnly: true,
-          minimap: { enabled: false },
-          fontSize: 13,
-          padding: { top: 16 },
-        }}
-      />
-    </Suspense>
+    <FileView
+      file={state.value}
+      language={language}
+      resourceGeneration={resourceGeneration}
+      tab={tab as Extract<ResourceTab, { type: "file" }>}
+      onSaved={(saved) => setState({ status: "ready", value: saved })}
+    />
+  );
+}
+
+function FileView({
+  file,
+  language,
+  resourceGeneration,
+  tab,
+  onSaved,
+}: {
+  file: FileContent;
+  language: string | undefined;
+  resourceGeneration: number;
+  tab: Extract<ResourceTab, { type: "file" }>;
+  onSaved: (saved: FileContent) => void;
+}) {
+  const resolvedTheme = useThemeStore((theme) => theme.resolved);
+  const initialDraft = fileDrafts.get(tab.id);
+  const [content, setContent] = useState(initialDraft?.content ?? file.content);
+  const [savedContent, setSavedContent] = useState(
+    initialDraft?.savedContent ?? file.content,
+  );
+  const [version, setVersion] = useState(initialDraft?.version ?? file.version);
+  const [saveError, setSaveError] = useState<CommandError | null>(null);
+  const [saving, setSaving] = useState(false);
+  const dirty = content !== savedContent;
+
+  useEffect(() => {
+    if (dirty) return;
+    setContent(file.content);
+    setSavedContent(file.content);
+    setVersion(file.version);
+    fileDrafts.delete(tab.id);
+  }, [dirty, file.content, file.version, tab.id]);
+
+  useEffect(() => {
+    useEditorStore.getState().setFileDirty(tab.worktreeId, tab.id, dirty);
+  }, [dirty, tab.id, tab.worktreeId]);
+
+  useEffect(() => {
+    const save = async () => {
+      if (!dirty || saving) return;
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const saved = await commands.fsWriteFile(
+          tab.worktreeId,
+          tab.relativePath,
+          content,
+          version,
+        );
+        cache.set(tab.id, {
+          generation: resourceGeneration,
+          value: saved,
+        });
+        onSaved(saved);
+        setContent(saved.content);
+        setSavedContent(saved.content);
+        setVersion(saved.version);
+        fileDrafts.delete(tab.id);
+      } catch (error) {
+        setSaveError(commandError(error));
+      } finally {
+        setSaving(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey && event.key.toLowerCase() === "s")) return;
+      event.preventDefault();
+      void save();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    content,
+    dirty,
+    onSaved,
+    resourceGeneration,
+    saving,
+    tab.id,
+    tab.relativePath,
+    tab.worktreeId,
+    version,
+  ]);
+
+  return (
+    <div className="editable-file-view">
+      {saveError && (
+        <div className="file-save-error" role="alert">
+          {saveError.message}
+        </div>
+      )}
+      <Suspense fallback={<div className="viewer-state">Loading editor…</div>}>
+        <MonacoEditor
+          value={content}
+          language={language}
+          theme={monacoThemeName(resolvedTheme)}
+          beforeMount={(monaco) => defineMonacoTheme(monaco, resolvedTheme)}
+          onChange={(value) => {
+            const nextContent = value ?? "";
+            setContent(nextContent);
+            setSaveError(null);
+            if (nextContent === savedContent) fileDrafts.delete(tab.id);
+            else
+              fileDrafts.set(tab.id, {
+                content: nextContent,
+                savedContent,
+                version,
+              });
+          }}
+          options={{
+            readOnly: false,
+            domReadOnly: false,
+            minimap: { enabled: false },
+            fontSize: 13,
+            padding: { top: 16 },
+          }}
+        />
+      </Suspense>
+    </div>
   );
 }
 
@@ -288,6 +417,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
   };
   const closeTab = async (tab: ResourceTab) => {
     if (tab.type !== "terminal") {
+      if (tab.type === "file") fileDrafts.delete(tab.id);
       useEditorStore.getState().close(worktreeId, tab.id);
       return;
     }
@@ -337,6 +467,11 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                   ? tab.title
                   : tab.relativePath.split("/").slice(-1)[0]}
               </span>
+              {tab.type === "file" && tab.dirty && (
+                <span className="tab-dirty" aria-label="Unsaved changes">
+                  ●
+                </span>
+              )}
               <span
                 className="tab-close"
                 role="button"
@@ -347,6 +482,14 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 }`}
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (
+                    tab.type === "file" &&
+                    tab.dirty &&
+                    !window.confirm(
+                      `Discard unsaved changes to ${tab.relativePath}?`,
+                    )
+                  )
+                    return;
                   void closeTab(tab);
                 }}
               >
@@ -425,7 +568,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
           <div className="editor-empty">
             <RiCodeSSlashLine size={42} />
             <h2>Your code, in focus.</h2>
-            <p>Select a file or change to open a read-only preview.</p>
+            <p>Select a file to edit, or a change to preview its diff.</p>
             <div>
               <kbd>⌘ P</kbd>
               <span>Quick open</span>

@@ -7,6 +7,7 @@ export const COMMANDS = [
   "project_copy_path",
   "fs_read_dir",
   "fs_read_file",
+  "fs_write_file",
   "git_status",
   "git_diff_file",
   "git_list_origin_branches",

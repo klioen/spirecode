@@ -2,6 +2,7 @@
 import {
   mkdtemp,
   mkdir,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -89,6 +90,24 @@ describe("resolveProjectPath", () => {
 });
 
 describe("FilesystemService", () => {
+  const writeExistingFile = (
+    service: FilesystemService,
+    worktreeId: string,
+    relativePath: string,
+    content: string,
+    expectedVersion: string,
+  ) =>
+    (
+      service as unknown as {
+        writeFile: (
+          worktreeId: string,
+          relativePath: string,
+          content: string,
+          expectedVersion: string,
+        ) => Promise<{ content: string; version: string }>;
+      }
+    ).writeFile(worktreeId, relativePath, content, expectedVersion);
+
   it("resolves roots by worktree id and reads UTF-8 files", async () => {
     const root = await temporaryDirectory();
     await writeFile(path.join(root, "hello.txt"), "你好\n");
@@ -99,8 +118,84 @@ describe("FilesystemService", () => {
       relativePath: "hello.txt",
       content: "你好\n",
       size: Buffer.byteLength("你好\n"),
+      version: expect.any(String),
     });
     expect(resolver).toHaveBeenCalledWith("worktree-1");
+  });
+
+  it("atomically writes an existing UTF-8 file when its version matches", async () => {
+    const root = await temporaryDirectory();
+    await writeFile(path.join(root, "hello.txt"), "before\n", { mode: 0o640 });
+    const service = new FilesystemService(() => root);
+    const initial = await service.readFile("worktree-1", "hello.txt");
+
+    expect(initial).toEqual({
+      relativePath: "hello.txt",
+      content: "before\n",
+      size: 7,
+      version: expect.any(String),
+    });
+    const saved = await writeExistingFile(
+      service,
+      "worktree-1",
+      "hello.txt",
+      "after\n",
+      initial.version,
+    );
+
+    expect(saved).toEqual({
+      relativePath: "hello.txt",
+      content: "after\n",
+      size: 6,
+      version: expect.any(String),
+    });
+    expect(saved.version).not.toBe(initial.version);
+    await expect(readFile(path.join(root, "hello.txt"), "utf8")).resolves.toBe(
+      "after\n",
+    );
+  });
+
+  it("rejects a stale write without overwriting the external change", async () => {
+    const root = await temporaryDirectory();
+    const filePath = path.join(root, "hello.txt");
+    await writeFile(filePath, "initial");
+    const service = new FilesystemService(() => root);
+    const initial = await service.readFile("worktree-1", "hello.txt");
+    await writeFile(filePath, "external");
+
+    await expectCode(
+      writeExistingFile(
+        service,
+        "worktree-1",
+        "hello.txt",
+        "local edit",
+        initial.version,
+      ),
+      "FILE_CONFLICT",
+    );
+    await expect(readFile(filePath, "utf8")).resolves.toBe("external");
+  });
+
+  it("rejects oversized writes and paths outside the worktree", async () => {
+    const root = await temporaryDirectory();
+    await writeFile(path.join(root, "hello.txt"), "initial");
+    const service = new FilesystemService(() => root);
+    const initial = await service.readFile("worktree-1", "hello.txt");
+
+    await expectCode(
+      writeExistingFile(
+        service,
+        "worktree-1",
+        "hello.txt",
+        "x".repeat(MAX_TEXT_BYTES + 1),
+        initial.version,
+      ),
+      "FILE_TOO_LARGE",
+    );
+    await expectCode(
+      writeExistingFile(service, "worktree-1", "../escape", "x", "version"),
+      "OUTSIDE_PROJECT",
+    );
   });
 
   it("lists one level, honors gitignore, skips escapes, and sorts directories naturally first", async () => {

@@ -14,6 +14,10 @@ import userEvent from "@testing-library/user-event";
 import { EditorPane } from "./EditorPane";
 import { useEditorStore } from "./editorStore";
 
+const { fileEditorValues } = vi.hoisted(() => ({
+  fileEditorValues: [] as string[],
+}));
+
 vi.mock("../../bindings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../bindings")>();
   return {
@@ -21,6 +25,7 @@ vi.mock("../../bindings", async (importOriginal) => {
     commands: {
       ...actual.commands,
       fsReadFile: vi.fn(),
+      fsWriteFile: vi.fn(),
       gitDiffFile: vi.fn(),
       terminalCreate: vi.fn(),
       terminalAttach: vi.fn(),
@@ -30,7 +35,25 @@ vi.mock("../../bindings", async (importOriginal) => {
 });
 
 vi.mock("@monaco-editor/react", () => ({
-  default: ({ value }: { value: string }) => <div>file: {value}</div>,
+  default: ({
+    value,
+    onChange,
+    options,
+  }: {
+    value: string;
+    onChange?: (value: string) => void;
+    options?: { readOnly?: boolean };
+  }) => {
+    fileEditorValues.push(value);
+    return (
+      <textarea
+        aria-label="File editor"
+        readOnly={options?.readOnly}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    );
+  },
   DiffEditor: ({
     original,
     modified,
@@ -70,7 +93,9 @@ const deferred = <T,>() => {
 };
 
 beforeEach(() => {
+  fileEditorValues.length = 0;
   vi.mocked(commands.fsReadFile).mockReset();
+  vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
   vi.mocked(commands.terminalAttach).mockReset();
@@ -86,6 +111,148 @@ beforeEach(() => {
 });
 
 describe("EditorPane resources", () => {
+  const openFile = () =>
+    useEditorStore.getState().open(
+      {
+        id: "file:p1:src/example.ts",
+        worktreeId: "p1",
+        type: "file",
+        relativePath: "src/example.ts",
+        preview: true,
+      },
+      false,
+    );
+
+  it("edits the selected file and saves it with Command-S", async () => {
+    vi.mocked(commands.fsReadFile).mockResolvedValue({
+      relativePath: "src/example.ts",
+      content: "before",
+      version: "version-1",
+    });
+    vi.mocked(commands.fsWriteFile).mockResolvedValue({
+      relativePath: "src/example.ts",
+      content: "after",
+      version: "version-2",
+    });
+    openFile();
+
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    expect(editor).not.toHaveAttribute("readonly");
+    fireEvent.change(editor, { target: { value: "after" } });
+    expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+    fileEditorValues.length = 0;
+
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await waitFor(() =>
+      expect(commands.fsWriteFile).toHaveBeenCalledWith(
+        "p1",
+        "src/example.ts",
+        "after",
+        "version-1",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText("Unsaved changes"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(fileEditorValues).not.toContain("before");
+  });
+
+  it("preserves the dirty buffer while switching between file tabs", async () => {
+    vi.mocked(commands.fsReadFile).mockImplementation(
+      async (_worktreeId, relativePath) => ({
+        relativePath,
+        content: relativePath.includes("other") ? "other" : "before",
+        version: `version-${relativePath}`,
+      }),
+    );
+    useEditorStore.getState().open(
+      {
+        id: "file:p1:src/switch-example.ts",
+        worktreeId: "p1",
+        type: "file",
+        relativePath: "src/switch-example.ts",
+        preview: true,
+      },
+      false,
+    );
+
+    render(<EditorPane worktreeId="p1" />);
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "File editor" }),
+      { target: { value: "local edit" } },
+    );
+    act(() =>
+      useEditorStore.getState().open(
+        {
+          id: "file:p1:src/switch-other.ts",
+          worktreeId: "p1",
+          type: "file",
+          relativePath: "src/switch-other.ts",
+          preview: true,
+        },
+        false,
+      ),
+    );
+    expect(
+      await screen.findByRole("textbox", { name: "File editor" }),
+    ).toHaveValue("other");
+
+    act(() =>
+      useEditorStore.getState().activate("p1", "file:p1:src/switch-example.ts"),
+    );
+    expect(
+      await screen.findByRole("textbox", { name: "File editor" }),
+    ).toHaveValue("local edit");
+  });
+
+  it("preserves the dirty buffer when saving conflicts", async () => {
+    vi.mocked(commands.fsReadFile).mockResolvedValue({
+      relativePath: "src/example.ts",
+      content: "before",
+      version: "version-1",
+    });
+    vi.mocked(commands.fsWriteFile).mockRejectedValue({
+      code: "FILE_CONFLICT",
+      message: "file changed on disk",
+    });
+    openFile();
+
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+
+    expect(await screen.findByText("file changed on disk")).toBeInTheDocument();
+    expect(editor).toHaveValue("local edit");
+    expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("asks before closing a dirty file tab", async () => {
+    vi.mocked(commands.fsReadFile).mockResolvedValue({
+      relativePath: "src/example.ts",
+      content: "before",
+      version: "version-1",
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    openFile();
+
+    render(<EditorPane worktreeId="p1" />);
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "File editor" }),
+      { target: { value: "changed" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close example.ts" }));
+
+    expect(confirm).toHaveBeenCalled();
+    expect(
+      screen.getByRole("textbox", { name: "File editor" }),
+    ).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
   it("keeps the current diff visible across consecutive invalidations", async () => {
     type DiffResult = {
       path: string;

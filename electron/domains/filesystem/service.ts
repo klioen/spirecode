@@ -1,4 +1,14 @@
-import { lstat, readFile as fsReadFile, readdir, stat } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  readFile as fsReadFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile as fsWriteFile,
+} from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import ignore, { type Ignore } from "ignore";
 import { CommandError, toCommandError } from "../../core/errors.js";
@@ -19,6 +29,7 @@ export interface FileContent {
   relativePath: string;
   content: string;
   size: number;
+  version: string;
 }
 
 export type RootResolver = (worktreeId: string) => string | Promise<string>;
@@ -27,6 +38,20 @@ const naturalCollator = new Intl.Collator("en", {
   numeric: true,
   sensitivity: "base",
 });
+
+const fileVersion = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
+
+function decodeTextFile(bytes: Buffer): string {
+  if (bytes.includes(0)) {
+    throw new CommandError("UNSUPPORTED_FILE", "binary file is not supported");
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new CommandError("UNSUPPORTED_FILE", "file is not valid UTF-8");
+  }
+}
 
 async function readIgnoreFile(filePath: string): Promise<string | undefined> {
   try {
@@ -183,20 +208,81 @@ export class FilesystemService {
       }
 
       const bytes = await fsReadFile(filePath);
-      if (bytes.includes(0)) {
+      const content = decodeTextFile(bytes);
+      return {
+        relativePath,
+        content,
+        size: metadata.size,
+        version: fileVersion(bytes),
+      };
+    } catch (error) {
+      throw toCommandError(error);
+    }
+  }
+
+  async writeFile(
+    worktreeId: string,
+    relativePath: string,
+    content: string,
+    expectedVersion: string,
+  ): Promise<FileContent> {
+    let temporaryPath: string | undefined;
+    try {
+      const root = await this.rootResolver(worktreeId);
+      const { path: filePath } = await resolveProjectPath(
+        root,
+        relativePath,
+        true,
+      );
+      const metadata = await stat(filePath);
+      if (!metadata.isFile()) {
         throw new CommandError(
           "UNSUPPORTED_FILE",
-          "binary file is not supported",
+          "path is not a regular file",
         );
       }
-      let content: string;
-      try {
-        content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {
-        throw new CommandError("UNSUPPORTED_FILE", "file is not valid UTF-8");
+
+      const currentBytes = await fsReadFile(filePath);
+      if (currentBytes.byteLength > MAX_TEXT_BYTES) {
+        throw new CommandError(
+          "FILE_TOO_LARGE",
+          "file exceeds 5 MiB text limit",
+        );
       }
-      return { relativePath, content, size: metadata.size };
+      decodeTextFile(currentBytes);
+      if (fileVersion(currentBytes) !== expectedVersion) {
+        throw new CommandError(
+          "FILE_CONFLICT",
+          "file changed on disk; reload it before saving",
+        );
+      }
+
+      const nextBytes = Buffer.from(content, "utf8");
+      if (nextBytes.byteLength > MAX_TEXT_BYTES) {
+        throw new CommandError(
+          "FILE_TOO_LARGE",
+          "file exceeds 5 MiB text limit",
+        );
+      }
+
+      temporaryPath = path.join(
+        path.dirname(filePath),
+        `.${path.basename(filePath)}.spirecode-${randomUUID()}.tmp`,
+      );
+      await fsWriteFile(temporaryPath, nextBytes, { flag: "wx" });
+      await chmod(temporaryPath, metadata.mode);
+      await rename(temporaryPath, filePath);
+      temporaryPath = undefined;
+      const savedMetadata = await stat(filePath);
+      return {
+        relativePath,
+        content,
+        size: savedMetadata.size,
+        version: fileVersion(nextBytes),
+      };
     } catch (error) {
+      if (temporaryPath)
+        await rm(temporaryPath, { force: true }).catch(() => {});
       throw toCommandError(error);
     }
   }
