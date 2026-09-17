@@ -14,6 +14,10 @@ import userEvent from "@testing-library/user-event";
 import { EditorPane } from "./EditorPane";
 import { useEditorStore } from "./editorStore";
 
+const { fileEditorValues } = vi.hoisted(() => ({
+  fileEditorValues: [] as string[],
+}));
+
 vi.mock("../../bindings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../bindings")>();
   return {
@@ -39,14 +43,17 @@ vi.mock("@monaco-editor/react", () => ({
     value: string;
     onChange?: (value: string) => void;
     options?: { readOnly?: boolean };
-  }) => (
-    <textarea
-      aria-label="File editor"
-      readOnly={options?.readOnly}
-      value={value}
-      onChange={(event) => onChange?.(event.target.value)}
-    />
-  ),
+  }) => {
+    fileEditorValues.push(value);
+    return (
+      <textarea
+        aria-label="File editor"
+        readOnly={options?.readOnly}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    );
+  },
   DiffEditor: ({
     original,
     modified,
@@ -86,6 +93,7 @@ const deferred = <T,>() => {
 };
 
 beforeEach(() => {
+  fileEditorValues.length = 0;
   vi.mocked(commands.fsReadFile).mockReset();
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
@@ -133,6 +141,7 @@ describe("EditorPane resources", () => {
     expect(editor).not.toHaveAttribute("readonly");
     fireEvent.change(editor, { target: { value: "after" } });
     expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+    fileEditorValues.length = 0;
 
     fireEvent.keyDown(window, { key: "s", metaKey: true });
     await waitFor(() =>
@@ -148,6 +157,7 @@ describe("EditorPane resources", () => {
         screen.queryByLabelText("Unsaved changes"),
       ).not.toBeInTheDocument(),
     );
+    expect(fileEditorValues).not.toContain("before");
   });
 
   it("preserves the dirty buffer while switching between file tabs", async () => {
