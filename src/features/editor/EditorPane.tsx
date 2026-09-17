@@ -163,6 +163,7 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
       language={language}
       resourceGeneration={resourceGeneration}
       tab={tab as Extract<ResourceTab, { type: "file" }>}
+      onSaved={(saved) => setState({ status: "ready", value: saved })}
     />
   );
 }
@@ -172,11 +173,13 @@ function FileView({
   language,
   resourceGeneration,
   tab,
+  onSaved,
 }: {
   file: FileContent;
   language: string | undefined;
   resourceGeneration: number;
   tab: Extract<ResourceTab, { type: "file" }>;
+  onSaved: (saved: FileContent) => void;
 }) {
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const initialDraft = fileDrafts.get(tab.id);
@@ -217,6 +220,7 @@ function FileView({
           generation: resourceGeneration,
           value: saved,
         });
+        onSaved(saved);
         setContent(saved.content);
         setSavedContent(saved.content);
         setVersion(saved.version);
@@ -237,6 +241,7 @@ function FileView({
   }, [
     content,
     dirty,
+    onSaved,
     resourceGeneration,
     saving,
     tab.id,
