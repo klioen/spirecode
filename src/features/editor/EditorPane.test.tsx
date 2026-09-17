@@ -144,8 +144,58 @@ describe("EditorPane resources", () => {
       ),
     );
     await waitFor(() =>
-      expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument(),
+      expect(
+        screen.queryByLabelText("Unsaved changes"),
+      ).not.toBeInTheDocument(),
     );
+  });
+
+  it("preserves the dirty buffer while switching between file tabs", async () => {
+    vi.mocked(commands.fsReadFile).mockImplementation(
+      async (_worktreeId, relativePath) => ({
+        relativePath,
+        content: relativePath.includes("other") ? "other" : "before",
+        version: `version-${relativePath}`,
+      }),
+    );
+    useEditorStore.getState().open(
+      {
+        id: "file:p1:src/switch-example.ts",
+        worktreeId: "p1",
+        type: "file",
+        relativePath: "src/switch-example.ts",
+        preview: true,
+      },
+      false,
+    );
+
+    render(<EditorPane worktreeId="p1" />);
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "File editor" }),
+      { target: { value: "local edit" } },
+    );
+    act(() =>
+      useEditorStore.getState().open(
+        {
+          id: "file:p1:src/switch-other.ts",
+          worktreeId: "p1",
+          type: "file",
+          relativePath: "src/switch-other.ts",
+          preview: true,
+        },
+        false,
+      ),
+    );
+    expect(
+      await screen.findByRole("textbox", { name: "File editor" }),
+    ).toHaveValue("other");
+
+    act(() =>
+      useEditorStore.getState().activate("p1", "file:p1:src/switch-example.ts"),
+    );
+    expect(
+      await screen.findByRole("textbox", { name: "File editor" }),
+    ).toHaveValue("local edit");
   });
 
   it("preserves the dirty buffer when saving conflicts", async () => {
@@ -187,7 +237,9 @@ describe("EditorPane resources", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close example.ts" }));
 
     expect(confirm).toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "File editor" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: "File editor" }),
+    ).toBeInTheDocument();
     confirm.mockRestore();
   });
 
