@@ -288,6 +288,15 @@ async function invoke(
         text(args, "worktreeId"),
         text(args, "sessionId"),
       );
+    case "chat_session_delete": {
+      const worktreeId = text(args, "worktreeId");
+      const sessionId = text(args, "sessionId");
+      const subscriptionId = chatSubscriptions.get(sessionId);
+      await state.chat.delete(worktreeId, sessionId);
+      if (chatSubscriptions.get(sessionId) === subscriptionId)
+        chatSubscriptions.delete(sessionId);
+      return undefined;
+    }
     case "settings_extensions_list": {
       const worktreeId = text(args, "worktreeId");
       return state.settings.list(await state.projects.root(worktreeId));
@@ -373,6 +382,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_set_thinking_level: ["worktreeId", "sessionId", "thinkingLevel"],
   chat_session_send: ["worktreeId", "sessionId", "text"],
   chat_session_abort: ["worktreeId", "sessionId"],
+  chat_session_delete: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
   settings_memory_read: ["document"],

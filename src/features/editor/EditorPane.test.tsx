@@ -77,7 +77,11 @@ vi.mock("../chat", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../chat")>();
   return {
     ...actual,
-    hostChatApi: { ...actual.hostChatApi, list: vi.fn().mockResolvedValue([]) },
+    hostChatApi: {
+      ...actual.hostChatApi,
+      list: vi.fn().mockResolvedValue([]),
+      delete: vi.fn().mockResolvedValue(undefined),
+    },
     ChatView: ({ sessionId }: { sessionId: string }) => (
       <div>chat body {sessionId}</div>
     ),
@@ -98,6 +102,7 @@ beforeEach(() => {
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
+  vi.mocked(hostChatApi.delete).mockReset().mockResolvedValue(undefined);
   vi.mocked(commands.terminalAttach).mockReset();
   vi.mocked(commands.terminalClose).mockReset();
   useEditorStore.setState({
@@ -477,6 +482,30 @@ describe("Chat history popover", () => {
     );
   });
 
+  it("deletes an opened idle chat and keeps history open", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValueOnce([
+      { sessionId: "s1", worktreeId: "p1", title: "Disposable session" },
+    ]);
+    useEditorStore.getState().openChat("p1", "s1", "Disposable session");
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Delete Disposable session" }),
+    );
+    expect(document.querySelector(".chat-history")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("chat body s1")).not.toBeInTheDocument(),
+    );
+    expect(hostChatApi.delete).toHaveBeenCalledWith("p1", "s1");
+    expect(
+      screen.getByRole("region", { name: "Chat history" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens a selected session and closes history", async () => {
     vi.mocked(hostChatApi.list).mockResolvedValueOnce([
       { sessionId: "s1", worktreeId: "p1", title: "Selected session" },
@@ -485,7 +514,7 @@ describe("Chat history popover", () => {
     render(<EditorPane worktreeId="p1" />);
     await user.click(screen.getByRole("button", { name: "Chat history" }));
     await user.click(
-      await screen.findByRole("button", { name: /Selected session/ }),
+      await screen.findByRole("button", { name: "Selected session" }),
     );
     expect(
       screen.queryByRole("region", { name: "Chat history" }),

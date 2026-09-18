@@ -97,6 +97,7 @@ function sdkFixture(options: {
   };
   const manager = {
     buildSessionContext: () => ({ messages: options.existingMessages ?? [] }),
+    getSessionDir: () => "/sessions/current",
     getBranch: () => [
       {
         type: "custom",
@@ -236,6 +237,34 @@ describe("piAdapter", () => {
         ],
       },
     ]);
+  });
+
+  it("resolves deletion only from complete raw SDK metadata", async () => {
+    const { sdk, manager, loadResources } = sdkFixture({});
+    sdk.SessionManager.list = async () => [
+      { id: "s1", cwd: "/repo", path: "/sessions/current/s1.jsonl" },
+    ];
+    const adapter = await createPiAdapter(sdk, { loadResources });
+
+    await expect(adapter.resolveDeleteTarget("/repo", "s1")).resolves.toEqual({
+      info: expect.objectContaining({
+        sessionId: "s1",
+        cwd: "/repo",
+        path: "/sessions/current/s1.jsonl",
+      }),
+      sessionRoot: manager.getSessionDir(),
+    });
+
+    sdk.SessionManager.list = async () => [
+      { id: "s1", path: "/sessions/current/s1.jsonl" },
+    ];
+    await expect(adapter.resolveDeleteTarget("/repo", "s1")).rejects.toThrow(
+      "Session cwd is unavailable",
+    );
+    sdk.SessionManager.list = async () => [{ id: "s1", cwd: "/repo" }];
+    await expect(adapter.resolveDeleteTarget("/repo", "s1")).rejects.toThrow(
+      "Session path is unavailable",
+    );
   });
 
   it("preserves the saved model when opening a session with messages", async () => {

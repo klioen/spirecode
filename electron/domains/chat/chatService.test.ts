@@ -110,6 +110,8 @@ async function fixture(): Promise<{
   const root = await mkdtemp(path.join(os.tmpdir(), "spirecode-chat-"));
   cleanup.push(root);
   const records = new Map<string, PiSessionRecord>();
+  const sessionRoot = path.join(root, "sessions");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(sessionRoot));
   let next = 1;
   const adapter: PiAdapter = {
     async create(cwd) {
@@ -137,6 +139,13 @@ async function fixture(): Promise<{
           updatedAt,
           path: `/sessions/${sessionId}`,
         }));
+    },
+    async resolveDeleteTarget(cwd, sessionId) {
+      const info = (await this.list(cwd)).find(
+        (candidate) => candidate.sessionId === sessionId,
+      );
+      if (!info) throw new Error("missing");
+      return { info, sessionRoot };
     },
     async open(info, cwd) {
       const record = records.get(info.sessionId);
@@ -166,7 +175,11 @@ describe("ChatService", () => {
     });
     const summary = await service.create("w1");
     const record = records.get(summary.sessionId)!;
-    const sessionPath = path.join(root, `${summary.sessionId}.jsonl`);
+    const sessionPath = path.join(
+      root,
+      "sessions",
+      `${summary.sessionId}.jsonl`,
+    );
     await writeFile(sessionPath, "{}\n");
     vi.spyOn(adapter, "list").mockResolvedValueOnce([
       {
@@ -206,7 +219,11 @@ describe("ChatService", () => {
     const summary = await service.create("w1");
     const record = records.get(summary.sessionId)!;
     const session = record.session as FakeSession;
-    const sessionPath = path.join(root, `${summary.sessionId}.jsonl`);
+    const sessionPath = path.join(
+      root,
+      "sessions",
+      `${summary.sessionId}.jsonl`,
+    );
     await writeFile(sessionPath, "{}\n");
     vi.spyOn(adapter, "list").mockResolvedValue([
       {
@@ -247,16 +264,17 @@ describe("ChatService", () => {
     const outside = path.join(os.tmpdir(), "outside-session.jsonl");
     await writeFile(outside, "{}\n");
     cleanup.push(outside);
-    vi.spyOn(adapter, "list").mockResolvedValue([
-      {
+    vi.spyOn(adapter, "resolveDeleteTarget").mockResolvedValue({
+      info: {
         sessionId: "outside",
-        cwd: `${root}-other`,
+        cwd: root,
         title: "Outside",
         createdAt: 1,
         updatedAt: 1,
         path: outside,
       },
-    ]);
+      sessionRoot: path.join(root, "sessions"),
+    });
     const trashItem = vi.fn();
     const service = new ChatService(() => root, { adapter, trashItem });
 

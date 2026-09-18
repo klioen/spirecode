@@ -49,6 +49,7 @@ export class AppState {
     this.chat = new ChatService(root, {
       selectExtensionPaths: (cwd, basePaths) =>
         this.settings.enabledPaths(cwd, basePaths),
+      trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
   }

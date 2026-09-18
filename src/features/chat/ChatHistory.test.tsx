@@ -85,6 +85,7 @@ describe("ChatHistory", () => {
     expect(
       within(todayList)
         .getAllByRole("button")
+        .filter((button) => button.classList.contains("chat-history-item"))
         .map((button) => button.textContent),
     ).toEqual([
       expect.stringContaining("Latest today"),

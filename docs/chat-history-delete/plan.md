@@ -58,3 +58,11 @@ pnpm build
 3. 删除 streaming Chat：被拒绝，条目和 tab 保留，提示先停止任务。
 4. 模拟 trash 失败：条目和 tab 保留，可重试并继续打开会话。
 5. 搜索过滤、日期分组、outside click、Escape 与选择打开等原 History 行为不回归。
+
+## Execution results
+
+- Red：新增删除用例在旧实现下 5 项失败，明确缺少 Main `delete()` 和 History 删除入口；测试基线提交 `a494081`。
+- Green：删除相关定向验证共 6 个测试文件、58 个测试全部通过，覆盖 adapter raw metadata、Main lifecycle/path/trash、IPC 参数、History 确认与 EditorPane tab 清理。
+- `pnpm typecheck` 通过；`pnpm build` 通过（Renderer 与 Electron Main），仅保留既有 Monaco dynamic import 与 chunk size 警告。
+- `pnpm check` 的 format、brand、lint、typecheck 及 274/275 测试通过；唯一失败为未改动的 `electron/domains/git/git.test.ts` porcelain parser 期望与 `origin/main` 当前实现不一致。本变更定向测试与所有构建通过。
+- 未在真实打包应用中执行系统废纸篓手工验收；`shell.trashItem` 通过依赖注入和文件 fixture 自动化验证。
