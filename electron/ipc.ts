@@ -323,6 +323,12 @@ async function invoke(
       return state.models.list();
     case "settings_memory_config_get":
       return state.settings.memoryConfig();
+    case "diagnostics_copy":
+      return state.diagnostics.copyText();
+    case "diagnostics_reveal_logs":
+      return state.diagnostics.revealLogs();
+    case "feedback_open":
+      return state.diagnostics.openFeedback();
     case "settings_memory_config_set": {
       const config = {
         phase1Provider: text(args, "phase1Provider"),
@@ -404,6 +410,9 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
     "phase2ModelId",
     "phase2ReasoningEffort",
   ],
+  diagnostics_copy: [],
+  diagnostics_reveal_logs: [],
+  feedback_open: [],
 };
 
 function memoryReasoningEffort(

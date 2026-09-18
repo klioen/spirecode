@@ -41,6 +41,9 @@ export const COMMANDS = [
   "settings_memory_models_list",
   "settings_memory_config_get",
   "settings_memory_config_set",
+  "diagnostics_copy",
+  "diagnostics_reveal_logs",
+  "feedback_open",
 ] as const;
 
 export const TOPICS = [

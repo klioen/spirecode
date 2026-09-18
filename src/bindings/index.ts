@@ -56,6 +56,9 @@ export function setHostDirtyFileCount(count: number): void {
 }
 
 export const commands = {
+  diagnosticsCopy: () => command<string>("diagnostics_copy"),
+  diagnosticsRevealLogs: () => command<void>("diagnostics_reveal_logs"),
+  feedbackOpen: () => command<void>("feedback_open"),
   projectList: () => command<ProjectSummary[]>("project_list"),
   projectOpenDialog: () =>
     command<ProjectSummary | null>("project_open_dialog"),

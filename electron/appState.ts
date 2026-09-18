@@ -18,6 +18,7 @@ import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
 import { WindowCloseGuard } from "./windowCloseGuard.js";
+import { DiagnosticsService } from "./domains/diagnostics/service.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -34,12 +35,15 @@ export class AppState {
   readonly worktrees: WorktreeService;
   readonly watchers = new WatcherRegistry();
   readonly windowCloseGuard = new WindowCloseGuard();
+  readonly diagnostics: DiagnosticsService;
 
   private constructor(
     readonly projects: ProjectService,
     readonly settings: SettingsService,
     readonly window: BrowserWindow,
+    dataDirectory: string,
   ) {
+    this.diagnostics = new DiagnosticsService(dataDirectory, "0.1.0");
     const root = (id: string) => projects.root(id);
     this.filesystem = new FilesystemService(root);
     this.git = new GitService(root);
@@ -65,7 +69,7 @@ export class AppState {
       SettingsService.load(path.join(dataDirectory, "extension-settings.json")),
     ]);
     applyMemoryConfig(await settings.memoryConfig());
-    const state = new AppState(projects, settings, window);
+    const state = new AppState(projects, settings, window, dataDirectory);
     for (const project of await projects.list()) {
       for (const worktree of project.worktrees) {
         try {

@@ -80,10 +80,14 @@ void app.whenReady().then(async () => {
       if (BrowserWindow.getAllWindows().length === 0)
         void createWindow().catch((error) => {
           console.error("Failed to create application window", error);
+          void state?.diagnostics.log(
+            `Failed to create application window: ${String(error)}`,
+          );
         });
     });
   } catch (error) {
     console.error("Failed to start SpireCode", error);
+    void state?.diagnostics.log(`Failed to start SpireCode: ${String(error)}`);
     app.quit();
   }
 });
@@ -106,9 +110,12 @@ app.on("before-quit", (event) => {
   unregisterIpc?.();
   const cleanup = state?.dispose() ?? Promise.resolve();
   void cleanup
-    .catch((error) =>
-      console.error("Failed to dispose application state", error),
-    )
+    .catch((error) => {
+      console.error("Failed to dispose application state", error);
+      void state?.diagnostics.log(
+        `Failed to dispose application state: ${String(error)}`,
+      );
+    })
     .finally(() => app.quit());
 });
 
