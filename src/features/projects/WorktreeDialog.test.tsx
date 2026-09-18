@@ -203,7 +203,7 @@ describe("worktree dialogs", () => {
         Boolean(
           element?.tagName === "P" &&
           element.textContent?.includes(
-            "The local branch feature will also be deleted.",
+            "The local branch feature will be preserved.",
           ),
         ),
       ),

@@ -1,5 +1,5 @@
 # Spec: SpireCode MVP Release Readiness P0
-Status: proposed。 Implements: `docs/release-readiness-p0/intent.md`。
+Status: accepted。 Implements: `docs/release-readiness-p0/intent.md`。
 
 ## 1. Scope
 

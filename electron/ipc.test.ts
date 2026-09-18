@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { validateCommandArgs } from "./ipc.js";
+import { validateCommandArgs, validateDirtyFileCount } from "./ipc.js";
 
 describe("IPC command argument validation", () => {
   it("allows an empty relative path only for reading the worktree root", () => {
@@ -127,6 +127,15 @@ describe("IPC command argument validation", () => {
         path: "/tmp/memory_summary.md",
       }),
     ).toThrow("Unexpected argument: path");
+  });
+
+  it("accepts only a bounded integer dirty file count", () => {
+    expect(validateDirtyFileCount(2)).toBe(2);
+    expect(() => validateDirtyFileCount(-1)).toThrow("dirty file count");
+    expect(() => validateDirtyFileCount(1.5)).toThrow("dirty file count");
+    expect(() => validateDirtyFileCount({ count: 1 })).toThrow(
+      "dirty file count",
+    );
   });
 
   it("validates file writes with a dedicated 5 MiB content limit", () => {

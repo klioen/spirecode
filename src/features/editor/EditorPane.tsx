@@ -11,7 +11,6 @@ import {
   RiChatNewLine,
   RiChatHistoryLine,
   RiCloseLine,
-  RiCodeSSlashLine,
   RiFileCodeLine,
   RiGitCommitLine,
   RiTerminalBoxLine,
@@ -269,9 +268,13 @@ function FileView({
           beforeMount={(monaco) => defineMonacoTheme(monaco, resolvedTheme)}
           onChange={(value) => {
             const nextContent = value ?? "";
+            const nextDirty = nextContent !== savedContent;
             setContent(nextContent);
             setSaveError(null);
-            if (nextContent === savedContent) fileDrafts.delete(tab.id);
+            useEditorStore
+              .getState()
+              .setFileDirty(tab.worktreeId, tab.id, nextDirty);
+            if (!nextDirty) fileDrafts.delete(tab.id);
             else
               fileDrafts.set(tab.id, {
                 content: nextContent,
@@ -585,13 +588,9 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
           )
         ) : (
           <div className="editor-empty">
-            <RiCodeSSlashLine size={42} />
+            <RiFileCodeLine size={42} />
             <h2>Your code, in focus.</h2>
             <p>Select a file to edit, or a change to preview its diff.</p>
-            <div>
-              <kbd>⌘ P</kbd>
-              <span>Quick open</span>
-            </div>
             <div>
               <RiTerminalBoxLine size={14} />
               <span>Open a terminal from the tab header</span>

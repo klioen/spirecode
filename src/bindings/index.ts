@@ -51,6 +51,10 @@ export function subscribeHostEvent<T>(
   return Promise.resolve(window.spire.subscribe(topic, listener));
 }
 
+export function setHostDirtyFileCount(count: number): void {
+  window.spire.setDirtyFileCount(count);
+}
+
 export const commands = {
   projectList: () => command<ProjectSummary[]>("project_list"),
   projectOpenDialog: () =>

@@ -1,5 +1,5 @@
 # Intent: SpireCode MVP Release Readiness P0
-Author: product owner。 Status: proposed。
+Author: product owner。 Status: accepted。
 
 ## Problem
 

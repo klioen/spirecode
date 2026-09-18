@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   RiArrowDownSLine,
-  RiCommandLine,
   RiLayoutLeftLine,
   RiLayoutRightLine,
   RiSettings3Line,
@@ -130,11 +129,6 @@ export function Workbench() {
             <span>No project open</span>
           )}
         </div>
-        <button className="command-center">
-          <RiCommandLine size={15} />
-          <span>Search files and commands</span>
-          <kbd>⌘ K</kbd>
-        </button>
         <div className="layout-actions">
           <ThemeToggle />
           <button

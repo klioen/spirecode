@@ -62,11 +62,13 @@ describe("preview and keep tabs", () => {
       type: "file",
       dirty: true,
     });
+    expect(useEditorStore.getState().dirtyFileCount()).toBe(1);
     store.setFileDirty("p1", fileResourceId("p1", "a.ts"), false);
     expect(useEditorStore.getState().views.p1.tabs[0]).toMatchObject({
       type: "file",
       dirty: false,
     });
+    expect(useEditorStore.getState().dirtyFileCount()).toBe(0);
   });
 
   it("opens numbered terminal tabs without replacing file previews", () => {

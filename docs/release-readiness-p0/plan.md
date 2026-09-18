@@ -18,7 +18,7 @@
 ### Dirty close protection
 
 - `src/features/editor/editorStore.ts` 与测试：提供 dirty file count/query。
-- `electron/contracts.ts`、`electron/preload.ts`、`electron/ipc.ts` 及测试：增加窄化 dirty-state/close coordination contract。
+- `electron/preload.ts`、`electron/ipc.ts` 及测试：增加独立的同步、窄化 dirty-state/close coordination channel，避免编辑后立即退出时异步 IPC 尚未到达 Main。
 - `src/app/App.tsx` 或独立 adapter：Renderer 在 dirty 状态变化时同步通知 Main。
 - `electron/main.ts`：窗口 close / before-quit guard、确认和 cleanup latch。
 - 新增或调整 Main 生命周期测试，覆盖无 dirty、Cancel、Discard 和重复 close。
@@ -37,7 +37,7 @@
 2. 先写 worktree branch preservation 失败测试，再删除 `branch -D` 和更新 UI 文案。
 3. 先为 active worktree hydration 写失败测试，再修复 store fallback。
 4. 设计最小 dirty-close IPC 状态机并先写 Main/Renderer 测试。
-5. 实现 dirty 状态通知、close guard 和 cleanup latch。
+5. 实现同步 dirty 状态通知、close guard 和 cleanup latch；Monaco change 回调必须在返回前更新 store 和 Main。
 6. 移除不可操作的 Command Center/Quick Open 入口并更新组件测试。
 7. 更新 README 与相关 SDLC 文档，确保不夸大本批能力。
 8. 运行 targeted tests、`pnpm check`；必要时构建但不覆盖现有安装。

@@ -17,6 +17,7 @@ import {
 import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
+import { WindowCloseGuard } from "./windowCloseGuard.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -32,6 +33,7 @@ export class AppState {
   readonly chat: ChatService;
   readonly worktrees: WorktreeService;
   readonly watchers = new WatcherRegistry();
+  readonly windowCloseGuard = new WindowCloseGuard();
 
   private constructor(
     readonly projects: ProjectService,

@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import "../features/theme/themeStore";
+import { setHostDirtyFileCount } from "../bindings";
 import { commandError } from "../lib/errors";
 import { Workbench } from "../features/workbench/Workbench";
 import { subscribeToGitChanges } from "../features/changes/changesRefresh";
 import { subscribeToFilesystemChanges } from "../features/files/filesystemEvents";
+import { useEditorStore } from "../features/editor/editorStore";
 import { projectsApi } from "../features/projects/projectsApi";
 import { useProjectsStore } from "../features/projects/projectsStore";
 
@@ -36,5 +38,22 @@ export default function App() {
       unlistenGit?.();
     };
   }, []);
+
+  useEffect(() => {
+    let lastCount = -1;
+    const publishDirtyCount = () => {
+      const count = useEditorStore.getState().dirtyFileCount();
+      if (count === lastCount) return;
+      try {
+        setHostDirtyFileCount(count);
+        lastCount = count;
+      } catch (error) {
+        useProjectsStore.getState().setError(commandError(error));
+      }
+    };
+    publishDirtyCount();
+    return useEditorStore.subscribe(publishDirtyCount);
+  }, []);
+
   return <Workbench />;
 }

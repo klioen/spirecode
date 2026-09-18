@@ -71,6 +71,7 @@ interface EditorState {
     status: "running" | "exited" | "error",
   ) => void;
   setFileDirty: (worktreeId: string, tabId: string, dirty: boolean) => void;
+  dirtyFileCount: () => number;
   keep: (worktreeId: string, tabId: string) => void;
   close: (worktreeId: string, tabId: string) => void;
   activate: (worktreeId: string, tabId: string) => void;
@@ -186,6 +187,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       };
     }),
+  dirtyFileCount: () =>
+    Object.values(get().views).reduce(
+      (count, view) =>
+        count +
+        view.tabs.filter((tab) => tab.type === "file" && tab.dirty).length,
+      0,
+    ),
   keep: (worktreeId, tabId) =>
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();

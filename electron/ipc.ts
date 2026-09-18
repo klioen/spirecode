@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { isCommand, type CommandName } from "./contracts.js";
 import { KeyedQueue } from "./core/asyncQueue.js";
 import { serializeError } from "./core/errors.js";
@@ -82,12 +82,7 @@ export function registerIpc(
     try {
       if (!isCommand(rawCommand))
         throw new TypeError("Host command is not allowed");
-      if (
-        event.sender !== state.window.webContents ||
-        event.senderFrame !== state.window.webContents.mainFrame ||
-        !isAllowedRendererUrl(event.senderFrame.url, locationPolicy)
-      )
-        throw new TypeError("IPC sender is not allowed");
+      assertSender(event, state, locationPolicy);
       const args = isArgs(rawArgs) ? rawArgs : {};
       validateCommandArgs(rawCommand, args);
       return {
@@ -105,8 +100,21 @@ export function registerIpc(
       return { ok: false, error: serializeError(error) };
     }
   };
+  const dirtyHandler = (event: IpcMainEvent, count: unknown) => {
+    try {
+      assertSender(event, state, locationPolicy);
+      state.windowCloseGuard.setDirtyFileCount(validateDirtyFileCount(count));
+      event.returnValue = { ok: true };
+    } catch (error) {
+      event.returnValue = { ok: false, error: serializeError(error) };
+    }
+  };
   ipcMain.handle("spire:invoke", handler);
-  return () => ipcMain.removeHandler("spire:invoke");
+  ipcMain.on("spire:set-dirty-file-count", dirtyHandler);
+  return () => {
+    ipcMain.removeHandler("spire:invoke");
+    ipcMain.removeListener("spire:set-dirty-file-count", dirtyHandler);
+  };
 }
 
 async function invoke(
@@ -448,6 +456,29 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     else text(args, key, command === "fs_read_dir" && key === "relativePath");
   }
   return args;
+}
+
+export function validateDirtyFileCount(value: unknown): number {
+  if (
+    !Number.isSafeInteger(value) ||
+    (value as number) < 0 ||
+    (value as number) > 10_000
+  )
+    throw new TypeError("dirty file count is invalid");
+  return value as number;
+}
+
+function assertSender(
+  event: Pick<IpcMainEvent, "sender" | "senderFrame">,
+  state: AppState,
+  locationPolicy: RendererLocationPolicy,
+): void {
+  if (
+    event.sender !== state.window.webContents ||
+    event.senderFrame !== state.window.webContents.mainFrame ||
+    !isAllowedRendererUrl(event.senderFrame.url, locationPolicy)
+  )
+    throw new TypeError("IPC sender is not allowed");
 }
 
 function isArgs(value: unknown): value is Args {

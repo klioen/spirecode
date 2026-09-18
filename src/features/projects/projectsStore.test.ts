@@ -38,7 +38,7 @@ beforeEach(() =>
 );
 
 describe("nested project worktree state", () => {
-  it("selects main when startup catalog has exactly one project", () => {
+  it("restores the active managed worktree from the startup catalog", () => {
     const main = worktree("one", "one-main");
     const feature = worktree("one", "feature", "managed");
     useProjectsStore.getState().hydrateCatalog({
@@ -48,17 +48,27 @@ describe("nested project worktree state", () => {
     });
 
     expect(useProjectsStore.getState().projects).toHaveLength(1);
-    expect(useProjectsStore.getState().activeWorktreeId).toBe("one-main");
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("feature");
   });
 
-  it("does not select when startup catalog has multiple projects", () => {
+  it("restores an active worktree when startup catalog has multiple projects", () => {
     useProjectsStore.getState().hydrateCatalog({
       version: 2,
       projects: [project("one"), project("two")],
       activeWorktreeId: "one-main",
     });
 
-    expect(useProjectsStore.getState().activeWorktreeId).toBeNull();
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("one-main");
+  });
+
+  it("falls back to the first main worktree when persisted selection is invalid", () => {
+    useProjectsStore.getState().hydrateCatalog({
+      version: 2,
+      projects: [project("one"), project("two")],
+      activeWorktreeId: "missing",
+    });
+
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("one-main");
   });
 
   it("retains a selected worktree across catalog refreshes", () => {
