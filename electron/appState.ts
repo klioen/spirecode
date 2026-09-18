@@ -1,4 +1,4 @@
-import { clipboard, dialog, shell, type BrowserWindow } from "electron";
+import { dialog, shell, type BrowserWindow } from "electron";
 import path from "node:path";
 import { ChatService } from "./domains/chat/index.js";
 import { FilesystemService } from "./domains/filesystem/service.js";
@@ -124,10 +124,6 @@ export class AppState {
 
   async revealProject(projectId: string): Promise<void> {
     await shell.showItemInFolder((await this.projects.project(projectId)).path);
-  }
-
-  async copyProjectPath(projectId: string): Promise<void> {
-    clipboard.writeText((await this.projects.project(projectId)).path);
   }
 
   async revealWorktree(worktreeId: string): Promise<void> {

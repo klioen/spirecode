@@ -4,14 +4,13 @@ Status: accepted。 Implements: `docs/project-actions/intent.md`。
 ## 1. UI
 
 - 每个 Project heading 增加 `Manage <project>` 按钮。
-- 菜单包含：`Reveal in Finder`、`Copy path`、`Close project`。
+- 菜单包含：`Reveal in Finder`、`Close project`。
 - 菜单使用 `role="menu"` / `role="menuitem"`，与已有 Worktree 菜单共享 outside pointer close 语义。
 - Project 菜单打开时关闭 Worktree 菜单；反之亦然。
 
 ## 2. Actions
 
 - Reveal：调用 `projectsApi.reveal(project.id)`；失败写入 projects store error。
-- Copy：调用 `projectsApi.copyPath(project.id)`；成功在菜单中显示 `Copied` 状态约 1.5 秒，失败写入 error。
 - Close：调用 `projectsApi.close(project.id)`；成功调用 `store.removeProject(project.id)`，关闭菜单。Main 负责运行资源清理和持久化。
 - 操作 pending 时禁用菜单项，避免重复 IPC。
 

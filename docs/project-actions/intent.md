@@ -11,7 +11,6 @@ Project 后端已经支持 close、reveal 和 copy path，但 Projects 侧栏没
 
 - Close project：从 catalog 移除项目，不删除磁盘目录；成功后选择剩余项目的可用 worktree。
 - Reveal in Finder：打开项目目录。
-- Copy path：复制项目 canonical path，并给出短暂成功反馈。
 
 ## Constraints
 

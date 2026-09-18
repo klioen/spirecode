@@ -4,7 +4,6 @@ export const COMMANDS = [
   "project_open_dialog",
   "project_close",
   "project_reveal",
-  "project_copy_path",
   "fs_read_dir",
   "fs_read_file",
   "fs_write_file",

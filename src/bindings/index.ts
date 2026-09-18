@@ -66,8 +66,6 @@ export const commands = {
     command<void>("project_close", { projectId }),
   projectReveal: (projectId: string) =>
     command<void>("project_reveal", { projectId }),
-  projectCopyPath: (projectId: string) =>
-    command<void>("project_copy_path", { projectId }),
   projectCatalog: () => command<ProjectCatalog>("project_catalog"),
 
   settingsExtensionsList: (worktreeId: string) =>

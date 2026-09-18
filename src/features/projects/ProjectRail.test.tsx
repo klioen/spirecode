@@ -9,7 +9,6 @@ vi.mock("./projectsApi", () => ({
     openDialog: vi.fn(),
     selectWorktree: vi.fn().mockResolvedValue(undefined),
     reveal: vi.fn().mockResolvedValue(undefined),
-    copyPath: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
     revealWorktree: vi.fn().mockResolvedValue(undefined),
     listOriginBranches: vi.fn(),
@@ -104,10 +103,6 @@ describe("ProjectRail", () => {
     expect(
       screen.getByRole("menuitem", { name: "Reveal in Finder" }),
     ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
-    expect(projectsApi.copyPath).toHaveBeenCalledWith("project-1");
-    expect(await screen.findByText("Copied")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Reveal in Finder" }));
     await vi.waitFor(() =>

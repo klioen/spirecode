@@ -925,18 +925,23 @@ body.panel-resizing-vertical * {
   border-bottom: 1px solid var(--border-strong);
   box-shadow: 0 1px 8px var(--shadow);
   display: grid;
-  grid-template-columns: 1fr minmax(260px, 420px) 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   padding: 0 12px;
   -webkit-app-region: drag;
 }
 .project-crumb {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 12px;
 }
 .project-crumb b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-default);
 }
 .project-crumb > span:last-child {

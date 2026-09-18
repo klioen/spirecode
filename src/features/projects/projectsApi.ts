@@ -5,7 +5,6 @@ export const projectsApi = {
   openDialog: commands.projectOpenDialog,
   close: commands.projectClose,
   reveal: commands.projectReveal,
-  copyPath: commands.projectCopyPath,
   listOriginBranches: commands.gitListOriginBranches,
   createWorktree: commands.worktreeCreate,
   selectWorktree: commands.worktreeSelect,

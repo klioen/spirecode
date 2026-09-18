@@ -136,8 +136,6 @@ async function invoke(
       return state.closeProject(text(args, "projectId"));
     case "project_reveal":
       return state.revealProject(text(args, "projectId"));
-    case "project_copy_path":
-      return state.copyProjectPath(text(args, "projectId"));
     case "fs_read_dir":
       return state.filesystem.readDir(
         text(args, "worktreeId"),
@@ -366,7 +364,6 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   project_open_dialog: [],
   project_close: ["projectId"],
   project_reveal: ["projectId"],
-  project_copy_path: ["projectId"],
   fs_read_dir: ["worktreeId", "relativePath"],
   fs_read_file: ["worktreeId", "relativePath"],
   fs_write_file: ["worktreeId", "relativePath", "content", "expectedVersion"],

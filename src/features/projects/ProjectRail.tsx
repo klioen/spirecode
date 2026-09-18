@@ -28,9 +28,6 @@ export function ProjectRail() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
-  const [copyFeedbackProjectId, setCopyFeedbackProjectId] = useState<
-    string | null
-  >(null);
   const [projectActionPending, setProjectActionPending] = useState<
     string | null
   >(null);
@@ -102,18 +99,6 @@ export function ProjectRail() {
     } finally {
       setProjectActionPending(null);
       setMenuProjectId(null);
-    }
-  };
-  const copyProjectPath = async (projectId: string) => {
-    setProjectActionPending(projectId);
-    try {
-      await projectsApi.copyPath(projectId);
-      setCopyFeedbackProjectId(projectId);
-      window.setTimeout(() => setCopyFeedbackProjectId(null), 1500);
-    } catch (error) {
-      store.setError(commandError(error));
-    } finally {
-      setProjectActionPending(null);
     }
   };
   const closeProject = async (projectId: string) => {
@@ -214,15 +199,7 @@ export function ProjectRail() {
                       >
                         Reveal in Finder
                       </button>
-                      <button
-                        role="menuitem"
-                        disabled={projectActionPending === project.id}
-                        onClick={() => void copyProjectPath(project.id)}
-                      >
-                        {copyFeedbackProjectId === project.id
-                          ? "Copied"
-                          : "Copy path"}
-                      </button>
+
                       <button
                         role="menuitem"
                         className="danger-text"
