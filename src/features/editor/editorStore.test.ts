@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chatResourceId,
   fileResourceId,
+  loadPersistedEditorViews,
   terminalResourceId,
   useEditorStore,
 } from "./editorStore";
@@ -13,13 +14,17 @@ const tab = (path: string) => ({
   relativePath: path,
   preview: true,
 });
-beforeEach(() =>
+const STORAGE_KEY = "spirecode.editor-tabs.v1";
+
+beforeEach(() => {
+  localStorage.removeItem(STORAGE_KEY);
   useEditorStore.setState({
     views: {},
     navigationGeneration: 0,
     terminalSequenceByWorktree: {},
-  }),
-);
+  });
+  vi.restoreAllMocks();
+});
 
 describe("preview and keep tabs", () => {
   it("replaces the current preview", () => {
@@ -107,6 +112,93 @@ describe("preview and keep tabs", () => {
     expect(reopened.id).toBe(first.id);
     expect(useEditorStore.getState().views.p1.tabs).toHaveLength(2);
     expect(useEditorStore.getState().views.p1.activeTabId).toBe(first.id);
+  });
+
+  it("persists file, diff, and chat metadata but never terminal tabs", () => {
+    useEditorStore.getState().open(tab("a.ts"), true);
+    useEditorStore.getState().open(
+      {
+        id: "diff:p1:unstaged:b.ts",
+        worktreeId: "p1",
+        type: "diff",
+        relativePath: "b.ts",
+        scope: "unstaged",
+        preview: false,
+      },
+      true,
+    );
+    useEditorStore.getState().openChat("p1", "session-a", "Chat A");
+    useEditorStore.getState().openTerminal("p1", "terminal-a");
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+    expect(stored.p1.tabs).toEqual([
+      expect.objectContaining({ type: "file", relativePath: "a.ts" }),
+      expect.objectContaining({ type: "diff", relativePath: "b.ts" }),
+      expect.objectContaining({ type: "chat", sessionId: "session-a" }),
+    ]);
+    expect(
+      stored.p1.tabs.some((item: { type: string }) => item.type === "terminal"),
+    ).toBe(false);
+    expect(stored.p1.activeTabId).toBe(chatResourceId("p1", "session-a"));
+  });
+
+  it("restores valid metadata and drops invalid or terminal tabs", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        p1: {
+          tabs: [
+            {
+              id: "file:p1:a.ts",
+              worktreeId: "p1",
+              type: "file",
+              relativePath: "a.ts",
+              preview: true,
+              dirty: true,
+            },
+            {
+              id: "terminal:p1:old",
+              worktreeId: "p1",
+              type: "terminal",
+              terminalId: "old",
+              title: "Terminal1",
+              status: "running",
+              preview: false,
+            },
+            {
+              id: "file:p1:bad",
+              worktreeId: "p1",
+              type: "file",
+              relativePath: "../secret",
+              preview: false,
+            },
+            {
+              id: "chat:p1:s1",
+              worktreeId: "p1",
+              type: "chat",
+              sessionId: "s1",
+              title: "Chat",
+            },
+          ],
+          activeTabId: "terminal:p1:old",
+        },
+      }),
+    );
+    vi.resetModules();
+    // The parser is exported for deterministic validation without reloading the singleton store.
+    const restored = loadPersistedEditorViews();
+    expect(restored.p1.tabs).toHaveLength(2);
+    expect(restored.p1.tabs[0]).toMatchObject({ type: "file" });
+    expect(restored.p1.tabs[0]).not.toHaveProperty("dirty");
+    expect(restored.p1.activeTabId).toBe("chat:p1:s1");
+  });
+
+  it("clears a worktree from memory and persistence", () => {
+    useEditorStore.getState().open(tab("a.ts"), true);
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("a.ts");
+    useEditorStore.getState().clearWorktree("p1");
+    expect(useEditorStore.getState().views.p1).toBeUndefined();
+    expect(localStorage.getItem(STORAGE_KEY)).not.toContain("a.ts");
   });
 
   it("tracks terminal exit status in the central resource tab", () => {
