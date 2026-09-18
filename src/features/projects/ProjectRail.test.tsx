@@ -1,12 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
+import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
 
 vi.mock("./projectsApi", () => ({
   projectsApi: {
     openDialog: vi.fn(),
     selectWorktree: vi.fn().mockResolvedValue(undefined),
+    reveal: vi.fn().mockResolvedValue(undefined),
+    copyPath: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
     revealWorktree: vi.fn().mockResolvedValue(undefined),
     listOriginBranches: vi.fn(),
     renameWorktree: vi.fn(),
@@ -90,6 +94,56 @@ describe("ProjectRail", () => {
     expect(
       screen.queryByRole("button", { name: "main" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("manages a project with reveal, copy path, and close actions", async () => {
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage spirecode-client" }),
+    );
+    expect(
+      screen.getByRole("menuitem", { name: "Reveal in Finder" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
+    expect(projectsApi.copyPath).toHaveBeenCalledWith("project-1");
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reveal in Finder" }));
+    await vi.waitFor(() =>
+      expect(projectsApi.reveal).toHaveBeenCalledWith("project-1"),
+    );
+    await vi.waitFor(() =>
+      expect(
+        screen.queryByRole("menuitem", { name: "Reveal in Finder" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage spirecode-client" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close project" }));
+    await vi.waitFor(() =>
+      expect(projectsApi.close).toHaveBeenCalledWith("project-1"),
+    );
+    expect(screen.queryByText("spirecode-client")).not.toBeInTheDocument();
+    expect(useProjectsStore.getState().activeWorktreeId).toBeNull();
+  });
+
+  it("keeps a project visible when close fails", async () => {
+    vi.mocked(projectsApi.close).mockRejectedValueOnce({
+      code: "PROJECT_FAILED",
+      message: "close failed",
+    });
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage spirecode-client" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close project" }));
+    await vi.waitFor(() =>
+      expect(useProjectsStore.getState().error?.message).toBe("close failed"),
+    );
+    expect(screen.getByText("spirecode-client")).toBeInTheDocument();
   });
 
   it("only exposes managed worktree lifecycle actions after expansion", () => {

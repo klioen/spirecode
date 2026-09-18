@@ -27,20 +27,27 @@ export function ProjectRail() {
   const store = useProjectsStore();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
+  const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
+  const [copyFeedbackProjectId, setCopyFeedbackProjectId] = useState<
+    string | null
+  >(null);
+  const [projectActionPending, setProjectActionPending] = useState<
+    string | null
+  >(null);
   const openMenuRowRef = useRef<HTMLDivElement | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
     () => new Set(),
   );
   useEffect(() => {
-    if (!menuWorktreeId) return;
+    if (!menuWorktreeId && !menuProjectId) return;
 
     const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !openMenuRowRef.current?.contains(event.target)
-      ) {
+      if (!(event.target instanceof Node)) return;
+      if (!openMenuRowRef.current?.contains(event.target))
         setMenuWorktreeId(null);
-      }
+      if (!projectMenuRef.current?.contains(event.target))
+        setMenuProjectId(null);
     };
 
     document.addEventListener("pointerdown", closeMenuOnOutsidePointerDown);
@@ -49,7 +56,7 @@ export function ProjectRail() {
         "pointerdown",
         closeMenuOnOutsidePointerDown,
       );
-  }, [menuWorktreeId]);
+  }, [menuProjectId, menuWorktreeId]);
   const toggleProject = (projectId: string) => {
     setExpandedProjectIds((current) => {
       const next = new Set(current);
@@ -58,6 +65,7 @@ export function ProjectRail() {
       return next;
     });
     setMenuWorktreeId(null);
+    setMenuProjectId(null);
   };
   const open = async () => {
     store.setLoading(true);
@@ -83,6 +91,41 @@ export function ProjectRail() {
       await projectsApi.revealWorktree(worktreeId);
     } catch (error) {
       store.setError(commandError(error));
+    }
+  };
+  const revealProject = async (projectId: string) => {
+    setProjectActionPending(projectId);
+    try {
+      await projectsApi.reveal(projectId);
+    } catch (error) {
+      store.setError(commandError(error));
+    } finally {
+      setProjectActionPending(null);
+      setMenuProjectId(null);
+    }
+  };
+  const copyProjectPath = async (projectId: string) => {
+    setProjectActionPending(projectId);
+    try {
+      await projectsApi.copyPath(projectId);
+      setCopyFeedbackProjectId(projectId);
+      window.setTimeout(() => setCopyFeedbackProjectId(null), 1500);
+    } catch (error) {
+      store.setError(commandError(error));
+    } finally {
+      setProjectActionPending(null);
+    }
+  };
+  const closeProject = async (projectId: string) => {
+    setProjectActionPending(projectId);
+    try {
+      await projectsApi.close(projectId);
+      store.removeProject(projectId);
+      setMenuProjectId(null);
+    } catch (error) {
+      store.setError(commandError(error));
+    } finally {
+      setProjectActionPending(null);
     }
   };
   return (
@@ -142,6 +185,55 @@ export function ProjectRail() {
                 >
                   <RiAddLine size={15} />
                 </button>
+                <div
+                  className="project-menu-container"
+                  ref={
+                    menuProjectId === project.id ? projectMenuRef : undefined
+                  }
+                >
+                  <button
+                    className="project-menu-button"
+                    aria-label={`Manage ${project.name}`}
+                    title={`Manage ${project.name}`}
+                    aria-expanded={menuProjectId === project.id}
+                    onClick={() => {
+                      setMenuWorktreeId(null);
+                      setMenuProjectId(
+                        menuProjectId === project.id ? null : project.id,
+                      );
+                    }}
+                  >
+                    <RiMore2Fill size={15} />
+                  </button>
+                  {menuProjectId === project.id && (
+                    <div className="project-menu" role="menu">
+                      <button
+                        role="menuitem"
+                        disabled={projectActionPending === project.id}
+                        onClick={() => void revealProject(project.id)}
+                      >
+                        Reveal in Finder
+                      </button>
+                      <button
+                        role="menuitem"
+                        disabled={projectActionPending === project.id}
+                        onClick={() => void copyProjectPath(project.id)}
+                      >
+                        {copyFeedbackProjectId === project.id
+                          ? "Copied"
+                          : "Copy path"}
+                      </button>
+                      <button
+                        role="menuitem"
+                        className="danger-text"
+                        disabled={projectActionPending === project.id}
+                        onClick={() => void closeProject(project.id)}
+                      >
+                        Close project
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               {expanded && (
                 <div className="worktree-list">
