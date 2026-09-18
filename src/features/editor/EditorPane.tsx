@@ -60,6 +60,7 @@ interface FileDraft {
   version: string;
 }
 const fileDrafts = new Map<string, FileDraft>();
+export const clearEditorDrafts = () => fileDrafts.clear();
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; value: FileContent | GitDiff }

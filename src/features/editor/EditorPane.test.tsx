@@ -11,7 +11,11 @@ import { useProjectsStore } from "../projects/projectsStore";
 import { terminalStream } from "../terminal/terminalStream";
 import { hostChatApi } from "../chat";
 import userEvent from "@testing-library/user-event";
-import { clearEditorResourceCache, EditorPane } from "./EditorPane";
+import {
+  clearEditorDrafts,
+  clearEditorResourceCache,
+  EditorPane,
+} from "./EditorPane";
 import { useEditorStore } from "./editorStore";
 
 const { fileEditorValues } = vi.hoisted(() => ({
@@ -99,6 +103,7 @@ const deferred = <T,>() => {
 beforeEach(() => {
   fileEditorValues.length = 0;
   clearEditorResourceCache();
+  clearEditorDrafts();
   vi.mocked(commands.fsReadFile).mockReset();
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();

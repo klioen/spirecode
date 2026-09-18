@@ -80,16 +80,6 @@ describe("Git porcelain parsers", () => {
       behind: 1,
       changes: [
         {
-          path: "新 name.txt",
-          originalPath: "old name.txt",
-          status: "R.",
-          staged: true,
-          unstaged: false,
-          untracked: false,
-          additions: null,
-          deletions: null,
-        },
-        {
           path: "conflict.txt",
           originalPath: null,
           status: "UU",
@@ -116,6 +106,16 @@ describe("Git porcelain parsers", () => {
           staged: false,
           unstaged: false,
           untracked: true,
+          additions: null,
+          deletions: null,
+        },
+        {
+          path: "新 name.txt",
+          originalPath: "old name.txt",
+          status: "R.",
+          staged: true,
+          unstaged: false,
+          untracked: false,
           additions: null,
           deletions: null,
         },
