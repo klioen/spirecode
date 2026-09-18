@@ -19,6 +19,7 @@ function historyApi(): ChatApi {
     setThinkingLevel: vi.fn(),
     send: vi.fn(),
     abort: vi.fn(),
+    delete: vi.fn(),
   };
 }
 
@@ -78,15 +79,17 @@ describe("ChatHistory", () => {
     expect(
       within(todayList)
         .getAllByRole("button")
+        .filter((button) => button.classList.contains("chat-history-item"))
         .map((button) => button.textContent),
     ).toEqual([
       expect.stringContaining("Latest today"),
       expect.stringContaining("First today"),
     ]);
-    expect(within(todayList).getAllByRole("button")[0]).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
+    expect(
+      within(todayList)
+        .getAllByRole("button")
+        .filter((button) => button.classList.contains("chat-history-item"))[0],
+    ).toHaveAttribute("aria-current", "true");
     expect(
       within(screen.getByRole("list", { name: "Yesterday" })).getByText(
         "Old chat",
