@@ -34,7 +34,7 @@
 ## Proof
 
 - 针对性测试：4 个文件、14 个测试通过。
-- 真实 SDK staging 探针：9 个 extension entry、11 个 tools、4 个 commands、1 个 provider、5 个 SDLC skills，0 个加载错误。
+- 真实 SDK staging 探针：加载全部 bundled extension entries 与 5 个 SDLC skills，且 0 个加载错误。
 - `pnpm check`：format、brand、lint、两个 TypeScript project 和 41 个测试文件共 152 个测试全部通过。首次完整运行出现一次未改动 filesystem watcher 的 5 秒超时；该用例单独重跑通过，随后完整检查通过。
 - `pnpm bundle`：最终代码完成构建、Electron packaging、自定义签名、App smoke 和 DMG smoke。
-- 最终 App resource checker 验证 8 个 bundled packages，`pi-memory` worker 为 ASAR 外普通文件；产物位于 `release/mac-arm64/SpireCode.app` 和 `release/SpireCode-0.1.0-arm64.dmg`。
+- 最终 App resource checker 验证 7 个 bundled packages（六个 extensions + `pi-sdlc`），`pi-memory` worker 为 ASAR 外普通文件；产物位于 `release/mac-arm64/SpireCode.app` 和 `release/SpireCode-0.1.0-arm64.dmg`。

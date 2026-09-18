@@ -216,6 +216,41 @@ describe("piAdapter", () => {
     ]);
   });
 
+  it("falls back when the configured default model is unavailable", async () => {
+    const fallback = {
+      provider: "openai",
+      id: "available-model",
+      name: "Available",
+    };
+    const { sdk, calls, runtime, loadResources } = sdkFixture({
+      defaultProvider: "traex",
+      defaultModel: "disabled-model",
+      resolvedModel: undefined,
+      availableModels: [fallback],
+    });
+    runtime.hasConfiguredAuth = (provider: string) => provider === "openai";
+
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    await adapter.create("/repo");
+
+    expect(calls).toContainEqual(["session", expect.anything(), fallback]);
+  });
+
+  it("fails when the configured default and all available models are unavailable", async () => {
+    const { sdk, loadResources } = sdkFixture({
+      defaultProvider: "traex",
+      defaultModel: "disabled-model",
+      resolvedModel: undefined,
+      availableModels: [{ provider: "openai", id: "unauthenticated" }],
+      configuredAuth: false,
+    });
+    await expect(
+      (await createPiAdapter(sdk, { loadResources })).create("/repo"),
+    ).rejects.toThrow(
+      "Configured default model traex/disabled-model is unavailable",
+    );
+  });
+
   it("loads only extensions selected from the resolved resource set", async () => {
     const { sdk, calls, runtime, loadResources } = sdkFixture({});
     const adapter = await createPiAdapter(sdk, {

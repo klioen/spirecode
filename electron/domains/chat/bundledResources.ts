@@ -8,14 +8,17 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { SettingsResourceSource } from "./spireSettings.js";
 
-export const BUNDLED_PACKAGE_NAMES = [
+export const BUNDLED_EXTENSION_NAMES = [
   "pi-web-access",
   "pi-subagents",
   "pi-todo",
   "pi-plan",
   "pi-goal",
-  "pi-failover",
   "pi-memory",
+] as const;
+
+export const BUNDLED_PACKAGE_NAMES = [
+  ...BUNDLED_EXTENSION_NAMES,
   "pi-sdlc",
 ] as const;
 

@@ -19,6 +19,11 @@ import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
 import { WindowCloseGuard } from "./windowCloseGuard.js";
 import { DiagnosticsService } from "./domains/diagnostics/service.js";
+import { loadSpireSettings } from "./domains/chat/spireSettings.js";
+import {
+  defaultBundleRoot,
+  resolveBundledResources,
+} from "./domains/chat/bundledResources.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -83,6 +88,21 @@ export class AppState {
       }
     }
     return state;
+  }
+
+  async listModels(worktreeId: string) {
+    const root = await this.projects.root(worktreeId);
+    const resources = await loadSpireSettings();
+    const bundled = await resolveBundledResources({
+      bundleRoot: defaultBundleRoot(),
+      packageSources: resources.packageSources,
+      extensionSources: resources.extensionSources,
+    });
+    const extensionPaths = await this.settings.enabledPaths(
+      root,
+      bundled.paths,
+    );
+    return this.models.list(extensionPaths);
   }
 
   async openProject(selectedPath: string) {

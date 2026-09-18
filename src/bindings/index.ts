@@ -82,8 +82,8 @@ export const commands = {
     }),
   settingsMemoryRead: (document: MemoryDocumentId) =>
     command<MemoryDocument>("settings_memory_read", { document }),
-  settingsMemoryModelsList: () =>
-    command<ChatModelOption[]>("settings_memory_models_list"),
+  settingsMemoryModelsList: (worktreeId: string) =>
+    command<ChatModelOption[]>("settings_memory_models_list", { worktreeId }),
   settingsMemoryConfigGet: () =>
     command<MemoryConfig>("settings_memory_config_get"),
   settingsMemoryConfigSet: (config: MemoryConfig) =>

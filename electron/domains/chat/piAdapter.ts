@@ -348,7 +348,7 @@ export async function createPiAdapter(
       sessionManager.buildSessionContext().messages.length > 0;
     const model = hasExistingMessages
       ? undefined
-      : configuredDefaultModel(services);
+      : await configuredDefaultModel(services);
     const created = await sdk.createAgentSessionFromServices({
       services,
       sessionManager,
@@ -479,17 +479,24 @@ function assertResourcesLoaded(services: PiServices): void {
   }
 }
 
-function configuredDefaultModel(services: PiServices): unknown {
+async function configuredDefaultModel(services: PiServices): Promise<unknown> {
   const provider = services.settingsManager.getDefaultProvider();
   const modelId = services.settingsManager.getDefaultModel();
-  if (!provider || !modelId) return undefined;
-  const model = services.modelRuntime.getModel(provider, modelId);
-  if (!model || !services.modelRuntime.hasConfiguredAuth(provider)) {
+  if (provider && modelId) {
+    const model = services.modelRuntime.getModel(provider, modelId);
+    if (model && services.modelRuntime.hasConfiguredAuth(provider))
+      return model;
+    const fallback = (await services.modelRuntime.getAvailable())
+      .filter(isPiModel)
+      .find((candidate) =>
+        services.modelRuntime.hasConfiguredAuth(candidate.provider),
+      );
+    if (fallback) return fallback;
     throw new Error(
       `Configured default model ${provider}/${modelId} is unavailable`,
     );
   }
-  return model;
+  return undefined;
 }
 
 function acceptPrompt(

@@ -54,7 +54,10 @@ async function fixture() {
     ),
     writeFile(
       path.join(agentDir, "settings.json"),
-      JSON.stringify({ packages: ["../package"] }),
+      JSON.stringify({
+        packages: ["../package"],
+        extensions: ["./extensions/global.ts"],
+      }),
     ),
   ]);
   return { root, cwd, agentDir, statePath };
@@ -187,33 +190,55 @@ describe("SettingsService", () => {
     ).rejects.toThrow("reasoningEffort is invalid");
   });
 
-  it("discovers SpireCode and Pi extensions with scope metadata", async () => {
+  it("lists six built-ins and only user-configured Pi extensions", async () => {
     const { cwd, agentDir, statePath } = await fixture();
     const service = await SettingsService.load(statePath, agentDir);
 
     const catalog = await service.list(cwd);
+    const builtins = catalog.filter(({ kind }) => kind === "builtin");
+    const users = catalog.filter(({ kind }) => kind === "user");
 
-    expect(catalog).toEqual(
+    expect(builtins.map(({ name }) => name).sort()).toEqual([
+      "pi-goal",
+      "pi-memory",
+      "pi-plan",
+      "pi-subagents",
+      "pi-todo",
+      "pi-web-access",
+    ]);
+    expect(
+      builtins.every(({ displayPath }) => !path.isAbsolute(displayPath)),
+    ).toBe(true);
+    expect(users).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "review",
-          source: "spirecode",
-          scope: "project",
-          enabled: true,
-        }),
-        expect.objectContaining({
-          name: "project",
-          source: "pi",
-          scope: "project",
-          enabled: true,
-        }),
-        expect.objectContaining({
-          name: "global",
-          source: "pi",
+          name: "fixture-package",
+          version: "1.0.0",
+          kind: "user",
+          source: "package",
           scope: "global",
-          enabled: true,
+        }),
+        expect.objectContaining({
+          name: "fixture-package",
+          version: "1.0.0",
+          kind: "user",
+          source: "package",
+          scope: "global",
         }),
       ]),
+    );
+    expect(users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "global",
+          kind: "user",
+          source: "pi",
+          scope: "global",
+        }),
+      ]),
+    );
+    expect(catalog.map(({ name }) => name)).not.toEqual(
+      expect.arrayContaining(["review", "project"]),
     );
   });
 
@@ -221,7 +246,7 @@ describe("SettingsService", () => {
     const { cwd, agentDir, statePath } = await fixture();
     const service = await SettingsService.load(statePath, agentDir);
     const extension = (await service.list(cwd)).find(
-      ({ name }) => name === "review",
+      ({ name }) => name === "pi-goal",
     )!;
 
     const updated = await service.setEnabled(cwd, extension.id, false);
@@ -238,6 +263,31 @@ describe("SettingsService", () => {
     await expect(service.setEnabled(cwd, "unknown", true)).rejects.toThrow(
       "extension not found",
     );
+  });
+
+  it("disables one bundled extension without removing the others", async () => {
+    const { root, cwd, agentDir, statePath } = await fixture();
+    const service = await SettingsService.load(statePath, agentDir);
+    const bundleRoot = path.join(root, "bundled");
+    const bundledPaths: string[] = [];
+    for (const name of ["pi-goal", "pi-plan"]) {
+      const packageRoot = path.join(bundleRoot, name);
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(
+        path.join(packageRoot, "package.json"),
+        JSON.stringify({ name, version: "1.0.0" }),
+      );
+      bundledPaths.push(packageRoot);
+    }
+    const goal = (await service.list(cwd)).find(
+      ({ name, kind }) => name === "pi-goal" && kind === "builtin",
+    )!;
+
+    await service.setEnabled(cwd, goal.id, false);
+
+    const selected = await service.enabledPaths(cwd, bundledPaths);
+    expect(selected).not.toContain(await realpath(bundledPaths[0]));
+    expect(selected).toContain(await realpath(bundledPaths[1]));
   });
 
   it("loads standalone Pi extensions without reintroducing replaced packages", async () => {
@@ -257,10 +307,10 @@ describe("SettingsService", () => {
     );
 
     expect(canonical).toContain(await realpath(bundled));
-    expect(canonical).toContain(
+    expect(canonical).not.toContain(
       await realpath(path.join(cwd, ".spirecode", "extensions", "review.ts")),
     );
-    expect(canonical).toContain(
+    expect(canonical).not.toContain(
       await realpath(path.join(cwd, ".pi", "extensions", "project.ts")),
     );
     expect(canonical).toContain(
@@ -283,7 +333,7 @@ describe("SettingsService", () => {
     const updated = await service.setEnabled(cwd, global.id, false);
 
     expect(updated.find(({ id }) => id === global.id)?.enabled).toBe(false);
-    expect(updated.find(({ name }) => name === "second")?.enabled).toBe(true);
+    expect(updated.find(({ name }) => name === "second")).toBeUndefined();
   });
 
   it("disables every extension entry belonging to one package load root", async () => {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
   DefaultPackageManager,
@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { AsyncQueue } from "../../core/asyncQueue.js";
 import { CommandError } from "../../core/errors.js";
+import { BUNDLED_EXTENSION_NAMES } from "../chat/bundledResources.js";
 import { loadOrDefault, saveAtomic } from "../persistence/index.js";
 
 export type ExtensionSource = "spirecode" | "pi" | "package";
@@ -17,6 +18,7 @@ export type ExtensionScope = "global" | "project";
 export interface ExtensionSetting {
   id: string;
   name: string;
+  kind: "builtin" | "user";
   source: ExtensionSource;
   scope: ExtensionScope;
   displayPath: string;
@@ -65,12 +67,12 @@ interface Candidate {
   path: string;
   loadRoot?: string;
   packageName?: string;
+  packageVersion?: string;
+  kind: "builtin" | "user";
   source: ExtensionSource;
   scope: ExtensionScope;
   defaultEnabled: boolean;
 }
-
-const EXTENSION_PATTERN = /\.(?:[cm]?[jt]s)$/i;
 
 export class SettingsService {
   private readonly queue = new AsyncQueue();
@@ -170,20 +172,29 @@ export class SettingsService {
         )
       ).filter((value): value is string => Boolean(value)),
     );
+    const basePathPackageNames = new Map(
+      await Promise.all(
+        canonicalBasePaths.map(
+          async (value) => [value, await packageNameAt(value)] as const,
+        ),
+      ),
+    );
     const retained = canonicalBasePaths.filter((basePath) => {
       const represented = selections.filter(({ candidate }) =>
-        isRepresentedBy(candidate, basePath),
+        isRepresentedBy(
+          candidate,
+          basePath,
+          basePathPackageNames.get(basePath),
+        ),
       );
       if (represented.length === 0) return true;
-      return (
-        represented.every(({ candidate }) => candidate.source === "package") &&
-        represented.some(({ enabled }) => enabled)
-      );
+      return represented.some(({ enabled }) => enabled);
     });
     const additions = selections
       .filter(
         ({ candidate, enabled }) =>
           enabled &&
+          candidate.kind === "user" &&
           !(
             candidate.source === "package" &&
             candidate.packageName &&
@@ -206,49 +217,46 @@ export class SettingsService {
         const enabled = this.state.overrides[id] ?? candidate.defaultEnabled;
         return {
           id,
-          name: extensionName(candidate.path),
+          name:
+            candidate.kind === "builtin" || candidate.source === "package"
+              ? candidate.packageName!
+              : extensionName(candidate.path),
+          ...(candidate.packageVersion
+            ? { version: candidate.packageVersion }
+            : {}),
+          kind: candidate.kind,
           source: candidate.source,
           scope: candidate.scope,
-          displayPath: abbreviateHome(candidate.path),
+          displayPath:
+            candidate.kind === "builtin"
+              ? candidate.packageName!
+              : abbreviateHome(candidate.path),
           enabled,
           status: enabled ? "enabled" : "disabled",
         } satisfies ExtensionSetting;
       })
       .sort((left, right) =>
-        `${left.source}:${left.scope}:${left.name}`.localeCompare(
-          `${right.source}:${right.scope}:${right.name}`,
+        `${left.kind}:${left.name}`.localeCompare(
+          `${right.kind}:${right.name}`,
         ),
       );
   }
 
   private async candidates(cwd: string, strict: boolean): Promise<Candidate[]> {
-    const candidates: Candidate[] = [];
-    const directories: Array<{
-      directory: string;
-      source: ExtensionSource;
-      scope: ExtensionScope;
-    }> = [
-      {
-        directory: path.join(homedir(), ".spirecode", "extensions"),
-        source: "spirecode",
-        scope: "global",
-      },
-      {
-        directory: path.join(cwd, ".spirecode", "extensions"),
-        source: "spirecode",
-        scope: "project",
-      },
-    ];
-    for (const entry of directories) {
-      for (const extensionPath of await discoverDirectory(entry.directory, cwd))
-        candidates.push({
-          ...entry,
-          path: extensionPath,
-          defaultEnabled: true,
-        });
-    }
+    const candidates: Candidate[] = BUNDLED_EXTENSION_NAMES.map((name) => ({
+      path: `builtin:${name}`,
+      packageName: name,
+      kind: "builtin",
+      source: "spirecode",
+      scope: "global",
+      defaultEnabled: true,
+    }));
 
-    const settingsManager = SettingsManager.create(cwd, this.agentDir);
+    const fileSettings = SettingsManager.create(cwd, this.agentDir);
+    const settingsManager = SettingsManager.inMemory(
+      fileSettings.getGlobalSettings(),
+      { projectTrusted: true },
+    );
     const manager = new DefaultPackageManager({
       cwd,
       agentDir: this.agentDir,
@@ -257,12 +265,18 @@ export class SettingsService {
     try {
       const resolved = await manager.resolve(async () => "skip");
       for (const resource of resolved.extensions) {
-        const candidate = await fromPiResource(resource, cwd);
-        if (candidate) candidates.push(candidate);
+        const candidate = await fromPiResource(resource);
+        if (
+          candidate &&
+          !BUNDLED_EXTENSION_NAMES.some(
+            (name) => name === candidate.packageName,
+          )
+        )
+          candidates.push(candidate);
       }
     } catch (error) {
       if (strict) throw error;
-      console.warn("Unable to resolve Pi extensions", error);
+      console.warn("Unable to resolve user Pi extensions", error);
     }
 
     const unique = new Map<string, Candidate>();
@@ -284,78 +298,26 @@ export class SettingsService {
 
 async function fromPiResource(
   resource: ResolvedResource,
-  projectRoot: string,
 ): Promise<Candidate | undefined> {
-  const scope = resource.metadata.scope === "project" ? "project" : "global";
-  const canonicalPath = await realpath(resource.path);
   if (
-    scope === "project" &&
-    !isWithin(await realpath(projectRoot), canonicalPath)
+    resource.metadata.scope === "project" ||
+    resource.metadata.source === "auto"
   )
     return undefined;
+  const canonicalPath = await realpath(resource.path);
   return {
     path: canonicalPath,
     ...(resource.metadata.baseDir
       ? { loadRoot: await realpath(resource.metadata.baseDir) }
       : {}),
     ...(resource.metadata.origin === "package" && resource.metadata.baseDir
-      ? { packageName: await packageNameAt(resource.metadata.baseDir) }
+      ? await packageMetadataAt(resource.metadata.baseDir)
       : {}),
+    kind: "user",
     source: resource.metadata.origin === "package" ? "package" : "pi",
-    scope,
+    scope: "global",
     defaultEnabled: resource.enabled,
   };
-}
-
-async function discoverDirectory(
-  directory: string,
-  projectRoot: string,
-): Promise<string[]> {
-  const canonicalProjectRoot = await realpath(projectRoot);
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  const result: string[] = [];
-  for (const entry of entries) {
-    const candidate = path.join(directory, entry.name);
-    let extensionPath: string | undefined;
-    if (entry.isFile() && EXTENSION_PATTERN.test(entry.name)) {
-      extensionPath = candidate;
-    } else if (entry.isDirectory()) {
-      for (const name of [
-        "index.ts",
-        "index.js",
-        "index.mts",
-        "index.mjs",
-        "index.cts",
-        "index.cjs",
-      ]) {
-        const index = path.join(candidate, name);
-        try {
-          if ((await stat(index)).isFile()) {
-            extensionPath = index;
-            break;
-          }
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-      }
-    }
-    if (!extensionPath) continue;
-    const canonical = await realpath(extensionPath);
-    if (
-      path.resolve(directory).startsWith(path.resolve(projectRoot) + path.sep)
-    ) {
-      const relative = path.relative(canonicalProjectRoot, canonical);
-      if (relative.startsWith("..") || path.isAbsolute(relative)) continue;
-    }
-    result.push(canonical);
-  }
-  return result;
 }
 
 async function canonicalPath(value: string): Promise<string> {
@@ -363,18 +325,37 @@ async function canonicalPath(value: string): Promise<string> {
   return realpath(value);
 }
 
-async function packageNameAt(value: string): Promise<string | undefined> {
+async function packageMetadataAt(
+  value: string,
+): Promise<{ packageName?: string; packageVersion?: string }> {
   try {
     const manifest = JSON.parse(
       await readFile(path.join(value, "package.json"), "utf8"),
-    ) as { name?: unknown };
-    return typeof manifest.name === "string" ? manifest.name : undefined;
+    ) as { name?: unknown; version?: unknown };
+    return {
+      ...(typeof manifest.name === "string"
+        ? { packageName: manifest.name }
+        : {}),
+      ...(typeof manifest.version === "string"
+        ? { packageVersion: manifest.version }
+        : {}),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
-function isRepresentedBy(candidate: Candidate, basePath: string): boolean {
+async function packageNameAt(value: string): Promise<string | undefined> {
+  return (await packageMetadataAt(value)).packageName;
+}
+
+function isRepresentedBy(
+  candidate: Candidate,
+  basePath: string,
+  basePackageName: string | undefined,
+): boolean {
+  if (candidate.kind === "builtin")
+    return candidate.packageName === basePackageName;
   if (candidate.source === "package") return candidate.loadRoot === basePath;
   return candidate.path === basePath || isWithin(basePath, candidate.path);
 }

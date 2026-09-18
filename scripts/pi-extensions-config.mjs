@@ -6,7 +6,6 @@ export const BUNDLED_PACKAGES = [
   ["todo", "pi-todo"],
   ["plan", "pi-plan"],
   ["goal", "pi-goal"],
-  ["failover", "pi-failover"],
   ["memory", "pi-memory"],
   ["sdlc", "pi-sdlc"],
 ];

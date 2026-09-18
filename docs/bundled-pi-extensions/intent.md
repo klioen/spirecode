@@ -16,7 +16,6 @@ SpireCode 发布包固定并携带一组默认 Pi packages，开发态与正式�
 - `pi-todo`
 - `pi-plan`
 - `pi-goal`
-- `pi-failover`
 - `pi-memory`
 - `pi-sdlc` skills
 

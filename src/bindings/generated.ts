@@ -194,6 +194,8 @@ export interface ChatAccepted {
 export interface ExtensionSetting {
   id: string;
   name: string;
+  version?: string;
+  kind: "builtin" | "user";
   source: "spirecode" | "pi" | "package";
   scope: "global" | "project";
   displayPath: string;
