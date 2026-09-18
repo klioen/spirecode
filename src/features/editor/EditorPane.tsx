@@ -741,6 +741,10 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
             <h2>Your code, in focus.</h2>
             <p>Select a file to edit, or a change to preview its diff.</p>
             <div>
+              <RiChatNewLine size={14} />
+              <span>Open a Chat Agent from the tab header</span>
+            </div>
+            <div>
               <RiTerminalBoxLine size={14} />
               <span>Open a terminal from the tab header</span>
             </div>

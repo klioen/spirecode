@@ -565,6 +565,12 @@ describe("Chat history popover", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
     await screen.findByText("No chat history");
     const target = screen.getByText("Your code, in focus.");
+    expect(
+      screen.getByText("Open a Chat Agent from the tab header"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Open a terminal from the tab header"),
+    ).toBeInTheDocument();
     target.addEventListener("pointerdown", (event) => event.stopPropagation());
     fireEvent.pointerDown(target);
     expect(
