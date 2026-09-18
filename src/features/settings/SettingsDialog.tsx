@@ -8,7 +8,7 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import { useEffect, useState, type ReactNode } from "react";
-import type { ExtensionSetting } from "../../bindings";
+import { commands, type ExtensionSetting } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { useThemeStore } from "../theme/themeStore";
 import { useSettingsStore } from "./settingsStore";
@@ -87,6 +87,8 @@ export function SettingsDialog({
 function GeneralSettings() {
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
+  const [diagnostics, setDiagnostics] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   return (
     <section>
       <h3>General</h3>
@@ -105,6 +107,52 @@ function GeneralSettings() {
           <option value="dark">Dark</option>
         </select>
       </div>
+      <div className="setting-row">
+        <div>
+          <b>Diagnostics</b>
+          <small>Copy a redacted report or open local logs.</small>
+        </div>
+        <div className="settings-actions">
+          <button
+            type="button"
+            onClick={() =>
+              void (async () => {
+                try {
+                  const text = await commands.diagnosticsCopy();
+                  await navigator.clipboard.writeText(text);
+                  setDiagnostics("Copied");
+                } catch (caught) {
+                  setError(commandError(caught).message);
+                }
+              })()
+            }
+          >
+            Copy diagnostics
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void commands
+                .diagnosticsRevealLogs()
+                .catch((caught) => setError(commandError(caught).message))
+            }
+          >
+            Reveal logs
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void commands
+                .feedbackOpen()
+                .catch((caught) => setError(commandError(caught).message))
+            }
+          >
+            Send feedback
+          </button>
+        </div>
+      </div>
+      {diagnostics && <div className="settings-success">{diagnostics}</div>}
+      {error && <div className="dialog-error">{error}</div>}
     </section>
   );
 }
