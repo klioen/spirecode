@@ -52,6 +52,7 @@ interface CachedResource {
 }
 
 const cache = new ResourceCache<CachedResource>();
+export const clearEditorResourceCache = () => cache.deletePrefix("");
 interface FileDraft {
   content: string;
   savedContent: string;
@@ -192,10 +193,17 @@ function FileView({
   );
   const [version, setVersion] = useState(initialDraft?.version ?? file.version);
   const [saveError, setSaveError] = useState<CommandError | null>(null);
+  const [compareContent, setCompareContent] = useState<string | null>(null);
+  const [conflictAction, setConflictAction] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const skipNextFileSync = useRef(false);
   const dirty = content !== savedContent;
 
   useEffect(() => {
+    if (skipNextFileSync.current) {
+      skipNextFileSync.current = false;
+      return;
+    }
     if (dirty) return;
     setContent(file.content);
     setSavedContent(file.content);
@@ -207,9 +215,74 @@ function FileView({
     useEditorStore.getState().setFileDirty(tab.worktreeId, tab.id, dirty);
   }, [dirty, tab.id, tab.worktreeId]);
 
+  const reloadFromDisk = async () => {
+    setConflictAction("reload");
+    try {
+      const latest = await commands.fsReadFile(
+        tab.worktreeId,
+        tab.relativePath,
+      );
+      cache.set(tab.id, { generation: resourceGeneration, value: latest });
+      skipNextFileSync.current = true;
+      setContent(latest.content);
+      setSavedContent(latest.content);
+      setVersion(latest.version);
+      setCompareContent(null);
+      fileDrafts.delete(tab.id);
+      setSaveError(null);
+      onSaved(latest);
+    } catch (error) {
+      setSaveError(commandError(error));
+    } finally {
+      setConflictAction(null);
+    }
+  };
+  const compareWithDisk = async () => {
+    setConflictAction("compare");
+    try {
+      const latest = await commands.fsReadFile(
+        tab.worktreeId,
+        tab.relativePath,
+      );
+      setCompareContent(latest.content);
+    } catch (error) {
+      setSaveError(commandError(error));
+    } finally {
+      setConflictAction(null);
+    }
+  };
+  const overwriteDisk = async () => {
+    setConflictAction("overwrite");
+    try {
+      const latest = await commands.fsReadFile(
+        tab.worktreeId,
+        tab.relativePath,
+      );
+      const saved = await commands.fsWriteFile(
+        tab.worktreeId,
+        tab.relativePath,
+        content,
+        latest.version,
+      );
+      cache.set(tab.id, { generation: resourceGeneration, value: saved });
+      skipNextFileSync.current = true;
+      setContent(saved.content);
+      setSavedContent(saved.content);
+      setVersion(saved.version);
+      setCompareContent(null);
+      fileDrafts.delete(tab.id);
+      setSaveError(null);
+      onSaved(saved);
+    } catch (error) {
+      setSaveError(commandError(error));
+    } finally {
+      setConflictAction(null);
+    }
+  };
+
   useEffect(() => {
     const save = async () => {
-      if (!dirty || saving) return;
+      if (!dirty || saving || conflictAction || saveError) return;
       setSaving(true);
       setSaveError(null);
       try {
@@ -242,6 +315,7 @@ function FileView({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    conflictAction,
     content,
     dirty,
     onSaved,
@@ -257,7 +331,42 @@ function FileView({
     <div className="editable-file-view">
       {saveError && (
         <div className="file-save-error" role="alert">
-          {saveError.message}
+          <span>{saveError.message}</span>
+          {saveError.code === "FILE_CONFLICT" && (
+            <div className="file-conflict-actions">
+              <button
+                type="button"
+                disabled={conflictAction !== null || saving}
+                onClick={() => void reloadFromDisk()}
+              >
+                {conflictAction === "reload" ? "Loading…" : "Reload"}
+              </button>
+              <button
+                type="button"
+                disabled={conflictAction !== null || saving}
+                onClick={() => void compareWithDisk()}
+              >
+                {conflictAction === "compare" ? "Loading…" : "Compare"}
+              </button>
+              <button
+                type="button"
+                disabled={conflictAction !== null || saving}
+                onClick={() => void overwriteDisk()}
+              >
+                {conflictAction === "overwrite" ? "Loading…" : "Overwrite"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {compareContent !== null && (
+        <div
+          className="file-conflict-compare"
+          role="region"
+          aria-label="Disk version"
+        >
+          <b>Disk version</b>
+          <pre>{compareContent}</pre>
         </div>
       )}
       <Suspense fallback={<div className="viewer-state">Loading editor…</div>}>

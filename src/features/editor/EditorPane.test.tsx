@@ -11,7 +11,7 @@ import { useProjectsStore } from "../projects/projectsStore";
 import { terminalStream } from "../terminal/terminalStream";
 import { hostChatApi } from "../chat";
 import userEvent from "@testing-library/user-event";
-import { EditorPane } from "./EditorPane";
+import { clearEditorResourceCache, EditorPane } from "./EditorPane";
 import { useEditorStore } from "./editorStore";
 
 const { fileEditorValues } = vi.hoisted(() => ({
@@ -98,6 +98,7 @@ const deferred = <T,>() => {
 
 beforeEach(() => {
   fileEditorValues.length = 0;
+  clearEditorResourceCache();
   vi.mocked(commands.fsReadFile).mockReset();
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
@@ -233,6 +234,104 @@ describe("EditorPane resources", () => {
     expect(await screen.findByText("file changed on disk")).toBeInTheDocument();
     expect(editor).toHaveValue("local edit");
     expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("reloads disk content after a save conflict", async () => {
+    vi.mocked(commands.fsReadFile)
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "before",
+        version: "version-1",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "disk version",
+        version: "version-2",
+      });
+    vi.mocked(commands.fsWriteFile).mockRejectedValue({
+      code: "FILE_CONFLICT",
+      message: "file changed on disk",
+    });
+    openFile();
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await screen.findByRole("button", { name: "Reload" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(editor).toHaveValue("disk version"));
+    expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument();
+  });
+
+  it("compares disk content without replacing the local draft", async () => {
+    vi.mocked(commands.fsReadFile)
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "before",
+        version: "version-1",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "disk version",
+        version: "version-2",
+      });
+    vi.mocked(commands.fsWriteFile).mockRejectedValue({
+      code: "FILE_CONFLICT",
+      message: "file changed on disk",
+    });
+    openFile();
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await screen.findByRole("button", { name: "Compare" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    expect(await screen.findByText("disk version")).toBeInTheDocument();
+    expect(editor).toHaveValue("local edit");
+    expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("overwrites after reading the latest disk version", async () => {
+    vi.mocked(commands.fsReadFile)
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "before",
+        version: "version-1",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "disk version",
+        version: "version-2",
+      });
+    vi.mocked(commands.fsWriteFile)
+      .mockRejectedValueOnce({
+        code: "FILE_CONFLICT",
+        message: "file changed on disk",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "local edit",
+        version: "version-3",
+      });
+    openFile();
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await screen.findByRole("button", { name: "Overwrite" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite" }));
+    await waitFor(() =>
+      expect(commands.fsWriteFile).toHaveBeenLastCalledWith(
+        "p1",
+        "src/example.ts",
+        "local edit",
+        "version-2",
+      ),
+    );
+    expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument();
   });
 
   it("asks before closing a dirty file tab", async () => {

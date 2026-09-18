@@ -1153,6 +1153,9 @@ body.panel-resizing-vertical * {
 }
 .file-save-error {
   position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   z-index: 2;
   top: 8px;
   right: 20px;
@@ -1163,6 +1166,46 @@ body.panel-resizing-vertical * {
   background: var(--danger-soft);
   color: var(--danger);
   font-size: 12px;
+}
+.file-conflict-actions {
+  display: flex;
+  gap: 6px;
+}
+.file-conflict-actions button {
+  padding: 3px 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.file-conflict-actions button:hover {
+  background: var(--danger-soft);
+}
+.file-conflict-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.file-conflict-compare {
+  position: absolute;
+  z-index: 1;
+  top: 58px;
+  right: 20px;
+  max-width: min(560px, calc(100% - 40px));
+  max-height: 45%;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--elevated-bg);
+  color: var(--text-default);
+  font-size: 12px;
+}
+.file-conflict-compare pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 .chat-view {
   --chat-thread-width: 960px;
