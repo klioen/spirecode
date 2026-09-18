@@ -17,6 +17,7 @@ class FakeSession implements PiSession {
   entries: unknown[] = [];
   isStreaming = false;
   isIdle = true;
+  activity: string | null = null;
   configValue = {
     model: { provider: "traex", id: "reasoning-model" },
     models: [
@@ -308,6 +309,7 @@ describe("ChatService", () => {
       status: "idle",
       items: [],
       queue: [],
+      activity: null,
       error: null,
     });
 
@@ -322,6 +324,10 @@ describe("ChatService", () => {
       },
     });
     session.emit({ type: "agent_start" });
+    session.emit({
+      type: "extension_status",
+      message: "TraeX is waiting for model capacity · position 362",
+    });
     session.emit({ type: "agent_end", messages: [{ content: "secret" }] });
     session.emit({ type: "agent_settled" });
     expect(events).toEqual([
@@ -337,8 +343,16 @@ describe("ChatService", () => {
         },
       },
       { sessionId: "s1", sequence: 2, event: { type: "agent_start" } },
-      { sessionId: "s1", sequence: 3, event: { type: "agent_end" } },
-      { sessionId: "s1", sequence: 4, event: { type: "agent_settled" } },
+      {
+        sessionId: "s1",
+        sequence: 3,
+        event: {
+          type: "extension_status",
+          message: "TraeX is waiting for model capacity · position 362",
+        },
+      },
+      { sessionId: "s1", sequence: 4, event: { type: "agent_end" } },
+      { sessionId: "s1", sequence: 5, event: { type: "agent_settled" } },
     ]);
     expect(JSON.stringify(events)).not.toContain("secret");
 
@@ -411,6 +425,24 @@ describe("ChatService", () => {
       service.send("w1", "s1", "/thinking turbo"),
     ).rejects.toMatchObject({
       code: "CHAT_FAILED",
+    });
+  });
+
+  it("restores current extension activity in a fresh attachment snapshot", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+
+    session.emit({
+      type: "extension_status",
+      message: "TraeX is waiting for model capacity · position 362",
+    });
+
+    await expect(
+      service.attach("w1", "s1", () => undefined),
+    ).resolves.toMatchObject({
+      activity: "TraeX is waiting for model capacity · position 362",
     });
   });
 

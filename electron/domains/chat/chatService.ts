@@ -28,6 +28,7 @@ interface SessionState extends PiSessionRecord {
   sequence: number;
   status: ChatRunStatus;
   queue: unknown[];
+  activity: string | null;
   error: null;
   buffered: ChatEventEnvelope[];
   subscriber?: ChatEventSubscriber;
@@ -465,6 +466,7 @@ export class ChatService {
     const fence = record.sequence;
     const statusAtFence = record.status;
     const queueAtFence = [...record.queue];
+    const activityAtFence = record.activity;
     const errorAtFence = record.error;
     const [messages, entries] = await Promise.all([
       record.session.getMessages(),
@@ -479,6 +481,7 @@ export class ChatService {
       status: statusAtFence,
       items,
       queue: queueAtFence,
+      activity: activityAtFence,
       error: errorAtFence,
     };
     this.flushAfterSnapshot(record, fence);
@@ -524,6 +527,7 @@ export class ChatService {
       sequence: 0,
       status: created.session.isStreaming ? "streaming" : "idle",
       queue: [],
+      activity: created.session.activity,
       error: null,
       buffered: [],
       attaching: false,
@@ -543,6 +547,9 @@ export class ChatService {
       if (event.type === "agent_settled") record.status = "idle";
       if (event.type === "queue_update" && Array.isArray(event.queue))
         record.queue = event.queue;
+      if (event.type === "extension_status")
+        record.activity =
+          typeof event.message === "string" ? event.message : null;
       record.sequence += 1;
       const envelope = {
         sessionId: record.sessionId,

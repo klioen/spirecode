@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createPiAdapter, type PiSdk } from "./piAdapter.js";
 
 function sessionFixture() {
@@ -47,6 +47,9 @@ function sessionFixture() {
     },
     messages: [],
     subscribe: () => () => undefined,
+    bindExtensions: async (bindings: unknown) => {
+      calls.push(["bindExtensions", bindings]);
+    },
     prompt: (
       _text: string,
       options: {
@@ -406,6 +409,43 @@ describe("piAdapter", () => {
     ]);
   });
 
+  it("bridges extension working messages as transient session events", async () => {
+    const { sdk, fixture, loadResources } = sdkFixture({});
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    const created = await adapter.create("/repo");
+    const listener = vi.fn();
+    created.session.subscribe(listener);
+
+    const bindingCall = fixture.calls.find(
+      (call) => Array.isArray(call) && call[0] === "bindExtensions",
+    ) as [
+      string,
+      {
+        mode: string;
+        uiContext: { setWorkingMessage: (message?: string) => void };
+      },
+    ];
+    expect(bindingCall[1].mode).toBe("rpc");
+
+    bindingCall[1].uiContext.setWorkingMessage(
+      "TraeX is waiting for model capacity · position 362",
+    );
+    expect(created.session.activity).toBe(
+      "TraeX is waiting for model capacity · position 362",
+    );
+    expect(listener).toHaveBeenLastCalledWith({
+      type: "extension_status",
+      message: "TraeX is waiting for model capacity · position 362",
+    });
+
+    bindingCall[1].uiContext.setWorkingMessage();
+    expect(created.session.activity).toBeNull();
+    expect(listener).toHaveBeenLastCalledWith({
+      type: "extension_status",
+      message: undefined,
+    });
+  });
+
   it("acknowledges send during prompt preflight and queues follow-ups", async () => {
     const { sdk, fixture, loadResources } = sdkFixture({});
     const adapter = await createPiAdapter(sdk, { loadResources });
@@ -413,7 +453,11 @@ describe("piAdapter", () => {
     await created.session.send("first");
     fixture.setStreaming(true);
     await created.session.send("next");
-    expect(fixture.calls).toEqual([
+    expect(
+      fixture.calls.filter(
+        (call) => Array.isArray(call) && call[0] === "prompt",
+      ),
+    ).toEqual([
       ["prompt", undefined],
       ["prompt", "followUp"],
     ]);

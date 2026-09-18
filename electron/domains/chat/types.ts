@@ -82,6 +82,7 @@ export interface ChatSnapshot {
   status: ChatRunStatus;
   items: unknown[];
   queue: unknown[];
+  activity?: string | null;
   error: ChatSnapshotError | null;
 }
 

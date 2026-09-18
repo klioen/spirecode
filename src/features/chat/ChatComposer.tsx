@@ -247,7 +247,7 @@ export function ChatComposer({
           value={value}
           disabled={disabled}
           rows={1}
-          placeholder={running ? "Queue a follow-up…" : "Ask pi…"}
+          placeholder="随心输入"
           onChange={(event) => {
             setValue(event.target.value);
             setActiveCommand(0);
@@ -317,9 +317,6 @@ export function ChatComposer({
               ))}
             </select>
           </div>
-          <span className="chat-composer-hint">
-            Enter 发送 · Shift+Enter 换行
-          </span>
           {(byteLength > MAX_INPUT_BYTES * 0.8 || tooLarge) && (
             <span className="chat-composer-count">
               {byteLength.toLocaleString()} / 65,536

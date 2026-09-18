@@ -148,6 +148,7 @@ export interface ChatSnapshot {
   status: "idle" | "streaming" | "failed" | "auth-required";
   items: unknown[];
   queue: unknown[];
+  activity?: string | null;
   error?: { code: string; message: string; details?: unknown } | null;
 }
 

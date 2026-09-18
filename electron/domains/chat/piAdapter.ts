@@ -1,7 +1,9 @@
 import type {
   AgentSession,
   AgentSessionEvent,
+  ExtensionUIContext,
   LoadExtensionsResult,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
   ModelRuntime,
@@ -27,6 +29,7 @@ export interface PiSession {
   readonly sessionId: string;
   readonly name?: string;
   readonly isStreaming: boolean;
+  readonly activity: string | null;
   readonly isIdle: boolean;
   subscribe(listener: (event: unknown) => void): () => void;
   getMessages(): Promise<unknown[]>;
@@ -134,6 +137,49 @@ export interface PiSdk {
   }>;
 }
 
+function createExtensionUiContext(
+  onWorkingMessage: (message?: string) => void,
+): ExtensionUIContext {
+  const theme = new Proxy(
+    {},
+    {
+      get: () => (_color: string, text: string) => text,
+    },
+  ) as Theme;
+  return {
+    select: async () => undefined,
+    confirm: async () => false,
+    input: async () => undefined,
+    notify: () => undefined,
+    onTerminalInput: () => () => undefined,
+    setStatus: () => undefined,
+    setWorkingMessage: onWorkingMessage,
+    setWorkingVisible: () => undefined,
+    setWorkingIndicator: () => undefined,
+    setHiddenThinkingLabel: () => undefined,
+    setWidget: () => undefined,
+    setFooter: () => undefined,
+    setHeader: () => undefined,
+    setTitle: () => undefined,
+    custom: async () => undefined as never,
+    pasteToEditor: () => undefined,
+    setEditorText: () => undefined,
+    getEditorText: () => "",
+    editor: async () => undefined,
+    addAutocompleteProvider: () => undefined,
+    setEditorComponent: () => undefined,
+    getEditorComponent: () => undefined,
+    get theme() {
+      return theme;
+    },
+    getAllThemes: () => [],
+    getTheme: () => undefined,
+    setTheme: () => ({ success: false, error: "Theme UI is unavailable" }),
+    getToolsExpanded: () => false,
+    setToolsExpanded: () => undefined,
+  };
+}
+
 export interface PiAdapterOptions {
   loadResources?: (cwd: string) => Promise<{
     settingsManager: PiSettingsManager;
@@ -162,6 +208,10 @@ export async function createPiAdapter(
     session: AgentSession,
     sessionManager: PiSessionManager,
     runtimeCommands: () => unknown[],
+    extensionActivity: {
+      get(): string | null;
+      subscribe(listener: (event: unknown) => void): () => void;
+    },
   ): PiSession => {
     const getConfig = async (): Promise<ChatSessionConfig> => {
       const models = (await modelRuntime.getAvailable())
@@ -225,8 +275,19 @@ export async function createPiAdapter(
       get isIdle() {
         return session.isIdle;
       },
-      subscribe: (listener) =>
-        session.subscribe(listener as (event: AgentSessionEvent) => void),
+      get activity() {
+        return extensionActivity.get();
+      },
+      subscribe(listener) {
+        const unsubscribeSession = session.subscribe(
+          listener as (event: AgentSessionEvent) => void,
+        );
+        const unsubscribeActivity = extensionActivity.subscribe(listener);
+        return () => {
+          unsubscribeSession();
+          unsubscribeActivity();
+        };
+      },
       getMessages: async () => session.messages,
       getEntries: async () => sessionManager.getBranch(),
       getConfig,
@@ -294,12 +355,29 @@ export async function createPiAdapter(
       model,
     });
     const { session } = created;
+    let activity: string | null = null;
+    const activityListeners = new Set<(event: unknown) => void>();
+    await session.bindExtensions({
+      mode: "rpc",
+      uiContext: createExtensionUiContext((message) => {
+        activity = message ?? null;
+        const event = { type: "extension_status", message };
+        for (const listener of activityListeners) listener(event);
+      }),
+    });
     const now = Date.now();
     return {
       session: wrap(
         session,
         sessionManager,
         () => created.extensionsResult?.runtime?.getCommands() ?? [],
+        {
+          get: () => activity,
+          subscribe(listener) {
+            activityListeners.add(listener);
+            return () => activityListeners.delete(listener);
+          },
+        },
       ),
       sessionId: session.sessionId,
       cwd,

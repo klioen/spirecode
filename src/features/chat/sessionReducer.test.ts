@@ -92,6 +92,20 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("updates and clears transient extension activity", () => {
+    let state = createInitialChatState("session-1", "worktree-1", "streaming");
+    state = reduce(state, 1, {
+      type: "extension_status",
+      message: "TraeX is waiting for model capacity · position 362",
+    });
+    expect(state.activity).toBe(
+      "TraeX is waiting for model capacity · position 362",
+    );
+
+    state = reduce(state, 2, { type: "extension_status" });
+    expect(state.activity).toBeNull();
+  });
+
   it("keeps duplicate queued text until an authoritative queue_update", () => {
     let state = createInitialChatState("session-1", "worktree-1", "streaming");
     state = reduce(state, 1, {

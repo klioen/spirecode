@@ -166,6 +166,20 @@ describe("chat wire normalization", () => {
     ).toEqual([{ type: "agent_end" }]);
     expect(
       normalizeEvent({
+        type: "extension_status",
+        message: "\u001b[33mTraeX is waiting\nfor model capacity\u001b[0m",
+      }),
+    ).toEqual([
+      {
+        type: "extension_status",
+        message: "TraeX is waiting for model capacity",
+      },
+    ]);
+    expect(normalizeEvent({ type: "extension_status" })).toEqual([
+      { type: "extension_status" },
+    ]);
+    expect(
+      normalizeEvent({
         type: "queue_update",
         steering: ["now"],
         followUp: ["later"],
