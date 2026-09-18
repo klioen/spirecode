@@ -120,6 +120,32 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
 }
 
 describe("ChatView", () => {
+  it("does not render the old empty conversation prompt", async () => {
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={api({
+          attach: vi.fn().mockResolvedValue({
+            snapshot: {
+              sessionId: "session-1",
+              worktreeId: "worktree-1",
+              status: "idle",
+              items: [],
+              queue: [],
+              sequence: 1,
+            },
+            detach: vi.fn(),
+          }),
+        })}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+
+    await screen.findByRole("textbox", { name: "Chat message" });
+    expect(screen.queryByText("Start a conversation with pi")).toBeNull();
+  });
+
   it("renders Markdown, a unified process group, and a direct single tool", async () => {
     render(
       <ChatView
@@ -149,6 +175,69 @@ describe("ChatView", () => {
     expect(screen.getByText("edit")).toBeVisible();
     expect(screen.getByRole("region", { name: "Todo progress" })).toBeVisible();
     expect(screen.getByText("1/2")).toBeVisible();
+  });
+
+  it("shows and clears model capacity activity above the composer", async () => {
+    let onEvent: Parameters<ChatApi["attach"]>[2] | undefined;
+    const attach: ChatApi["attach"] = async (
+      _worktreeId,
+      _sessionId,
+      listener,
+    ) => {
+      onEvent = listener;
+      return {
+        snapshot: {
+          sessionId: "session-1",
+          worktreeId: "worktree-1",
+          status: "streaming",
+          items: [],
+          queue: [],
+          activity: "TraeX is waiting for model capacity · position 361",
+          sequence: 1,
+        },
+        detach: vi.fn(),
+      };
+    };
+    const chatApi = api({ attach: vi.fn(attach) });
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={chatApi}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+
+    const activity = await screen.findByRole("status", {
+      name: "Agent activity",
+    });
+    expect(activity).toHaveTextContent("position 361");
+    expect(
+      activity.compareDocumentPosition(
+        screen.getByRole("textbox", { name: "Chat message" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    onEvent?.({
+      sessionId: "session-1",
+      sequence: 2,
+      event: {
+        type: "extension_status",
+        message: "TraeX is waiting for model capacity · position 120",
+      },
+    });
+    expect(await screen.findByText(/position 120/)).toBeVisible();
+
+    onEvent?.({
+      sessionId: "session-1",
+      sequence: 3,
+      event: { type: "extension_status" },
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("status", { name: "Agent activity" }),
+      ).toBeNull(),
+    );
   });
 
   it("calls the unified send contract and restores only abort response text", async () => {

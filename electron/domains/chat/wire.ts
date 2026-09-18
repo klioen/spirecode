@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+
 const textOf = (content: unknown): string => {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -287,6 +289,10 @@ function normalizeMessageEvent(
 
 export function normalizeEvent(raw: unknown): Array<Record<string, unknown>> {
   if (!isRecord(raw) || typeof raw.type !== "string") return [];
+  if (raw.type === "extension_status") {
+    const message = sanitizeStatus(raw.message);
+    return [{ type: raw.type, ...(message ? { message } : {}) }];
+  }
   if (["agent_start", "agent_end", "agent_settled"].includes(raw.type))
     return [{ type: raw.type }];
   if (["message_start", "message_update", "message_end"].includes(raw.type)) {
@@ -374,6 +380,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function sanitizeStatus(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = stripVTControlCharacters(value)
+    .split("")
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || (code >= 127 && code <= 159) ? " " : character;
+    })
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, 512);
+  return normalized || undefined;
 }
 
 export { epoch, textOf };

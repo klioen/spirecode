@@ -4,6 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 import { ChatComposer } from "./ChatComposer";
 
 describe("ChatComposer", () => {
+  it("uses the concise input copy without a keyboard hint", () => {
+    render(<ChatComposer running={false} onSend={vi.fn()} onStop={vi.fn()} />);
+
+    expect(
+      screen.getByRole("textbox", { name: "Chat message" }),
+    ).toHaveAttribute("placeholder", "随心输入");
+    expect(
+      screen.queryByText("Enter 发送 · Shift+Enter 换行"),
+    ).not.toBeInTheDocument();
+  });
+
   it("submits Enter, preserves Shift+Enter, and ignores IME Enter", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn().mockResolvedValue(undefined);

@@ -16,7 +16,6 @@ export interface ChatViewProps {
   sessionId: string;
   api: ChatApi;
   runtime?: ChatRuntime;
-  emptyLabel?: string;
   onError?: (error: ReturnType<typeof toChatError>) => void;
 }
 
@@ -25,10 +24,9 @@ function ChatViewContent({
   sessionId,
   api,
   runtime,
-  emptyLabel,
   onError,
 }: Required<Pick<ChatViewProps, "worktreeId" | "sessionId" | "api">> &
-  Pick<ChatViewProps, "emptyLabel" | "onError"> & { runtime: ChatRuntime }) {
+  Pick<ChatViewProps, "onError"> & { runtime: ChatRuntime }) {
   const state = useChatSession(sessionId, runtime);
   const running = state.status === "streaming";
   const [config, setConfig] = useState<ChatSessionConfig>();
@@ -113,9 +111,6 @@ function ChatViewContent({
                 {state.error?.message ?? "Chat unavailable"}
               </div>
             )}
-          {state.status !== "loading" && state.items.length === 0 && (
-            <div>{emptyLabel ?? "Start a conversation with pi"}</div>
-          )}
           {projectChatTimeline(state.items).map((item) => {
             switch (item.type) {
               case "message":
@@ -153,6 +148,16 @@ function ChatViewContent({
           </button>
         )}
       </div>
+      {state.activity && (
+        <div
+          className="chat-agent-activity"
+          role="status"
+          aria-label="Agent activity"
+        >
+          <span className="chat-agent-activity-spinner" aria-hidden="true" />
+          <span>{state.activity}</span>
+        </div>
+      )}
       <ChatComposer
         running={running}
         queue={state.queue}
@@ -177,7 +182,6 @@ export function ChatView({
   sessionId,
   api,
   runtime = chatRuntime,
-  emptyLabel,
   onError,
 }: ChatViewProps) {
   runtime.ensure(sessionId, worktreeId);
@@ -187,7 +191,6 @@ export function ChatView({
       sessionId={sessionId}
       api={api}
       runtime={runtime}
-      emptyLabel={emptyLabel}
       onError={onError}
     />
   );

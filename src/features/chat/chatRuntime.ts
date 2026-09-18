@@ -67,6 +67,7 @@ export class ChatRuntime {
       status: snapshot.status,
       items: snapshot.items.slice(-this.maxItems),
       queue: [...snapshot.queue],
+      activity: snapshot.activity ?? null,
       error: snapshot.error ?? null,
     });
     this.markDirty(snapshot.sessionId);

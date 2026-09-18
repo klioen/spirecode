@@ -90,6 +90,7 @@ export interface ChatSessionState {
   status: ChatRunStatus;
   items: ChatTimelineItem[];
   queue: ChatQueuedInput[];
+  activity: string | null;
   error: ChatError | null;
 }
 
@@ -100,6 +101,7 @@ export interface ChatSnapshot {
   status: Exclude<ChatRunStatus, "loading" | "reconnecting">;
   items: ChatTimelineItem[];
   queue: ChatQueuedInput[];
+  activity?: string | null;
   error?: ChatError | null;
 }
 
@@ -132,6 +134,7 @@ export type ChatSessionEvent =
     }
   | { type: "todo_update"; todo: ChatTodoModel }
   | { type: "queue_update"; queue: ChatQueuedInput[] }
+  | { type: "extension_status"; message?: string }
   | { type: "compaction_start"; message?: string }
   | { type: "compaction_end"; message?: string }
   | { type: "auto_retry_start"; message?: string }

@@ -24,6 +24,7 @@ export function createInitialChatState(
     status,
     items: [],
     queue: [],
+    activity: null,
     error: null,
   };
 }
@@ -165,6 +166,8 @@ export function sessionReducer(
       };
     case "queue_update":
       return { ...next, queue: [...event.queue] };
+    case "extension_status":
+      return { ...next, activity: event.message ?? null };
     case "compaction_start":
       return {
         ...next,

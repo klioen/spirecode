@@ -1647,6 +1647,26 @@ details[open] > summary > .chat-disclosure-icon {
   border-color: var(--danger);
   color: var(--danger);
 }
+.chat-agent-activity {
+  width: min(var(--chat-thread-width), calc(100% - 32px));
+  min-height: 24px;
+  margin: 0 auto 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.chat-agent-activity-spinner {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: chat-spin 800ms linear infinite;
+}
 .chat-composer-shell {
   width: min(var(--chat-thread-width), calc(100% - 32px));
   margin: 0 auto 18px;
@@ -1844,6 +1864,11 @@ details[open] > summary > .chat-disclosure-icon {
   }
   to {
     background-position: -120% 0;
+  }
+}
+@keyframes chat-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 @keyframes chat-pulse {
