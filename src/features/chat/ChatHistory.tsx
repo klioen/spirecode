@@ -41,6 +41,7 @@ export function ChatHistory({
 }: ChatHistoryProps) {
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
   const [error, setError] = useState<ChatError | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
   const [query, setQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ChatSessionSummary | null>(
     null,
@@ -71,7 +72,7 @@ export function ChatHistory({
     return () => {
       active = false;
     };
-  }, [api, worktreeId]);
+  }, [api, retryToken, worktreeId]);
 
   const confirmDelete = async () => {
     if (!deleteTarget || deleting) return;
@@ -172,6 +173,17 @@ export function ChatHistory({
         {error && (
           <div className="chat-history-state chat-history-error" role="alert">
             {error.message}
+            <button
+              type="button"
+              className="chat-history-retry"
+              onClick={() => {
+                setSessions(null);
+                setError(null);
+                setRetryToken((token) => token + 1);
+              }}
+            >
+              Retry
+            </button>
           </div>
         )}
         {sessions && filtered.length === 0 && (

@@ -31,8 +31,14 @@ function ChatViewContent({
   const running = state.status === "streaming";
   const [config, setConfig] = useState<ChatSessionConfig>();
   const [configError, setConfigError] = useState<string>();
+  const [retryToken, setRetryToken] = useState(0);
   const { transcriptRef, scrollToBottom, showScrollToBottom } =
     useChatScrollController(sessionId, state.sequence, running);
+
+  const retry = () => {
+    runtime.setStatus(sessionId, "loading");
+    setRetryToken((token) => token + 1);
+  };
 
   useEffect(() => {
     let active = true;
@@ -75,7 +81,7 @@ function ChatViewContent({
       active = false;
       detach?.();
     };
-  }, [api, onError, runtime, sessionId, worktreeId]);
+  }, [api, onError, retryToken, runtime, sessionId, worktreeId]);
 
   const send = async (text: string) => {
     await api.send(worktreeId, sessionId, text);
@@ -103,14 +109,29 @@ function ChatViewContent({
           {state.status === "loading" && <div>Loading conversation…</div>}
           {state.status === "reconnecting" && <div>Reconnecting…</div>}
           {configError && <div role="alert">{configError}</div>}
-          {(state.status === "failed" || state.status === "auth-required") &&
-            !state.items.some(
-              (item) => item.type === "notice" && item.kind === "error",
-            ) && (
-              <div role="alert">
-                {state.error?.message ?? "Chat unavailable"}
+          {state.status === "failed" || state.status === "auth-required" ? (
+            <div className="chat-error-banner" role="alert">
+              <div className="chat-error-summary">
+                {state.error && (
+                  <b className="chat-error-code">{state.error.code}</b>
+                )}
+                <span>{state.error?.message ?? "Chat unavailable"}</span>
               </div>
-            )}
+              {state.status === "auth-required" && (
+                <small className="chat-error-guidance">
+                  Run `pi` in a terminal or configure auth under ~/.pi/agent,
+                  then retry.
+                </small>
+              )}
+              <button
+                type="button"
+                className="chat-error-retry"
+                onClick={retry}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
           {projectChatTimeline(state.items).map((item) => {
             switch (item.type) {
               case "message":
