@@ -23,6 +23,7 @@ vi.mock("./settingsApi", () => ({
 const extension = {
   id: "extension-1",
   name: "review-tools",
+  kind: "user" as const,
   source: "pi" as const,
   scope: "project" as const,
   displayPath: ".pi/extensions/review-tools.ts",
@@ -61,10 +62,25 @@ beforeEach(() => {
 });
 
 describe("SettingsDialog", () => {
-  it("lists extensions and persists a toggle", async () => {
+  it("groups built-in and user extensions and persists a toggle", async () => {
+    vi.mocked(settingsApi.listExtensions).mockResolvedValue([
+      {
+        ...extension,
+        id: "builtin-1",
+        name: "pi-plan",
+        kind: "builtin",
+        source: "spirecode",
+        scope: "global",
+        displayPath: "pi-plan",
+      },
+      extension,
+    ]);
     render(<SettingsDialog worktreeId="w1" onClose={() => undefined} />);
 
-    expect(await screen.findByText("review-tools")).toBeInTheDocument();
+    expect(await screen.findByText("System built-in")).toBeInTheDocument();
+    expect(screen.getByText("User extensions")).toBeInTheDocument();
+    expect(screen.getByText("pi-plan")).toBeInTheDocument();
+    expect(screen.getByText("review-tools")).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Disable review-tools" }),
     );

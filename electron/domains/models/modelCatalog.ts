@@ -1,13 +1,12 @@
-import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import path from "node:path";
 import {
   ModelRuntime,
-  SettingsManager,
   createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
 import { CommandError } from "../../core/errors.js";
 import type { ChatModelOption } from "../chat/types.js";
+import { loadSpireSettings } from "../chat/spireSettings.js";
+import { bootstrapArkApiKeyFromLoginShell } from "../chat/shellEnvironment.js";
 
 interface ModelRef {
   provider: string;
@@ -18,7 +17,7 @@ interface CatalogRuntime {
   getAvailable(): Promise<readonly unknown[]>;
 }
 
-type RuntimeFactory = () => Promise<CatalogRuntime>;
+type RuntimeFactory = (extensionPaths?: string[]) => Promise<CatalogRuntime>;
 
 export class ModelCatalogService {
   private runtime?: CatalogRuntime;
@@ -28,8 +27,8 @@ export class ModelCatalogService {
     private readonly initialize: RuntimeFactory = createCatalogRuntime,
   ) {}
 
-  async list(): Promise<ChatModelOption[]> {
-    const runtime = await this.getRuntime();
+  async list(extensionPaths: string[] = []): Promise<ChatModelOption[]> {
+    const runtime = await this.getRuntime(extensionPaths);
     try {
       return (await runtime.getAvailable())
         .filter(isModel)
@@ -62,9 +61,11 @@ export class ModelCatalogService {
     }
   }
 
-  private async getRuntime(): Promise<CatalogRuntime> {
-    if (this.runtime) return this.runtime;
-    this.initializing ??= this.initialize();
+  private async getRuntime(
+    extensionPaths: string[] = [],
+  ): Promise<CatalogRuntime> {
+    if (extensionPaths.length === 0 && this.runtime) return this.runtime;
+    this.initializing ??= this.initialize(extensionPaths);
     try {
       this.runtime = await this.initializing;
       return this.runtime;
@@ -79,50 +80,26 @@ export class ModelCatalogService {
   }
 }
 
-async function createCatalogRuntime(): Promise<CatalogRuntime> {
-  const modelRuntime = await ModelRuntime.create({ modelsPath: null });
-  const providerExtension = resolveTraexProviderExtension();
-  if (providerExtension) {
-    const services = await createAgentSessionServices({
-      cwd: homedir(),
-      modelRuntime,
-      settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
-      resourceLoaderOptions: {
-        noExtensions: true,
-        additionalExtensionPaths: [providerExtension],
-      },
-    });
-    const errors = (services.diagnostics ?? []).filter(
-      (entry) => entry.type === "error",
-    );
-    const extensionErrors = services.resourceLoader.getExtensions().errors;
-    if (errors.length > 0 || extensionErrors.length > 0)
-      throw new CommandError(
-        "CHAT_FAILED",
-        "Unable to initialize model catalog",
-      );
-  }
-  return modelRuntime as unknown as CatalogRuntime;
-}
-
-function resolveTraexProviderExtension(): string | undefined {
-  const searchRoot = path.join(
-    homedir(),
-    ".pi",
-    "agent",
-    "npm",
-    "node_modules",
-  );
-  try {
-    return createRequire(import.meta.url).resolve(
-      "@bytedance-dev/pi-provider-traex",
-      {
-        paths: [searchRoot],
-      },
-    );
-  } catch {
-    return undefined;
-  }
+async function createCatalogRuntime(
+  extensionPaths: string[] = [],
+): Promise<CatalogRuntime> {
+  await bootstrapArkApiKeyFromLoginShell();
+  const modelRuntime = await ModelRuntime.create();
+  if (extensionPaths.length === 0)
+    return modelRuntime as unknown as CatalogRuntime;
+  const settings = await loadSpireSettings();
+  const services = await createAgentSessionServices({
+    cwd: homedir(),
+    modelRuntime,
+    settingsManager: settings.settingsManager,
+    resourceLoaderOptions: {
+      noExtensions: true,
+      additionalExtensionPaths: extensionPaths,
+    },
+  });
+  if ((services.diagnostics ?? []).some((entry) => entry.type === "error"))
+    throw new CommandError("CHAT_FAILED", "Unable to initialize model catalog");
+  return services.modelRuntime as unknown as CatalogRuntime;
 }
 
 function isModel(value: unknown): value is {

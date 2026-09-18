@@ -191,9 +191,11 @@ describe("IPC command argument validation", () => {
         apiKey: "secret",
       }),
     ).toThrow("Unexpected argument: apiKey");
-    expect(() =>
-      validateCommandArgs("settings_memory_models_list", { worktreeId: "w1" }),
-    ).toThrow("Unexpected argument: worktreeId");
+    expect(
+      validateCommandArgs("settings_memory_models_list", {
+        worktreeId: "w1",
+      }),
+    ).toEqual({ worktreeId: "w1" });
   });
 
   it("retains path length limits and rejects unexpected fields", () => {

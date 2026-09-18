@@ -9,6 +9,7 @@ import type {
 import { commandError } from "../../lib/errors";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { memoryApi } from "./memoryApi";
+import { settingsApi } from "./settingsApi";
 
 const documents: Array<{ id: MemoryDocumentId; name: string }> = [
   { id: "summary", name: "memory_summary.md" },
@@ -96,7 +97,9 @@ function ModelSelect({
   );
 }
 
-export function MemorySettings() {
+export function MemorySettings({
+  worktreeId,
+}: { worktreeId?: string | null } = {}) {
   const [selected, setSelected] = useState<MemoryDocumentId>("summary");
   const [document, setDocument] = useState<MemoryDocument | null>(null);
   const [documentLoading, setDocumentLoading] = useState(true);
@@ -115,6 +118,8 @@ export function MemorySettings() {
   );
   const [configLoading, setConfigLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [memoryDisabled, setMemoryDisabled] = useState(false);
+  const [extensionWarning, setExtensionWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -146,9 +151,27 @@ export function MemorySettings() {
 
   useEffect(() => {
     let disposed = false;
+    if (worktreeId) {
+      void settingsApi.listExtensions(worktreeId).then(
+        (extensions) => {
+          if (disposed) return;
+          const memory = extensions.find(
+            (extension) => extension.name === "pi-memory",
+          );
+          setMemoryDisabled(memory?.enabled === false);
+          setExtensionWarning(null);
+        },
+        (failure) => {
+          if (!disposed) setExtensionWarning(commandError(failure).message);
+        },
+      );
+    } else {
+      setMemoryDisabled(false);
+      setExtensionWarning(null);
+    }
     void Promise.allSettled([
       memoryApi.getConfig(),
-      memoryApi.listModels(),
+      memoryApi.listModels(worktreeId ?? ""),
     ]).then(([configResult, modelsResult]) => {
       if (disposed) return;
       if (configResult.status === "fulfilled") {
@@ -166,7 +189,7 @@ export function MemorySettings() {
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [worktreeId]);
 
   const availableValues = useMemo(
     () => new Set(models.map((model) => modelValue(model.provider, model.id))),
@@ -175,6 +198,7 @@ export function MemorySettings() {
   const canSave =
     !configLoading &&
     !saving &&
+    !memoryDisabled &&
     availableValues.has(phase1Model) &&
     availableValues.has(phase2Model);
 
@@ -240,68 +264,82 @@ export function MemorySettings() {
       </div>
       <div className="memory-config">
         <div className="memory-config-fields">
-          <ModelSelect
-            label="Phase 1 Model"
-            value={phase1Model}
-            models={models}
-            disabled={configLoading || saving}
-            onChange={(value) => {
-              setPhase1Model(value);
-              setSaved(false);
-            }}
-          />
-          <label>
-            <span>Phase 1 Reasoning</span>
-            <select
-              aria-label="Phase 1 Reasoning Effort"
-              value={phase1ReasoningEffort}
-              disabled={configLoading || saving}
-              onChange={(event) => {
-                setPhase1ReasoningEffort(
-                  event.target.value as MemoryReasoningEffort,
-                );
+          <div className="memory-config-row">
+            <ModelSelect
+              label="Phase 1 Model"
+              value={phase1Model}
+              models={models}
+              disabled={configLoading || saving || memoryDisabled}
+              onChange={(value) => {
+                setPhase1Model(value);
                 setSaved(false);
               }}
-            >
-              {reasoningEfforts.map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort}
-                </option>
-              ))}
-            </select>
-          </label>
-          <ModelSelect
-            label="Phase 2 Model"
-            value={phase2Model}
-            models={models}
-            disabled={configLoading || saving}
-            onChange={(value) => {
-              setPhase2Model(value);
-              setSaved(false);
-            }}
-          />
-          <label>
-            <span>Phase 2 Reasoning</span>
-            <select
-              aria-label="Phase 2 Reasoning Effort"
-              value={phase2ReasoningEffort}
-              disabled={configLoading || saving}
-              onChange={(event) => {
-                setPhase2ReasoningEffort(
-                  event.target.value as MemoryReasoningEffort,
-                );
+            />
+            <label>
+              <span>Phase 1 Reasoning</span>
+              <select
+                aria-label="Phase 1 Reasoning Effort"
+                value={phase1ReasoningEffort}
+                disabled={configLoading || saving || memoryDisabled}
+                onChange={(event) => {
+                  setPhase1ReasoningEffort(
+                    event.target.value as MemoryReasoningEffort,
+                  );
+                  setSaved(false);
+                }}
+              >
+                {reasoningEfforts.map((effort) => (
+                  <option key={effort} value={effort}>
+                    {effort}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="memory-config-row">
+            <ModelSelect
+              label="Phase 2 Model"
+              value={phase2Model}
+              models={models}
+              disabled={configLoading || saving || memoryDisabled}
+              onChange={(value) => {
+                setPhase2Model(value);
                 setSaved(false);
               }}
-            >
-              {reasoningEfforts.map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort}
-                </option>
-              ))}
-            </select>
-          </label>
+            />
+            <label>
+              <span>Phase 2 Reasoning</span>
+              <select
+                aria-label="Phase 2 Reasoning Effort"
+                value={phase2ReasoningEffort}
+                disabled={configLoading || saving || memoryDisabled}
+                onChange={(event) => {
+                  setPhase2ReasoningEffort(
+                    event.target.value as MemoryReasoningEffort,
+                  );
+                  setSaved(false);
+                }}
+              >
+                {reasoningEfforts.map((effort) => (
+                  <option key={effort} value={effort}>
+                    {effort}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
         <small>Restart SpireCode after saving.</small>
+        {memoryDisabled && (
+          <div className="settings-empty">
+            Enable pi-memory to configure Memory settings.
+          </div>
+        )}
+        {extensionWarning && (
+          <div className="settings-description">
+            Unable to verify pi-memory status: {extensionWarning}
+          </div>
+        )}
         {modelsError && (
           <div className="dialog-error" role="alert">
             Unable to load models: {modelsError}

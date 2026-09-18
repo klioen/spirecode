@@ -71,7 +71,7 @@ export function SettingsDialog({
           <main className="settings-content">
             {section === "general" && <GeneralSettings />}
             {section === "agent" && <AgentSettings />}
-            {section === "memory" && <MemorySettings />}
+            {section === "memory" && <MemorySettings worktreeId={worktreeId} />}
             {section === "extensions" && (
               <ExtensionsSettings worktreeId={worktreeId} />
             )}
@@ -331,6 +331,39 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
     }
   };
 
+  const builtins = extensions.filter(({ kind }) => kind === "builtin");
+  const users = extensions.filter(({ kind }) => kind === "user");
+  const extensionList = (items: ExtensionSetting[]) => (
+    <div className="extension-list">
+      {items.map((extension) => (
+        <article className="extension-row" key={extension.id}>
+          <div className="extension-details">
+            <div className="extension-title">
+              <b>{extension.name}</b>
+              {extension.version && <span>v{extension.version}</span>}
+              <span>
+                {extension.kind === "builtin" ? "Built-in" : extension.source}
+              </span>
+            </div>
+            {extension.kind === "user" && (
+              <code title={extension.displayPath}>{extension.displayPath}</code>
+            )}
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.name}`}
+              checked={extension.enabled}
+              disabled={changing === extension.id}
+              onChange={() => void toggle(extension)}
+            />
+            <span />
+          </label>
+        </article>
+      ))}
+    </div>
+  );
+
   return (
     <section>
       <h3>Extensions</h3>
@@ -345,35 +378,26 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
       )}
       {loading && <div className="settings-empty">Loading extensions…</div>}
       {error && <div className="dialog-error">{error}</div>}
-      {!loading && worktreeId && extensions.length === 0 && (
-        <div className="settings-empty">
-          No extensions found in .spirecode or .pi.
+      {!loading && worktreeId && (
+        <div className="extension-sections">
+          <section className="extension-section">
+            <h4>System built-in</h4>
+            <p>Extensions bundled and maintained by SpireCode.</p>
+            {extensionList(builtins)}
+          </section>
+          <section className="extension-section">
+            <h4>User extensions</h4>
+            <p>Packages and extensions from ~/.pi/agent/settings.json.</p>
+            {users.length > 0 ? (
+              extensionList(users)
+            ) : (
+              <div className="settings-empty">
+                No user extensions configured.
+              </div>
+            )}
+          </section>
         </div>
       )}
-      <div className="extension-list">
-        {extensions.map((extension) => (
-          <article className="extension-row" key={extension.id}>
-            <div className="extension-details">
-              <div className="extension-title">
-                <b>{extension.name}</b>
-                <span>{extension.source}</span>
-                <span>{extension.scope}</span>
-              </div>
-              <code title={extension.displayPath}>{extension.displayPath}</code>
-            </div>
-            <label className="switch">
-              <input
-                type="checkbox"
-                aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.name}`}
-                checked={extension.enabled}
-                disabled={changing === extension.id}
-                onChange={() => void toggle(extension)}
-              />
-              <span />
-            </label>
-          </article>
-        ))}
-      </div>
     </section>
   );
 }

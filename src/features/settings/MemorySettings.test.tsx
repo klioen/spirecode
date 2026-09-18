@@ -2,6 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemorySettings } from "./MemorySettings";
 import { memoryApi } from "./memoryApi";
+import { settingsApi } from "./settingsApi";
+
+vi.mock("./settingsApi", () => ({
+  settingsApi: { listExtensions: vi.fn().mockResolvedValue([]) },
+}));
 
 vi.mock("./memoryApi", () => ({
   memoryApi: {
@@ -45,6 +50,7 @@ const models = [
 ];
 
 beforeEach(() => {
+  vi.mocked(settingsApi.listExtensions).mockResolvedValue([]);
   vi.mocked(memoryApi.read).mockImplementation(async (document) =>
     document === "summary" ? summary : handbook,
   );
@@ -61,6 +67,31 @@ beforeEach(() => {
 });
 
 describe("MemorySettings", () => {
+  it("disables configuration when pi-memory is disabled", async () => {
+    vi.mocked(settingsApi.listExtensions).mockResolvedValueOnce([
+      {
+        id: "memory",
+        name: "pi-memory",
+        kind: "user",
+        source: "package",
+        scope: "global",
+        displayPath: "pi-memory",
+        version: "1.0.0",
+        enabled: false,
+        status: "disabled",
+      },
+    ]);
+    render(<MemorySettings worktreeId="w1" />);
+    expect(
+      await screen.findByText("Enable pi-memory to configure Memory settings."),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("combobox", { name: "Phase 1 Model" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Save Memory configuration" }),
+    ).toBeDisabled();
+  });
   it("loads the summary and switches documents without refresh", async () => {
     render(<MemorySettings />);
     expect(

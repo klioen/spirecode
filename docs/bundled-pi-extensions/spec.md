@@ -3,7 +3,7 @@ Status: accepted。 Implements: `docs/bundled-pi-extensions/intent.md`。
 
 ## Requirements
 
-- 生产构建携带七个 extension packages 和一个 skills package 的完整运行文件。
+- 生产构建携带六个 extension packages 和一个 skills package 的完整运行文件。
 - bundled resources 来自锁定的 `pi-extensions` Git commit，构建不依赖 `~/Code/pi-extensions` checkout。
 - 开发态和正式版使用同一套 bundled resource 与 settings 行为。
 - SpireCode 读取 `~/.pi/agent/settings.json` 作为基础配置，但不自动扫描 `~/.pi/agent/extensions/`、项目 `.pi/extensions/` 或项目 `.pi/settings.json` 中的 packages/extensions。
@@ -22,7 +22,6 @@ Status: accepted。 Implements: `docs/bundled-pi-extensions/intent.md`。
 - `pi-todo`
 - `pi-plan`
 - `pi-goal`
-- `pi-failover`
 - `pi-memory`
 - `pi-sdlc` skills
 
@@ -55,7 +54,7 @@ ResourceLoader 设置 `noExtensions: true`，关闭 Pi 全局和项目 extension
 - staging checker 验证八个 package、完整 hash、memory worker/prompts 和 SDLC skills。
 - 单元测试验证独立 settings、同 package 去重和实际注册名冲突。
 - 真实 ResourceLoader 隔离测试在 Pi 全局 settings、全局 extension 目录和项目 extension 目录放置探针，断言只有显式 SpireCode resource 被加载。
-- App/DMG smoke 验证签名和最终 resources，并在 packaged Electron runtime 中加载 9 个 extension entry 与 5 个 SDLC skills。
+- App/DMG smoke 验证签名和最终 resources，并在 packaged Electron runtime 中加载 bundled extension entries 与 5 个 SDLC skills。
 
 ## Constraints and accepted trade-offs
 

@@ -317,8 +317,10 @@ async function invoke(
     }
     case "settings_memory_read":
       return state.memory.read(memoryDocument(args));
-    case "settings_memory_models_list":
-      return state.models.list();
+    case "settings_memory_models_list": {
+      const worktreeId = text(args, "worktreeId", true);
+      return worktreeId ? state.listModels(worktreeId) : state.models.list();
+    }
     case "settings_memory_config_get":
       return state.settings.memoryConfig();
     case "diagnostics_copy":
@@ -397,7 +399,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
   settings_memory_read: ["document"],
-  settings_memory_models_list: [],
+  settings_memory_models_list: ["worktreeId"],
   settings_memory_config_get: [],
   settings_memory_config_set: [
     "phase1Provider",
@@ -452,6 +454,12 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     if (!allowed.has(key)) throw new TypeError(`Unexpected argument: ${key}`);
 
   for (const key of allowed) {
+    if (
+      command === "settings_memory_models_list" &&
+      key === "worktreeId" &&
+      !(key in args)
+    )
+      continue;
     if (key === "cols" || key === "rows") number(args, key);
     else if (key === "force" || key === "enabled") boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
@@ -459,7 +467,13 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     else if (key === "content") fileContent(args);
     else if (key === "phase1ReasoningEffort" || key === "phase2ReasoningEffort")
       memoryReasoningEffort(args, key);
-    else text(args, key, command === "fs_read_dir" && key === "relativePath");
+    else
+      text(
+        args,
+        key,
+        (command === "fs_read_dir" && key === "relativePath") ||
+          (command === "settings_memory_models_list" && key === "worktreeId"),
+      );
   }
   return args;
 }
