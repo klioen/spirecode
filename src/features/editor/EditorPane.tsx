@@ -430,17 +430,28 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
       useEditorStore.getState().close(worktreeId, tab.id);
       return;
     }
+    await disposeTerminal(tab);
+  };
+  const disposeTerminal = async (
+    tab: Extract<ResourceTab, { type: "terminal" }>,
+  ): Promise<boolean> => {
     try {
       await commands.terminalClose(tab.terminalId, true);
     } catch (error) {
       const failure = commandError(error);
       if (failure.code !== "TERMINAL_NOT_FOUND") {
         useProjectsStore.getState().setError(failure);
-        return;
+        return false;
       }
     }
     terminalStream.close(tab.terminalId);
     useEditorStore.getState().close(worktreeId, tab.id);
+    return true;
+  };
+  const restartTerminal = async (
+    tab: Extract<ResourceTab, { type: "terminal" }>,
+  ) => {
+    if (await disposeTerminal(tab)) await createTerminal();
   };
   const active = useMemo(
     () => view?.tabs.find((tab) => tab.id === view.activeTabId),
@@ -479,6 +490,11 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
               {tab.type === "file" && tab.dirty && (
                 <span className="tab-dirty" aria-label="Unsaved changes">
                   ●
+                </span>
+              )}
+              {tab.type === "terminal" && tab.status !== "running" && (
+                <span className={`tab-status tab-status-${tab.status}`}>
+                  {tab.status}
                 </span>
               )}
               <span
@@ -568,11 +584,29 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
         )}
         {active ? (
           active.type === "terminal" ? (
-            <TerminalInstance
-              key={active.id}
-              worktreeId={worktreeId}
-              terminalId={active.terminalId}
-            />
+            <div className="terminal-view">
+              {active.status !== "running" && (
+                <div className="terminal-status-banner" role="status">
+                  <span>
+                    {active.status === "error"
+                      ? "Process failed."
+                      : "Process exited."}
+                  </span>
+                  <button
+                    type="button"
+                    className="terminal-status-restart"
+                    onClick={() => void restartTerminal(active)}
+                  >
+                    Restart
+                  </button>
+                </div>
+              )}
+              <TerminalInstance
+                key={active.id}
+                worktreeId={worktreeId}
+                terminalId={active.terminalId}
+              />
+            </div>
           ) : active.type === "chat" ? (
             <ChatView
               key={active.id}

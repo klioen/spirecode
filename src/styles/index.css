@@ -1051,6 +1051,52 @@ body.panel-resizing-vertical * {
   font-size: 8px;
   line-height: 1;
 }
+.tab-status {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  line-height: 1.2;
+  text-transform: lowercase;
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+}
+.tab-status-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.terminal-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.terminal-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--elevated-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.terminal-status-restart {
+  padding: 3px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--elevated-bg);
+  color: var(--text-default);
+  font-size: 12px;
+  cursor: pointer;
+}
+.terminal-status-restart:hover {
+  border-color: var(--border-strong);
+}
+.terminal-view .terminal-instance {
+  flex: 1;
+  min-height: 0;
+}
 .tab-close {
   margin-left: auto;
   display: grid;

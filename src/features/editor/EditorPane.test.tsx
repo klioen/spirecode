@@ -393,6 +393,53 @@ describe("EditorPane terminals", () => {
     );
     expect(useProjectsStore.getState().error).toBeNull();
   });
+
+  it("marks exited terminals and offers a restart", async () => {
+    vi.mocked(commands.terminalClose).mockResolvedValue();
+    vi.mocked(commands.terminalCreate).mockResolvedValue({
+      terminalId: "terminal-b",
+      worktreeId: "p1",
+      cols: 80,
+      rows: 24,
+    });
+    vi.mocked(commands.terminalAttach).mockResolvedValue();
+    useEditorStore.getState().openTerminal("p1", "terminal-a");
+    useEditorStore.getState().setTerminalStatus("p1", "terminal-a", "exited");
+    render(<EditorPane worktreeId="p1" />);
+
+    expect(
+      await screen.findByText("terminal body terminal-a"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("exited")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Process exited.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+
+    await waitFor(() =>
+      expect(commands.terminalClose).toHaveBeenCalledWith("terminal-a", true),
+    );
+    expect(await screen.findByText("Terminal2")).toBeInTheDocument();
+    expect(screen.getByText("terminal body terminal-b")).toBeInTheDocument();
+    expect(screen.queryByText("Process exited.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the tab and surfaces the error when restart cleanup fails", async () => {
+    vi.mocked(commands.terminalClose).mockRejectedValue({
+      code: "TERMINAL_FAILED",
+      message: "close failed",
+    });
+    useEditorStore.getState().openTerminal("p1", "terminal-a");
+    useEditorStore.getState().setTerminalStatus("p1", "terminal-a", "error");
+    render(<EditorPane worktreeId="p1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+
+    await waitFor(() =>
+      expect(useProjectsStore.getState().error?.message).toBe("close failed"),
+    );
+    expect(screen.getByText("Terminal1")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Process failed.");
+  });
 });
 
 describe("Chat history popover", () => {
