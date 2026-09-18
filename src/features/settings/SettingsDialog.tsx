@@ -11,6 +11,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ExtensionSetting } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { useThemeStore } from "../theme/themeStore";
+import { useSettingsStore } from "./settingsStore";
 import { MemorySettings } from "./MemorySettings";
 import { settingsApi } from "./settingsApi";
 
@@ -69,17 +70,13 @@ export function SettingsDialog({
           </nav>
           <main className="settings-content">
             {section === "general" && <GeneralSettings />}
+            {section === "agent" && <AgentSettings />}
             {section === "memory" && <MemorySettings />}
             {section === "extensions" && (
               <ExtensionsSettings worktreeId={worktreeId} />
             )}
-            {section !== "general" &&
-              section !== "memory" &&
-              section !== "extensions" && (
-                <ComingSoon
-                  title={sections.find(({ id }) => id === section)!.label}
-                />
-              )}
+            {section === "editor" && <EditorSettings />}
+            {section === "terminal" && <TerminalSettings />}
           </main>
         </div>
       </section>
@@ -112,12 +109,123 @@ function GeneralSettings() {
   );
 }
 
-function ComingSoon({ title }: { title: string }) {
+function AgentSettings() {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText("~/.pi/agent");
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
   return (
     <section>
-      <h3>{title}</h3>
-      <div className="settings-empty">
-        More settings will be available here.
+      <h3>Agent</h3>
+      <p className="settings-description">
+        SpireCode uses your existing pi configuration.
+      </p>
+      <div className="setting-row">
+        <div>
+          <b>Pi configuration</b>
+          <small>Authentication and models are managed by pi.</small>
+        </div>
+        <code>~/.pi/agent</code>
+        <button type="button" onClick={() => void copy()}>
+          {copied ? "Copied" : "Copy path"}
+        </button>
+      </div>
+      <p className="settings-description">
+        Agent tools and extensions run with the current user permissions.
+      </p>
+    </section>
+  );
+}
+function EditorSettings() {
+  const fontSize = useSettingsStore((s) => s.editorFontSize);
+  const wordWrap = useSettingsStore((s) => s.wordWrap);
+  const set = useSettingsStore((s) => s.setSetting);
+  return (
+    <section>
+      <h3>Editor</h3>
+      <p className="settings-description">Configure source editing.</p>
+      <div className="setting-row">
+        <div>
+          <b>Font size</b>
+        </div>
+        <select
+          aria-label="Editor font size"
+          value={fontSize}
+          onChange={(e) =>
+            set("editorFontSize", Number(e.target.value) as 13 | 14 | 16 | 18)
+          }
+        >
+          {[13, 14, 16, 18].map((v) => (
+            <option key={v} value={v}>
+              {v}px
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <b>Word wrap</b>
+        </div>
+        <select
+          aria-label="Word wrap"
+          value={wordWrap}
+          onChange={(e) => set("wordWrap", e.target.value as "off" | "on")}
+        >
+          <option value="off">Off</option>
+          <option value="on">On</option>
+        </select>
+      </div>
+    </section>
+  );
+}
+function TerminalSettings() {
+  const fontSize = useSettingsStore((s) => s.terminalFontSize);
+  const scrollback = useSettingsStore((s) => s.terminalScrollback);
+  const set = useSettingsStore((s) => s.setSetting);
+  return (
+    <section>
+      <h3>Terminal</h3>
+      <p className="settings-description">Configure terminal rendering.</p>
+      <div className="setting-row">
+        <div>
+          <b>Font size</b>
+        </div>
+        <select
+          aria-label="Terminal font size"
+          value={fontSize}
+          onChange={(e) =>
+            set("terminalFontSize", Number(e.target.value) as 12 | 13 | 14 | 16)
+          }
+        >
+          {[12, 13, 14, 16].map((v) => (
+            <option key={v} value={v}>
+              {v}px
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <b>Scrollback</b>
+        </div>
+        <select
+          aria-label="Terminal scrollback"
+          value={scrollback}
+          onChange={(e) =>
+            set(
+              "terminalScrollback",
+              Number(e.target.value) as 1000 | 5000 | 10000 | 20000,
+            )
+          }
+        >
+          {[1000, 5000, 10000, 20000].map((v) => (
+            <option key={v} value={v}>
+              {v.toLocaleString()}
+            </option>
+          ))}
+        </select>
       </div>
     </section>
   );

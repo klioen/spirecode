@@ -28,6 +28,7 @@ import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
 import { defineMonacoTheme, monacoThemeName } from "../theme/themeColors";
 import { useThemeStore } from "../theme/themeStore";
+import { useSettingsStore } from "../settings/settingsStore";
 import { TerminalInstance } from "../terminal/TerminalInstance";
 import { terminalStream } from "../terminal/terminalStream";
 import {
@@ -186,6 +187,10 @@ function FileView({
   onSaved: (saved: FileContent) => void;
 }) {
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
+  const editorFontSize = useSettingsStore(
+    (settings) => settings.editorFontSize,
+  );
+  const wordWrap = useSettingsStore((settings) => settings.wordWrap);
   const initialDraft = fileDrafts.get(tab.id);
   const [content, setContent] = useState(initialDraft?.content ?? file.content);
   const [savedContent, setSavedContent] = useState(
@@ -395,7 +400,8 @@ function FileView({
             readOnly: false,
             domReadOnly: false,
             minimap: { enabled: false },
-            fontSize: 13,
+            fontSize: editorFontSize,
+            wordWrap,
             padding: { top: 16 },
           }}
         />
