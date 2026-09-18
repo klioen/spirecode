@@ -11,7 +11,6 @@ import {
   RiChatNewLine,
   RiChatHistoryLine,
   RiCloseLine,
-  RiCodeSSlashLine,
   RiFileCodeLine,
   RiGitCommitLine,
   RiTerminalBoxLine,
@@ -29,6 +28,7 @@ import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
 import { defineMonacoTheme, monacoThemeName } from "../theme/themeColors";
 import { useThemeStore } from "../theme/themeStore";
+import { useSettingsStore } from "../settings/settingsStore";
 import { TerminalInstance } from "../terminal/TerminalInstance";
 import { terminalStream } from "../terminal/terminalStream";
 import {
@@ -53,12 +53,14 @@ interface CachedResource {
 }
 
 const cache = new ResourceCache<CachedResource>();
+export const clearEditorResourceCache = () => cache.deletePrefix("");
 interface FileDraft {
   content: string;
   savedContent: string;
   version: string;
 }
 const fileDrafts = new Map<string, FileDraft>();
+export const clearEditorDrafts = () => fileDrafts.clear();
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; value: FileContent | GitDiff }
@@ -186,6 +188,10 @@ function FileView({
   onSaved: (saved: FileContent) => void;
 }) {
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
+  const editorFontSize = useSettingsStore(
+    (settings) => settings.editorFontSize,
+  );
+  const wordWrap = useSettingsStore((settings) => settings.wordWrap);
   const initialDraft = fileDrafts.get(tab.id);
   const [content, setContent] = useState(initialDraft?.content ?? file.content);
   const [savedContent, setSavedContent] = useState(
@@ -193,10 +199,17 @@ function FileView({
   );
   const [version, setVersion] = useState(initialDraft?.version ?? file.version);
   const [saveError, setSaveError] = useState<CommandError | null>(null);
+  const [compareContent, setCompareContent] = useState<string | null>(null);
+  const [conflictAction, setConflictAction] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const skipNextFileSync = useRef(false);
   const dirty = content !== savedContent;
 
   useEffect(() => {
+    if (skipNextFileSync.current) {
+      skipNextFileSync.current = false;
+      return;
+    }
     if (dirty) return;
     setContent(file.content);
     setSavedContent(file.content);
@@ -208,9 +221,74 @@ function FileView({
     useEditorStore.getState().setFileDirty(tab.worktreeId, tab.id, dirty);
   }, [dirty, tab.id, tab.worktreeId]);
 
+  const reloadFromDisk = async () => {
+    setConflictAction("reload");
+    try {
+      const latest = await commands.fsReadFile(
+        tab.worktreeId,
+        tab.relativePath,
+      );
+      cache.set(tab.id, { generation: resourceGeneration, value: latest });
+      skipNextFileSync.current = true;
+      setContent(latest.content);
+      setSavedContent(latest.content);
+      setVersion(latest.version);
+      setCompareContent(null);
+      fileDrafts.delete(tab.id);
+      setSaveError(null);
+      onSaved(latest);
+    } catch (error) {
+      setSaveError(commandError(error));
+    } finally {
+      setConflictAction(null);
+    }
+  };
+  const compareWithDisk = async () => {
+    setConflictAction("compare");
+    try {
+      const latest = await commands.fsReadFile(
+        tab.worktreeId,
+        tab.relativePath,
+      );
+      setCompareContent(latest.content);
+    } catch (error) {
+      setSaveError(commandError(error));
+    } finally {
+      setConflictAction(null);
+    }
+  };
+  const overwriteDisk = async () => {
+    setConflictAction("overwrite");
+    try {
+      const latest = await commands.fsReadFile(
+        tab.worktreeId,
+        tab.relativePath,
+      );
+      const saved = await commands.fsWriteFile(
+        tab.worktreeId,
+        tab.relativePath,
+        content,
+        latest.version,
+      );
+      cache.set(tab.id, { generation: resourceGeneration, value: saved });
+      skipNextFileSync.current = true;
+      setContent(saved.content);
+      setSavedContent(saved.content);
+      setVersion(saved.version);
+      setCompareContent(null);
+      fileDrafts.delete(tab.id);
+      setSaveError(null);
+      onSaved(saved);
+    } catch (error) {
+      setSaveError(commandError(error));
+    } finally {
+      setConflictAction(null);
+    }
+  };
+
   useEffect(() => {
     const save = async () => {
-      if (!dirty || saving) return;
+      if (!dirty || saving || conflictAction || saveError) return;
       setSaving(true);
       setSaveError(null);
       try {
@@ -243,6 +321,7 @@ function FileView({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    conflictAction,
     content,
     dirty,
     onSaved,
@@ -258,7 +337,42 @@ function FileView({
     <div className="editable-file-view">
       {saveError && (
         <div className="file-save-error" role="alert">
-          {saveError.message}
+          <span>{saveError.message}</span>
+          {saveError.code === "FILE_CONFLICT" && (
+            <div className="file-conflict-actions">
+              <button
+                type="button"
+                disabled={conflictAction !== null || saving}
+                onClick={() => void reloadFromDisk()}
+              >
+                {conflictAction === "reload" ? "Loading…" : "Reload"}
+              </button>
+              <button
+                type="button"
+                disabled={conflictAction !== null || saving}
+                onClick={() => void compareWithDisk()}
+              >
+                {conflictAction === "compare" ? "Loading…" : "Compare"}
+              </button>
+              <button
+                type="button"
+                disabled={conflictAction !== null || saving}
+                onClick={() => void overwriteDisk()}
+              >
+                {conflictAction === "overwrite" ? "Loading…" : "Overwrite"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {compareContent !== null && (
+        <div
+          className="file-conflict-compare"
+          role="region"
+          aria-label="Disk version"
+        >
+          <b>Disk version</b>
+          <pre>{compareContent}</pre>
         </div>
       )}
       <Suspense fallback={<div className="viewer-state">Loading editor…</div>}>
@@ -269,9 +383,13 @@ function FileView({
           beforeMount={(monaco) => defineMonacoTheme(monaco, resolvedTheme)}
           onChange={(value) => {
             const nextContent = value ?? "";
+            const nextDirty = nextContent !== savedContent;
             setContent(nextContent);
             setSaveError(null);
-            if (nextContent === savedContent) fileDrafts.delete(tab.id);
+            useEditorStore
+              .getState()
+              .setFileDirty(tab.worktreeId, tab.id, nextDirty);
+            if (!nextDirty) fileDrafts.delete(tab.id);
             else
               fileDrafts.set(tab.id, {
                 content: nextContent,
@@ -283,7 +401,8 @@ function FileView({
             readOnly: false,
             domReadOnly: false,
             minimap: { enabled: false },
-            fontSize: 13,
+            fontSize: editorFontSize,
+            wordWrap,
             padding: { top: 16 },
           }}
         />
@@ -427,17 +546,28 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
       useEditorStore.getState().close(worktreeId, tab.id);
       return;
     }
+    await disposeTerminal(tab);
+  };
+  const disposeTerminal = async (
+    tab: Extract<ResourceTab, { type: "terminal" }>,
+  ): Promise<boolean> => {
     try {
       await commands.terminalClose(tab.terminalId, true);
     } catch (error) {
       const failure = commandError(error);
       if (failure.code !== "TERMINAL_NOT_FOUND") {
         useProjectsStore.getState().setError(failure);
-        return;
+        return false;
       }
     }
     terminalStream.close(tab.terminalId);
     useEditorStore.getState().close(worktreeId, tab.id);
+    return true;
+  };
+  const restartTerminal = async (
+    tab: Extract<ResourceTab, { type: "terminal" }>,
+  ) => {
+    if (await disposeTerminal(tab)) await createTerminal();
   };
   const active = useMemo(
     () => view?.tabs.find((tab) => tab.id === view.activeTabId),
@@ -476,6 +606,11 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
               {tab.type === "file" && tab.dirty && (
                 <span className="tab-dirty" aria-label="Unsaved changes">
                   ●
+                </span>
+              )}
+              {tab.type === "terminal" && tab.status !== "running" && (
+                <span className={`tab-status tab-status-${tab.status}`}>
+                  {tab.status}
                 </span>
               )}
               <span
@@ -565,11 +700,29 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
         )}
         {active ? (
           active.type === "terminal" ? (
-            <TerminalInstance
-              key={active.id}
-              worktreeId={worktreeId}
-              terminalId={active.terminalId}
-            />
+            <div className="terminal-view">
+              {active.status !== "running" && (
+                <div className="terminal-status-banner" role="status">
+                  <span>
+                    {active.status === "error"
+                      ? "Process failed."
+                      : "Process exited."}
+                  </span>
+                  <button
+                    type="button"
+                    className="terminal-status-restart"
+                    onClick={() => void restartTerminal(active)}
+                  >
+                    Restart
+                  </button>
+                </div>
+              )}
+              <TerminalInstance
+                key={active.id}
+                worktreeId={worktreeId}
+                terminalId={active.terminalId}
+              />
+            </div>
           ) : active.type === "chat" ? (
             <ChatView
               key={active.id}
@@ -585,12 +738,12 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
           )
         ) : (
           <div className="editor-empty">
-            <RiCodeSSlashLine size={42} />
+            <RiFileCodeLine size={42} />
             <h2>Your code, in focus.</h2>
             <p>Select a file to edit, or a change to preview its diff.</p>
             <div>
-              <kbd>⌘ P</kbd>
-              <span>Quick open</span>
+              <RiChatNewLine size={14} />
+              <span>Open a Chat Agent from the tab header</span>
             </div>
             <div>
               <RiTerminalBoxLine size={14} />

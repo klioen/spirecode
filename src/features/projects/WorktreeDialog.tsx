@@ -334,7 +334,7 @@ export function DeleteWorktreeDialog({
       {inspection && (
         <>
           <p>
-            The local branch <b>{inspection.branch}</b> will also be deleted.
+            The local branch <b>{inspection.branch}</b> will be preserved.
           </p>
           {destructive && (
             <div className="destructive-warning">

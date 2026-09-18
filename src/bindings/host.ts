@@ -10,6 +10,7 @@ export type HostResult<T> =
   { ok: true; value: T } | { ok: false; error: CommandError };
 
 export interface SpireHost {
+  setDirtyFileCount(count: number): void;
   invoke<T>(
     command: string,
     args?: Record<string, unknown>,

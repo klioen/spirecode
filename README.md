@@ -9,7 +9,7 @@ An Electron desktop workbench for local Git projects. It includes Projects, mana
 - Electron Main for trusted local capabilities with a sandboxed React Renderer
 - React, TypeScript, Zustand, and Tailwind CSS
 - `@earendil-works/pi-coding-agent` embedded in Electron Main
-- Monaco for read-only source and diff views
+- Monaco for conflict-safe source editing with explicit `⌘S` saves and read-only diff views
 - xterm.js backed by `node-pty`
 
 The Renderer has no Node access. A narrow preload bridge exposes allowlisted commands and events; filesystem paths remain `worktreeId + relativePath` and are validated in Main.
@@ -30,6 +30,8 @@ pnpm check
 pnpm bundle
 ```
 
-`pnpm bundle` builds the Apple Silicon `.app` and `.dmg` under `release/`. The build uses Developer ID signing when a suitable identity is available; otherwise the local artifact is unsigned and is not suitable for public distribution or notarization.
+`pnpm bundle` builds the Apple Silicon `.app` and `.dmg` under `release/`. The current script produces an ad-hoc signed local artifact unless `CSC_NAME` identifies a Developer ID certificate. It does not notarize or staple the artifact, so the output is not yet suitable for public distribution.
+
+Managed worktree deletion removes the checkout and its catalog entry while preserving the local branch. File edits require an explicit save; SpireCode warns before a normal window or application close would discard unsaved files, but crash recovery and autosave are not currently provided.
 
 Base design artifacts are in [`docs/spirecode`](docs/spirecode/); Chat is specified in [`docs/pi-agent-chat`](docs/pi-agent-chat/), and the host migration is specified in [`docs/electron-migration`](docs/electron-migration/).

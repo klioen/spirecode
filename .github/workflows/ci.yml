@@ -1,0 +1,57 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      CI_GITHUB_TOKEN: ${{ secrets.CI_GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Configure private git access
+        if: ${{ env.CI_GITHUB_TOKEN != '' }}
+        run: >
+          git config --global url."https://${{ env.CI_GITHUB_TOKEN }}@github.com/".insteadOf
+          "https://github.com/"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check (format, brand, lint, typecheck, tests)
+        run: pnpm check
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level moderate
+        continue-on-error: true
+
+      - name: Bundle (build, sign, DMG, smoke)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: pnpm bundle
+
+      - name: Upload release artifacts
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spirecode-release
+          path: |
+            release/*.dmg
+          retention-days: 14

@@ -123,7 +123,7 @@ export function parseStatus(value: string): GitStatus {
     ahead,
     behind,
     changes: [...unique.values()].sort((left, right) =>
-      left.path.localeCompare(right.path),
+      left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
     ),
   };
 }

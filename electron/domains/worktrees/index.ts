@@ -167,7 +167,50 @@ export class WorktreeService {
   }
 
   async rollbackCreated(worktreeId: string): Promise<void> {
-    await this.delete(worktreeId, true);
+    const initial = await this.projects.worktree(worktreeId);
+    managedOnly(initial);
+    await this.mutate(initial.projectId, async () => {
+      const current = await this.projects.worktree(worktreeId);
+      const project = await this.projects.project(current.projectId);
+      await this.ensureOwner(this.managedRoot(project), project);
+      const removal = await runGit(
+        project.path,
+        ["worktree", "remove", "--force", current.path],
+        { allowFailure: true },
+      );
+      if (removal.exitCode !== 0) {
+        const listed = await gitText(project.path, [
+          "worktree",
+          "list",
+          "--porcelain",
+        ]);
+        if (listed.includes(`worktree ${current.path}\n`))
+          throw new CommandError(
+            "GIT_FAILED",
+            removal.stderr.toString("utf8").trim(),
+          );
+      }
+      const branchRemoval = await runGit(
+        project.path,
+        ["branch", "-D", "--", current.branch],
+        { allowFailure: true },
+      );
+      const branchStillExists =
+        (
+          await runGit(
+            project.path,
+            ["show-ref", "--verify", `refs/heads/${current.branch}`],
+            { allowFailure: true },
+          )
+        ).exitCode === 0;
+      if (branchStillExists)
+        throw new CommandError(
+          "GIT_FAILED",
+          branchRemoval.stderr.toString("utf8").trim() ||
+            "Unable to remove rollback branch",
+        );
+      await this.projects.removeWorktree(worktreeId);
+    });
   }
 
   async rename(worktreeId: string, name: string): Promise<WorktreeSummary> {
@@ -270,14 +313,6 @@ export class WorktreeService {
         ...(force ? ["--force"] : []),
         current.path,
       ]);
-      try {
-        await runGit(project.path, ["branch", "-D", "--", current.branch]);
-      } catch (error) {
-        throw toCommandError(error).detail(
-          "recovery",
-          "Git worktree was removed but its local branch and catalog record remain; remove the branch and retry delete",
-        );
-      }
       try {
         await this.projects.removeWorktree(worktreeId);
       } catch (error) {

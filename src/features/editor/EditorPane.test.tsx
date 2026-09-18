@@ -11,7 +11,11 @@ import { useProjectsStore } from "../projects/projectsStore";
 import { terminalStream } from "../terminal/terminalStream";
 import { hostChatApi } from "../chat";
 import userEvent from "@testing-library/user-event";
-import { EditorPane } from "./EditorPane";
+import {
+  clearEditorDrafts,
+  clearEditorResourceCache,
+  EditorPane,
+} from "./EditorPane";
 import { useEditorStore } from "./editorStore";
 
 const { fileEditorValues } = vi.hoisted(() => ({
@@ -98,6 +102,8 @@ const deferred = <T,>() => {
 
 beforeEach(() => {
   fileEditorValues.length = 0;
+  clearEditorResourceCache();
+  clearEditorDrafts();
   vi.mocked(commands.fsReadFile).mockReset();
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
@@ -233,6 +239,104 @@ describe("EditorPane resources", () => {
     expect(await screen.findByText("file changed on disk")).toBeInTheDocument();
     expect(editor).toHaveValue("local edit");
     expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("reloads disk content after a save conflict", async () => {
+    vi.mocked(commands.fsReadFile)
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "before",
+        version: "version-1",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "disk version",
+        version: "version-2",
+      });
+    vi.mocked(commands.fsWriteFile).mockRejectedValue({
+      code: "FILE_CONFLICT",
+      message: "file changed on disk",
+    });
+    openFile();
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await screen.findByRole("button", { name: "Reload" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(editor).toHaveValue("disk version"));
+    expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument();
+  });
+
+  it("compares disk content without replacing the local draft", async () => {
+    vi.mocked(commands.fsReadFile)
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "before",
+        version: "version-1",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "disk version",
+        version: "version-2",
+      });
+    vi.mocked(commands.fsWriteFile).mockRejectedValue({
+      code: "FILE_CONFLICT",
+      message: "file changed on disk",
+    });
+    openFile();
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await screen.findByRole("button", { name: "Compare" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    expect(await screen.findByText("disk version")).toBeInTheDocument();
+    expect(editor).toHaveValue("local edit");
+    expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("overwrites after reading the latest disk version", async () => {
+    vi.mocked(commands.fsReadFile)
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "before",
+        version: "version-1",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "disk version",
+        version: "version-2",
+      });
+    vi.mocked(commands.fsWriteFile)
+      .mockRejectedValueOnce({
+        code: "FILE_CONFLICT",
+        message: "file changed on disk",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "local edit",
+        version: "version-3",
+      });
+    openFile();
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "local edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await screen.findByRole("button", { name: "Overwrite" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite" }));
+    await waitFor(() =>
+      expect(commands.fsWriteFile).toHaveBeenLastCalledWith(
+        "p1",
+        "src/example.ts",
+        "local edit",
+        "version-2",
+      ),
+    );
+    expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument();
   });
 
   it("asks before closing a dirty file tab", async () => {
@@ -393,6 +497,53 @@ describe("EditorPane terminals", () => {
     );
     expect(useProjectsStore.getState().error).toBeNull();
   });
+
+  it("marks exited terminals and offers a restart", async () => {
+    vi.mocked(commands.terminalClose).mockResolvedValue();
+    vi.mocked(commands.terminalCreate).mockResolvedValue({
+      terminalId: "terminal-b",
+      worktreeId: "p1",
+      cols: 80,
+      rows: 24,
+    });
+    vi.mocked(commands.terminalAttach).mockResolvedValue();
+    useEditorStore.getState().openTerminal("p1", "terminal-a");
+    useEditorStore.getState().setTerminalStatus("p1", "terminal-a", "exited");
+    render(<EditorPane worktreeId="p1" />);
+
+    expect(
+      await screen.findByText("terminal body terminal-a"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("exited")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Process exited.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+
+    await waitFor(() =>
+      expect(commands.terminalClose).toHaveBeenCalledWith("terminal-a", true),
+    );
+    expect(await screen.findByText("Terminal2")).toBeInTheDocument();
+    expect(screen.getByText("terminal body terminal-b")).toBeInTheDocument();
+    expect(screen.queryByText("Process exited.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the tab and surfaces the error when restart cleanup fails", async () => {
+    vi.mocked(commands.terminalClose).mockRejectedValue({
+      code: "TERMINAL_FAILED",
+      message: "close failed",
+    });
+    useEditorStore.getState().openTerminal("p1", "terminal-a");
+    useEditorStore.getState().setTerminalStatus("p1", "terminal-a", "error");
+    render(<EditorPane worktreeId="p1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+
+    await waitFor(() =>
+      expect(useProjectsStore.getState().error?.message).toBe("close failed"),
+    );
+    expect(screen.getByText("Terminal1")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Process failed.");
+  });
 });
 
 describe("Chat history popover", () => {
@@ -419,6 +570,12 @@ describe("Chat history popover", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
     await screen.findByText("No chat history");
     const target = screen.getByText("Your code, in focus.");
+    expect(
+      screen.getByText("Open a Chat Agent from the tab header"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Open a terminal from the tab header"),
+    ).toBeInTheDocument();
     target.addEventListener("pointerdown", (event) => event.stopPropagation());
     fireEvent.pointerDown(target);
     expect(

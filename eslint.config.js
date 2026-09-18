@@ -9,6 +9,7 @@ export default tseslint.config(
       "dist",
       "dist-electron",
       "release",
+      ".delta",
       "src/bindings/generated.ts",
     ],
   },
@@ -26,7 +27,10 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       globals: globals.browser,
-      parserOptions: { projectService: true },
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       "@typescript-eslint/no-floating-promises": "error",

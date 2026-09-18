@@ -1,7 +1,7 @@
 import type { ITheme } from "@xterm/xterm";
 
 export interface TerminalWriter {
-  options: { theme?: ITheme };
+  options: { theme?: ITheme; fontSize?: number; scrollback?: number };
   write(data: string): void;
   dispose(): void;
 }

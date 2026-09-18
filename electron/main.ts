@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, dialog, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppState } from "./appState.js";
@@ -20,7 +20,7 @@ app.setPath(
 );
 let state: AppState | undefined;
 let unregisterIpc: (() => void) | undefined;
-let quitting = false;
+let cleanupStarted = false;
 
 async function createWindow(): Promise<BrowserWindow> {
   const productionEntry = path.join(directory, "../dist/index.html");
@@ -58,6 +58,14 @@ async function createWindow(): Promise<BrowserWindow> {
 
   state = await AppState.create(app.getPath("userData"), window);
   unregisterIpc = registerIpc(state, locationPolicy);
+  window.on("close", (event) => {
+    if (
+      !state?.windowCloseGuard.allowClose((count) =>
+        confirmDiscard(window, count),
+      )
+    )
+      event.preventDefault();
+  });
   window.once("ready-to-show", () => window.show());
 
   if (developmentUrl) await window.loadURL(developmentUrl);
@@ -72,10 +80,14 @@ void app.whenReady().then(async () => {
       if (BrowserWindow.getAllWindows().length === 0)
         void createWindow().catch((error) => {
           console.error("Failed to create application window", error);
+          void state?.diagnostics.log(
+            `Failed to create application window: ${String(error)}`,
+          );
         });
     });
   } catch (error) {
     console.error("Failed to start SpireCode", error);
+    void state?.diagnostics.log(`Failed to start SpireCode: ${String(error)}`);
     app.quit();
   }
 });
@@ -83,14 +95,42 @@ void app.whenReady().then(async () => {
 app.on("window-all-closed", () => app.quit());
 
 app.on("before-quit", (event) => {
-  if (quitting) return;
+  if (cleanupStarted) return;
+  if (
+    state &&
+    !state.windowCloseGuard.allowClose((count) =>
+      confirmDiscard(state!.window, count),
+    )
+  ) {
+    event.preventDefault();
+    return;
+  }
   event.preventDefault();
-  quitting = true;
+  cleanupStarted = true;
   unregisterIpc?.();
   const cleanup = state?.dispose() ?? Promise.resolve();
   void cleanup
-    .catch((error) =>
-      console.error("Failed to dispose application state", error),
-    )
+    .catch((error) => {
+      console.error("Failed to dispose application state", error);
+      void state?.diagnostics.log(
+        `Failed to dispose application state: ${String(error)}`,
+      );
+    })
     .finally(() => app.quit());
 });
+
+function confirmDiscard(window: BrowserWindow, count: number): boolean {
+  const noun = count === 1 ? "file has" : "files have";
+  return (
+    dialog.showMessageBoxSync(window, {
+      type: "warning",
+      buttons: ["Cancel", "Discard and Quit"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Unsaved changes",
+      message: `${count} ${noun} unsaved changes.`,
+      detail: "Discarding will permanently lose those changes.",
+    }) === 1
+  );
+}

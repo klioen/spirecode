@@ -428,11 +428,88 @@ describe("ChatView", () => {
         />,
       );
       await waitFor(() =>
-        expect(screen.getByRole("alert")).toHaveTextContent(message),
+        expect(
+          screen
+            .getAllByRole("alert")
+            .some((alert) => alert.textContent?.includes(message)),
+        ).toBe(true),
       );
       expect(
         screen.getByRole("textbox", { name: "Chat message" }),
       ).toBeDisabled();
     },
   );
+
+  it("shows the error code and pi auth guidance when authentication is required", async () => {
+    const failing = api({
+      attach: vi.fn().mockRejectedValue({
+        code: "CHAT_AUTH_REQUIRED",
+        message: "Agent authentication is required",
+      }),
+    });
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={failing}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+    await screen.findByText("CHAT_AUTH_REQUIRED");
+    expect(
+      screen.getAllByText("Agent authentication is required").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/configure auth under ~\/\.pi\/agent/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Run `pi` in a terminal/)).toBeInTheDocument();
+  });
+
+  it("recovers a failed session through Retry", async () => {
+    const detach = vi.fn();
+    const chatApi = api({
+      attach: vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "CHAT_AUTH_REQUIRED",
+          message: "Agent authentication is required",
+        })
+        .mockResolvedValueOnce({
+          snapshot: {
+            sessionId: "session-1",
+            worktreeId: "worktree-1",
+            status: "idle",
+            items: [],
+            queue: [],
+            sequence: 1,
+          },
+          detach,
+        }),
+    });
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={chatApi}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+    await screen.findByText("CHAT_AUTH_REQUIRED");
+    expect(
+      screen.getByRole("textbox", { name: "Chat message" }),
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(chatApi.attach).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("textbox", { name: "Chat message" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+  });
 });

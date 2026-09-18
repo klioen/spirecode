@@ -18,19 +18,14 @@ Status: accepted。 Implements: `docs/projects-ux-optimizations/intent.md`。
 - 输入内容不精确对应有效选项时清空 `baseRef`，Create 按钮保持 disabled；后端继续权威校验 ref。
 - 无匹配分支时显示明确 empty state；Refresh 按钮及 origin 未配置/未 fetch 提示保持原行为。
 
-## 删除 worktree 和 local branch
+## 删除 worktree 并保留 local branch
 
-- `WorktreeService.delete` 在成功执行 `git worktree remove` 后执行：
+> Superseded by `docs/release-readiness-p0/spec.md`: 用户触发的删除必须优先保护本地分支。
 
-```text
-git branch -D -- <managed-branch>
-```
-
-- 使用 `-D` 是因为从 origin branch 创建的 managed branch 可能尚未合并；用户在 Delete/Force delete 确认中已明确选择同时删除该 worktree 和 local branch。
-- local branch 删除成功后才从 catalog 移除记录，避免 UI 报告成功但 branch 遗留。
-- 如果 worktree 已移除但 branch 删除失败，保留 catalog record 并返回带 recovery detail 的结构化错误，用户可重试；重试时允许 `git worktree remove` 报 missing 后继续 branch/catalog cleanup 的扩展不在本次范围。
-- Delete 对话框文案明确 local branch 将被删除；dirty/busy 警告继续说明未提交修改和 Terminal 终止。
-- `rollbackCreated` 复用 delete 后不再重复执行 branch 删除。
+- `WorktreeService.delete` 成功执行 `git worktree remove` 后直接移除 catalog record，不执行 `git branch -D/-d`。
+- Delete/Force delete 确认明确 local branch 将被保留；dirty/busy 警告继续说明未提交修改和 Terminal 终止。
+- `rollbackCreated` 是内部创建失败清理路径，仍需删除本次未完成创建产生的 checkout、local branch 和 catalog record。
+- main/external worktree 继续不可通过 managed delete 删除。
 
 ## Out of scope
 
@@ -43,5 +38,5 @@ git branch -D -- <managed-branch>
 
 - ProjectRail 测试验证默认折叠、点击展开/再次折叠、Create 按钮独立工作。
 - WorktreeDialog 测试验证搜索过滤、选择结果、无匹配时不可创建及删除文案。
-- WorktreeService 临时 Git fixture 验证 clean/force delete 后 local branch 不存在，rollbackCreated 仍可完成。
+- WorktreeService 临时 Git fixture 验证 clean/force delete 后 local branch 仍存在，rollbackCreated 仍清理未完成创建产生的 branch。
 - `pnpm check` 全量通过。

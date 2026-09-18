@@ -52,6 +52,133 @@ interface WorktreeEditorView {
   tabs: ResourceTab[];
   activeTabId: string | null;
 }
+
+export type PersistedEditorViews = Record<string, WorktreeEditorView>;
+
+const EDITOR_STORAGE_KEY = "spirecode.editor-tabs.v1";
+const DIFF_SCOPES = new Set<DiffScope>(["staged", "unstaged", "untracked"]);
+
+const safeRelativePath = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  !value.startsWith("/") &&
+  !value.split("/").some((part) => part === ".." || part === "");
+
+const safeId = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 256;
+
+function restoreTab(value: unknown, worktreeId: string): ResourceTab | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.worktreeId !== worktreeId) return null;
+  if (candidate.type === "file" && safeRelativePath(candidate.relativePath))
+    return {
+      id: fileResourceId(worktreeId, candidate.relativePath),
+      worktreeId,
+      type: "file",
+      relativePath: candidate.relativePath,
+      preview: candidate.preview === true,
+    };
+  if (
+    candidate.type === "diff" &&
+    safeRelativePath(candidate.relativePath) &&
+    typeof candidate.scope === "string" &&
+    DIFF_SCOPES.has(candidate.scope as DiffScope)
+  )
+    return {
+      id: diffResourceId(
+        worktreeId,
+        candidate.scope as DiffScope,
+        candidate.relativePath,
+      ),
+      worktreeId,
+      type: "diff",
+      relativePath: candidate.relativePath,
+      scope: candidate.scope as DiffScope,
+      preview: candidate.preview === true,
+    };
+  if (
+    candidate.type === "chat" &&
+    safeId(candidate.sessionId) &&
+    typeof candidate.title === "string"
+  )
+    return {
+      id: chatResourceId(worktreeId, candidate.sessionId),
+      worktreeId,
+      type: "chat",
+      sessionId: candidate.sessionId,
+      title: candidate.title.slice(0, 256),
+      preview: false,
+    };
+  return null;
+}
+
+export function loadPersistedEditorViews(): PersistedEditorViews {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(EDITOR_STORAGE_KEY) ?? "{}",
+    );
+    if (!parsed || typeof parsed !== "object") return {};
+    const restored: PersistedEditorViews = {};
+    for (const [worktreeId, value] of Object.entries(
+      parsed as Record<string, unknown>,
+    )) {
+      if (!safeId(worktreeId) || !value || typeof value !== "object") continue;
+      const candidate = value as Record<string, unknown>;
+      const rawTabs = Array.isArray(candidate.tabs) ? candidate.tabs : [];
+      const tabs = rawTabs
+        .map((tab) => restoreTab(tab, worktreeId))
+        .filter((tab): tab is ResourceTab => tab !== null);
+      const requestedActive =
+        typeof candidate.activeTabId === "string"
+          ? candidate.activeTabId
+          : null;
+      restored[worktreeId] = {
+        tabs,
+        activeTabId: tabs.some((tab) => tab.id === requestedActive)
+          ? requestedActive
+          : (tabs[tabs.length - 1]?.id ?? null),
+      };
+    }
+    return restored;
+  } catch {
+    return {};
+  }
+}
+
+function persistEditorViews(views: Record<string, WorktreeEditorView>): void {
+  if (typeof localStorage === "undefined") return;
+  const persisted: Record<string, WorktreeEditorView> = {};
+  for (const [worktreeId, view] of Object.entries(views)) {
+    const tabs: Array<Exclude<ResourceTab, { type: "terminal" }>> = [];
+    for (const tab of view.tabs) {
+      if (tab.type === "terminal") continue;
+      if (tab.type === "file") {
+        tabs.push({
+          id: tab.id,
+          worktreeId: tab.worktreeId,
+          type: "file",
+          relativePath: tab.relativePath,
+          preview: tab.preview,
+        });
+      } else {
+        tabs.push(tab);
+      }
+    }
+    persisted[worktreeId] = {
+      tabs,
+      activeTabId: tabs.some((tab) => tab.id === view.activeTabId)
+        ? view.activeTabId
+        : (tabs[tabs.length - 1]?.id ?? null),
+    };
+  }
+  try {
+    localStorage.setItem(EDITOR_STORAGE_KEY, JSON.stringify(persisted));
+  } catch {
+    return;
+  }
+}
 interface EditorState {
   views: Record<string, WorktreeEditorView>;
   navigationGeneration: number;
@@ -71,6 +198,7 @@ interface EditorState {
     status: "running" | "exited" | "error",
   ) => void;
   setFileDirty: (worktreeId: string, tabId: string, dirty: boolean) => void;
+  dirtyFileCount: () => number;
   keep: (worktreeId: string, tabId: string) => void;
   close: (worktreeId: string, tabId: string) => void;
   activate: (worktreeId: string, tabId: string) => void;
@@ -82,7 +210,7 @@ interface EditorState {
 const emptyView = (): WorktreeEditorView => ({ tabs: [], activeTabId: null });
 
 export const useEditorStore = create<EditorState>((set, get) => ({
-  views: {},
+  views: loadPersistedEditorViews(),
   navigationGeneration: 0,
   resourceGenerationByWorktree: {},
   diffGenerationByWorktree: {},
@@ -104,12 +232,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ? [...view.tabs.filter((tab) => !tab.preview), next]
           : [...view.tabs, next];
       }
-      return {
-        views: {
-          ...state.views,
-          [incoming.worktreeId]: { tabs, activeTabId: incoming.id },
-        },
+      const views = {
+        ...state.views,
+        [incoming.worktreeId]: { tabs, activeTabId: incoming.id },
       };
+      persistEditorViews(views);
+      return { views };
     }),
   openTerminal: (worktreeId, terminalId) => {
     const sequence = (get().terminalSequenceByWorktree[worktreeId] ?? 0) + 1;
@@ -124,18 +252,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          tabs: [...view.tabs, terminal],
+          activeTabId: terminal.id,
+        },
+      };
+      persistEditorViews(views);
       return {
         terminalSequenceByWorktree: {
           ...state.terminalSequenceByWorktree,
           [worktreeId]: sequence,
         },
-        views: {
-          ...state.views,
-          [worktreeId]: {
-            tabs: [...view.tabs, terminal],
-            activeTabId: terminal.id,
-          },
-        },
+        views,
       };
     });
     return terminal;
@@ -172,63 +302,74 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setFileDirty: (worktreeId, tabId, dirty) =>
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();
-      return {
-        views: {
-          ...state.views,
-          [worktreeId]: {
-            ...view,
-            tabs: view.tabs.map((tab) =>
-              tab.type === "file" && tab.id === tabId
-                ? { ...tab, dirty, preview: dirty ? false : tab.preview }
-                : tab,
-            ),
-          },
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          ...view,
+          tabs: view.tabs.map((tab) =>
+            tab.type === "file" && tab.id === tabId
+              ? { ...tab, dirty, preview: dirty ? false : tab.preview }
+              : tab,
+          ),
         },
       };
+      persistEditorViews(views);
+      return { views };
     }),
+  dirtyFileCount: () =>
+    Object.values(get().views).reduce(
+      (count, view) =>
+        count +
+        view.tabs.filter((tab) => tab.type === "file" && tab.dirty).length,
+      0,
+    ),
   keep: (worktreeId, tabId) =>
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();
-      return {
-        views: {
-          ...state.views,
-          [worktreeId]: {
-            ...view,
-            tabs: view.tabs.map((tab) =>
-              tab.id === tabId ? { ...tab, preview: false } : tab,
-            ),
-          },
+      const views: Record<string, WorktreeEditorView> = {
+        ...state.views,
+        [worktreeId]: {
+          ...view,
+          tabs: view.tabs.map((tab): ResourceTab =>
+            tab.id === tabId
+              ? ({ ...tab, preview: false } as ResourceTab)
+              : tab,
+          ),
         },
       };
+      persistEditorViews(views);
+      return { views };
     }),
   close: (worktreeId, tabId) =>
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();
       const index = view.tabs.findIndex((tab) => tab.id === tabId);
       const tabs = view.tabs.filter((tab) => tab.id !== tabId);
-      return {
-        views: {
-          ...state.views,
-          [worktreeId]: {
-            tabs,
-            activeTabId:
-              view.activeTabId === tabId
-                ? (tabs[Math.max(0, index - 1)]?.id ?? tabs[0]?.id ?? null)
-                : view.activeTabId,
-          },
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          tabs,
+          activeTabId:
+            view.activeTabId === tabId
+              ? (tabs[Math.max(0, index - 1)]?.id ?? tabs[0]?.id ?? null)
+              : view.activeTabId,
         },
       };
+      persistEditorViews(views);
+      return { views };
     }),
   activate: (worktreeId, activeTabId) =>
-    set((state) => ({
-      views: {
+    set((state) => {
+      const views = {
         ...state.views,
         [worktreeId]: {
           ...(state.views[worktreeId] ?? emptyView()),
           activeTabId,
         },
-      },
-    })),
+      };
+      persistEditorViews(views);
+      return { views };
+    }),
   beginNavigation: () => {
     const navigationGeneration = get().navigationGeneration + 1;
     set({ navigationGeneration });
@@ -262,6 +403,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       delete resourceGenerationByWorktree[worktreeId];
       delete diffGenerationByWorktree[worktreeId];
       delete terminalSequenceByWorktree[worktreeId];
+      persistEditorViews(views);
       return {
         views,
         resourceGenerationByWorktree,

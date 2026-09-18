@@ -79,27 +79,46 @@ describe("Git porcelain parsers", () => {
       ahead: 2,
       behind: 1,
       changes: [
-        expect.objectContaining({
+        {
           path: "conflict.txt",
+          originalPath: null,
           status: "UU",
           staged: true,
           unstaged: true,
-        }),
-        expect.objectContaining({
+          untracked: false,
+          additions: null,
+          deletions: null,
+        },
+        {
           path: "file with spaces.txt",
+          originalPath: null,
           status: "M.",
           staged: true,
-        }),
-        expect.objectContaining({
+          unstaged: false,
+          untracked: false,
+          additions: null,
+          deletions: null,
+        },
+        {
           path: "line\nbreak.txt",
+          originalPath: null,
           status: "??",
+          staged: false,
+          unstaged: false,
           untracked: true,
-        }),
-        expect.objectContaining({
+          additions: null,
+          deletions: null,
+        },
+        {
           path: "新 name.txt",
           originalPath: "old name.txt",
           status: "R.",
-        }),
+          staged: true,
+          unstaged: false,
+          untracked: false,
+          additions: null,
+          deletions: null,
+        },
       ],
     });
   });

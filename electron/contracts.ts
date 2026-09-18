@@ -4,7 +4,6 @@ export const COMMANDS = [
   "project_open_dialog",
   "project_close",
   "project_reveal",
-  "project_copy_path",
   "fs_read_dir",
   "fs_read_file",
   "fs_write_file",
@@ -41,6 +40,9 @@ export const COMMANDS = [
   "settings_memory_models_list",
   "settings_memory_config_get",
   "settings_memory_config_set",
+  "diagnostics_copy",
+  "diagnostics_reveal_logs",
+  "feedback_open",
 ] as const;
 
 export const TOPICS = [
