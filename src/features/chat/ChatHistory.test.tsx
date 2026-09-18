@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatApi } from "./chatApi";
 import { ChatHistory } from "./ChatHistory";
@@ -19,6 +25,7 @@ function historyApi(): ChatApi {
     setThinkingLevel: vi.fn(),
     send: vi.fn(),
     abort: vi.fn(),
+    delete: vi.fn(),
   };
 }
 
@@ -137,6 +144,66 @@ describe("ChatHistory", () => {
       "History unavailable",
     );
     expect(screen.queryByText("No chat history")).not.toBeInTheDocument();
+  });
+
+  it("confirms deletion without opening the session and removes it only after success", async () => {
+    const api = historyApi();
+    let finishDelete: (() => void) | undefined;
+    vi.mocked(api.delete).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    const onOpen = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <ChatHistory
+        worktreeId="worktree-1"
+        api={api}
+        onOpen={onOpen}
+        onDelete={onDelete}
+      />,
+    );
+
+    await screen.findByText("Fix tests");
+    fireEvent.click(screen.getByRole("button", { name: "Delete Fix tests" }));
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: "Delete chat?" }),
+    ).toHaveTextContent("Fix tests");
+    fireEvent.click(screen.getByRole("button", { name: "Move to Trash" }));
+    expect(api.delete).toHaveBeenCalledWith("worktree-1", "session-1");
+    expect(
+      screen.getByRole("button", { name: "Moving to Trash…" }),
+    ).toBeDisabled();
+    expect(screen.getByText("Fix tests")).toBeInTheDocument();
+
+    finishDelete?.();
+    await waitFor(() =>
+      expect(screen.queryByText("Fix tests")).not.toBeInTheDocument(),
+    );
+    expect(onDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1" }),
+    );
+  });
+
+  it("cancels deletion and retains a failed deletion", async () => {
+    const api = historyApi();
+    vi.mocked(api.delete).mockRejectedValue(new Error("Trash unavailable"));
+    render(<ChatHistory worktreeId="worktree-1" api={api} onOpen={vi.fn()} />);
+
+    await screen.findByText("Fix tests");
+    fireEvent.click(screen.getByRole("button", { name: "Delete Fix tests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(api.delete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Fix tests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move to Trash" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Trash unavailable",
+    );
+    expect(screen.getByText("Fix tests")).toBeInTheDocument();
   });
 
   it("lists worktree sessions and returns the selected session to its parent", async () => {
