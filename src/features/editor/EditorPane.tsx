@@ -24,14 +24,18 @@ import {
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
-import { ChatHistory, ChatView, hostChatApi } from "../chat";
+import { chatRuntime, ChatHistory, ChatView, hostChatApi } from "../chat";
 import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
 import { defineMonacoTheme, monacoThemeName } from "../theme/themeColors";
 import { useThemeStore } from "../theme/themeStore";
 import { TerminalInstance } from "../terminal/TerminalInstance";
 import { terminalStream } from "../terminal/terminalStream";
-import { useEditorStore, type ResourceTab } from "./editorStore";
+import {
+  chatResourceId,
+  useEditorStore,
+  type ResourceTab,
+} from "./editorStore";
 
 const MonacoEditor = lazy(() =>
   import("@monaco-editor/react").then((module) => ({
@@ -352,6 +356,7 @@ function DiffView({ diff }: { diff: GitDiff }) {
 export function EditorPane({ worktreeId }: { worktreeId: string }) {
   const view = useEditorStore((state) => state.views[worktreeId]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyConfirmOpen, setHistoryConfirmOpen] = useState(false);
   const historyId = useId();
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -362,10 +367,11 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
 
   useEffect(() => {
     setHistoryOpen(false);
+    setHistoryConfirmOpen(false);
   }, [worktreeId]);
 
   useEffect(() => {
-    if (!historyOpen) return;
+    if (!historyOpen || historyConfirmOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
       if (
@@ -386,7 +392,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [historyOpen]);
+  }, [historyConfirmOpen, historyOpen]);
 
   const createChat = async () => {
     const navigation = useEditorStore.getState().beginNavigation();
@@ -535,6 +541,19 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 active?.type === "chat" ? active.sessionId : undefined
               }
               onClose={closeHistoryWithFocus}
+              onConfirmOpenChange={setHistoryConfirmOpen}
+              onDeleteError={(error) =>
+                useProjectsStore.getState().setError(error)
+              }
+              onDelete={(session) => {
+                useEditorStore
+                  .getState()
+                  .close(
+                    worktreeId,
+                    chatResourceId(worktreeId, session.sessionId),
+                  );
+                chatRuntime.remove(session.sessionId);
+              }}
               onOpen={(session) => {
                 useEditorStore
                   .getState()

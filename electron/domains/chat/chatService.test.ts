@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ChatService,
   type PiAdapter,
@@ -110,6 +110,8 @@ async function fixture(): Promise<{
   const root = await mkdtemp(path.join(os.tmpdir(), "spirecode-chat-"));
   cleanup.push(root);
   const records = new Map<string, PiSessionRecord>();
+  const sessionRoot = path.join(root, "sessions");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(sessionRoot));
   let next = 1;
   const adapter: PiAdapter = {
     async create(cwd) {
@@ -138,6 +140,13 @@ async function fixture(): Promise<{
           path: `/sessions/${sessionId}`,
         }));
     },
+    async resolveDeleteTarget(cwd, sessionId) {
+      const info = (await this.list(cwd)).find(
+        (candidate) => candidate.sessionId === sessionId,
+      );
+      if (!info) throw new Error("missing");
+      return { info, sessionRoot };
+    },
     async open(info, cwd) {
       const record = records.get(info.sessionId);
       if (!record || record.cwd !== cwd) throw new Error("missing");
@@ -154,6 +163,127 @@ afterEach(async () => {
 });
 
 describe("ChatService", () => {
+  it("moves an idle session to trash and disposes a loaded runtime", async () => {
+    const { root, records, adapter } = await fixture();
+    const trashed: string[] = [];
+    const service = new ChatService(() => root, {
+      adapter,
+      trashItem: async (sessionPath) => {
+        trashed.push(sessionPath);
+        await rm(sessionPath);
+      },
+    });
+    const summary = await service.create("w1");
+    const record = records.get(summary.sessionId)!;
+    const sessionPath = path.join(
+      root,
+      "sessions",
+      `${summary.sessionId}.jsonl`,
+    );
+    await writeFile(sessionPath, "{}\n");
+    vi.spyOn(adapter, "list").mockResolvedValueOnce([
+      {
+        sessionId: summary.sessionId,
+        cwd: root,
+        title: record.title,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        path: sessionPath,
+      },
+    ]);
+
+    await service.delete("w1", summary.sessionId);
+
+    expect(trashed).toEqual([
+      await realpath(path.dirname(sessionPath)).then((dir) =>
+        path.join(dir, path.basename(sessionPath)),
+      ),
+    ]);
+    await expect(access(sessionPath)).rejects.toThrow();
+    expect((record.session as FakeSession).calls).toContainEqual(["dispose"]);
+    await expect(service.config("w1", summary.sessionId)).rejects.toMatchObject(
+      {
+        code: "CHAT_SESSION_NOT_FOUND",
+      },
+    );
+  });
+
+  it("rejects deleting busy sessions and preserves a session when trash fails", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, {
+      adapter,
+      trashItem: async () => {
+        throw new Error("trash failed");
+      },
+    });
+    const summary = await service.create("w1");
+    const record = records.get(summary.sessionId)!;
+    const session = record.session as FakeSession;
+    const sessionPath = path.join(
+      root,
+      "sessions",
+      `${summary.sessionId}.jsonl`,
+    );
+    await writeFile(sessionPath, "{}\n");
+    vi.spyOn(adapter, "list").mockResolvedValue([
+      {
+        sessionId: summary.sessionId,
+        cwd: root,
+        title: record.title,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        path: sessionPath,
+      },
+    ]);
+
+    session.isIdle = false;
+    session.isStreaming = true;
+    await expect(service.delete("w1", summary.sessionId)).rejects.toMatchObject(
+      {
+        code: "CHAT_SESSION_BUSY",
+      },
+    );
+    session.isIdle = true;
+    session.isStreaming = false;
+    await expect(service.delete("w1", summary.sessionId)).rejects.toMatchObject(
+      {
+        code: "CHAT_FAILED",
+        message: "Unable to move chat session to Trash",
+      },
+    );
+    await expect(access(sessionPath)).resolves.toBeUndefined();
+    await expect(
+      service.attach("w1", summary.sessionId, () => undefined),
+    ).resolves.toMatchObject({
+      sessionId: summary.sessionId,
+    });
+  });
+
+  it("rejects session paths outside the resolved worktree listing", async () => {
+    const { root, adapter } = await fixture();
+    const outside = path.join(os.tmpdir(), "outside-session.jsonl");
+    await writeFile(outside, "{}\n");
+    cleanup.push(outside);
+    vi.spyOn(adapter, "resolveDeleteTarget").mockResolvedValue({
+      info: {
+        sessionId: "outside",
+        cwd: root,
+        title: "Outside",
+        createdAt: 1,
+        updatedAt: 1,
+        path: outside,
+      },
+      sessionRoot: path.join(root, "sessions"),
+    });
+    const trashItem = vi.fn();
+    const service = new ChatService(() => root, { adapter, trashItem });
+
+    await expect(service.delete("w1", "outside")).rejects.toMatchObject({
+      code: "CHAT_SESSION_NOT_FOUND",
+    });
+    expect(trashItem).not.toHaveBeenCalled();
+  });
+
   it("resolves canonical roots and preserves DTO, ownership, sequence and abort restoration", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(

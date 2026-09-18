@@ -26,6 +26,22 @@ describe("IPC command argument validation", () => {
     ).toThrow("relativePath is empty or too large");
   });
 
+  it("allows chat deletion IDs without accepting renderer paths", () => {
+    expect(
+      validateCommandArgs("chat_session_delete", {
+        worktreeId: "w1",
+        sessionId: "s1",
+      }),
+    ).toEqual({ worktreeId: "w1", sessionId: "s1" });
+    expect(() =>
+      validateCommandArgs("chat_session_delete", {
+        worktreeId: "w1",
+        sessionId: "s1",
+        path: "/tmp/session.jsonl",
+      }),
+    ).toThrow("Unexpected argument: path");
+  });
+
   it("validates narrow chat configuration arguments", () => {
     expect(
       validateCommandArgs("chat_session_set_model", {

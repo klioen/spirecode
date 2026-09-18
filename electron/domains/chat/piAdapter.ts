@@ -62,6 +62,10 @@ export interface PiSessionInfo {
 export interface PiAdapter {
   create(cwd: string): Promise<PiSessionRecord>;
   list(cwd: string): Promise<PiSessionInfo[]>;
+  resolveDeleteTarget(
+    cwd: string,
+    sessionId: string,
+  ): Promise<{ info: PiSessionInfo; sessionRoot: string } | undefined>;
   open(info: PiSessionInfo, cwd: string): Promise<PiSessionRecord>;
 }
 
@@ -86,6 +90,7 @@ export interface PiSettingsManager {
 interface PiSessionManager {
   buildSessionContext(): { messages: unknown[] };
   getBranch(): unknown[];
+  getSessionDir(): string;
 }
 
 interface PiServices {
@@ -324,6 +329,30 @@ export async function createPiAdapter(
         updatedAt:
           dateValue(info.modified) ?? dateValue(info.created) ?? Date.now(),
       }));
+    },
+    async resolveDeleteTarget(cwd, sessionId) {
+      const matches = (await sdk.SessionManager.list(cwd)).filter(
+        (info) => String(info.id ?? info.sessionId ?? "") === sessionId,
+      );
+      if (matches.length === 0) return undefined;
+      if (matches.length !== 1) throw new Error("Duplicate session ID");
+      const raw = matches[0];
+      if (typeof raw.cwd !== "string" || !raw.cwd)
+        throw new Error("Session cwd is unavailable");
+      if (typeof raw.path !== "string" || !raw.path)
+        throw new Error("Session path is unavailable");
+      return {
+        info: {
+          sessionId,
+          cwd: raw.cwd,
+          title: typeof raw.name === "string" ? raw.name : "New chat",
+          path: raw.path,
+          createdAt: dateValue(raw.created) ?? Date.now(),
+          updatedAt:
+            dateValue(raw.modified) ?? dateValue(raw.created) ?? Date.now(),
+        },
+        sessionRoot: sdk.SessionManager.create(cwd).getSessionDir(),
+      };
     },
     async open(info, cwd) {
       if (!info.path) throw new Error("Session path is unavailable");

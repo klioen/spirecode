@@ -1995,6 +1995,11 @@ details[open] > summary > .chat-disclosure-icon {
   padding: 0;
   list-style: none;
 }
+.chat-history-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
 .chat-history-item {
   width: 100%;
   min-height: 38px;
@@ -2022,9 +2027,31 @@ details[open] > summary > .chat-disclosure-icon {
   font-size: 12px;
 }
 .chat-history-item:hover,
-.chat-history-close:hover {
+.chat-history-close:hover,
+.chat-history-delete:hover {
   background: var(--control-hover);
   color: var(--text-default);
+}
+.chat-history-delete {
+  width: 28px;
+  height: 28px;
+  margin-right: 5px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  opacity: 0;
+}
+.chat-history-row:hover .chat-history-delete,
+.chat-history-row:focus-within .chat-history-delete {
+  opacity: 1;
+}
+.chat-history-delete:hover {
+  color: var(--danger);
 }
 .chat-history-item[aria-current="true"] {
   background: var(--accent-soft);
@@ -2043,9 +2070,69 @@ details[open] > summary > .chat-disclosure-icon {
   flex-shrink: 0;
 }
 .chat-history-item:focus-visible,
-.chat-history-close:focus-visible {
+.chat-history-close:focus-visible,
+.chat-history-delete:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: -2px;
+}
+.chat-delete-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--modal-overlay);
+}
+.chat-delete-dialog {
+  position: fixed;
+  z-index: 81;
+  top: 50%;
+  left: 50%;
+  width: min(360px, calc(100vw - 32px));
+  padding: 18px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--elevated-bg);
+  box-shadow: 0 18px 55px var(--shadow);
+  color: var(--text-default);
+}
+.chat-delete-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.chat-delete-dialog p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.chat-delete-error {
+  margin-top: 10px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.chat-delete-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.chat-delete-actions button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--text-default);
+  cursor: pointer;
+}
+.chat-delete-actions button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.chat-delete-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 .chat-history-state {
   min-height: 120px;

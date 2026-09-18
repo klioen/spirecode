@@ -266,4 +266,13 @@ export const commands = {
     }),
   chatSessionAbort: (worktreeId: string, sessionId: string) =>
     command<ChatAccepted>("chat_session_abort", { worktreeId, sessionId }),
+  chatSessionDelete: async (worktreeId: string, sessionId: string) => {
+    const attached = chatSubscriptions.get(sessionId);
+    await command<void>("chat_session_delete", { worktreeId, sessionId });
+    const current = chatSubscriptions.get(sessionId);
+    if (current && attached && current.id === attached.id) {
+      current.unsubscribe();
+      chatSubscriptions.delete(sessionId);
+    }
+  },
 };

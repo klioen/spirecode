@@ -44,6 +44,7 @@ export interface ChatApi {
     text: string,
   ): Promise<ChatAccepted>;
   abort(worktreeId: string, sessionId: string): Promise<ChatAccepted>;
+  delete(worktreeId: string, sessionId: string): Promise<void>;
 }
 
 function unavailable(): never {
@@ -59,4 +60,5 @@ export const unavailableChatApi: ChatApi = {
   setThinkingLevel: async () => unavailable(),
   send: async () => unavailable(),
   abort: async () => unavailable(),
+  delete: async () => unavailable(),
 };

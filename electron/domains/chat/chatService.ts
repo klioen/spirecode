@@ -1,5 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 import { Buffer } from "node:buffer";
+import path from "node:path";
 import {
   createPiAdapter,
   type PiAdapter,
@@ -42,6 +43,7 @@ export interface ChatServiceOptions {
     basePaths: string[],
   ) => Promise<string[]>;
   maxBufferedEvents?: number;
+  trashItem?: (sessionPath: string) => Promise<void>;
 }
 
 export class ChatService {
@@ -50,6 +52,9 @@ export class ChatService {
   private adapterPromise?: Promise<PiAdapter>;
   private readonly adapterFactory: () => Promise<PiAdapter>;
   private readonly maxBufferedEvents: number;
+  private readonly trashItem?: (sessionPath: string) => Promise<void>;
+  private readonly deleting = new Set<string>();
+  private readonly lifecycleTails = new Map<string, Promise<void>>();
 
   constructor(
     private readonly rootResolver: RootResolver,
@@ -63,6 +68,7 @@ export class ChatService {
           }),
       );
     this.maxBufferedEvents = options.maxBufferedEvents ?? MAX_BUFFERED_EVENTS;
+    this.trashItem = options.trashItem;
   }
 
   async create(worktreeId: string): Promise<ChatSessionSummary> {
@@ -97,7 +103,17 @@ export class ChatService {
     }
   }
 
-  async attach(
+  attach(
+    worktreeId: string,
+    sessionId: string,
+    subscriber: ChatEventSubscriber,
+  ): Promise<ChatSnapshot> {
+    return this.runLifecycle(sessionId, () =>
+      this.attachUnlocked(worktreeId, sessionId, subscriber),
+    );
+  }
+
+  private async attachUnlocked(
     worktreeId: string,
     sessionId: string,
     subscriber: ChatEventSubscriber,
@@ -134,7 +150,13 @@ export class ChatService {
     record.attaching = false;
   }
 
-  async config(
+  config(worktreeId: string, sessionId: string): Promise<ChatSessionConfig> {
+    return this.runLifecycle(sessionId, () =>
+      this.configUnlocked(worktreeId, sessionId),
+    );
+  }
+
+  private async configUnlocked(
     worktreeId: string,
     sessionId: string,
   ): Promise<ChatSessionConfig> {
@@ -147,7 +169,18 @@ export class ChatService {
     }
   }
 
-  async setModel(
+  setModel(
+    worktreeId: string,
+    sessionId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<ChatSessionConfig> {
+    return this.runLifecycle(sessionId, () =>
+      this.setModelUnlocked(worktreeId, sessionId, provider, modelId),
+    );
+  }
+
+  private async setModelUnlocked(
     worktreeId: string,
     sessionId: string,
     provider: string,
@@ -172,7 +205,17 @@ export class ChatService {
     }
   }
 
-  async setThinkingLevel(
+  setThinkingLevel(
+    worktreeId: string,
+    sessionId: string,
+    level: ChatThinkingLevel,
+  ): Promise<ChatSessionConfig> {
+    return this.runLifecycle(sessionId, () =>
+      this.setThinkingLevelUnlocked(worktreeId, sessionId, level),
+    );
+  }
+
+  private async setThinkingLevelUnlocked(
     worktreeId: string,
     sessionId: string,
     level: ChatThinkingLevel,
@@ -192,7 +235,17 @@ export class ChatService {
     }
   }
 
-  async send(
+  send(
+    worktreeId: string,
+    sessionId: string,
+    text: string,
+  ): Promise<ChatAccepted> {
+    return this.runLifecycle(sessionId, () =>
+      this.sendUnlocked(worktreeId, sessionId, text),
+    );
+  }
+
+  private async sendUnlocked(
     worktreeId: string,
     sessionId: string,
     text: string,
@@ -203,7 +256,7 @@ export class ChatService {
     if (nativeCommand?.kind === "invalid")
       throw new ChatError("CHAT_FAILED", nativeCommand.message);
     if (nativeCommand?.kind === "model") {
-      await this.setModel(
+      await this.setModelUnlocked(
         worktreeId,
         sessionId,
         nativeCommand.provider,
@@ -212,7 +265,11 @@ export class ChatService {
       return { accepted: true };
     }
     if (nativeCommand?.kind === "thinking") {
-      await this.setThinkingLevel(worktreeId, sessionId, nativeCommand.level);
+      await this.setThinkingLevelUnlocked(
+        worktreeId,
+        sessionId,
+        nativeCommand.level,
+      );
       return { accepted: true };
     }
     const record = this.requireUsable(worktreeId, sessionId);
@@ -224,7 +281,16 @@ export class ChatService {
     }
   }
 
-  async abort(worktreeId: string, sessionId: string): Promise<ChatAccepted> {
+  abort(worktreeId: string, sessionId: string): Promise<ChatAccepted> {
+    return this.runLifecycle(sessionId, () =>
+      this.abortUnlocked(worktreeId, sessionId),
+    );
+  }
+
+  private async abortUnlocked(
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<ChatAccepted> {
     await this.root(worktreeId);
     const record = this.requireUsable(worktreeId, sessionId);
     try {
@@ -238,6 +304,77 @@ export class ChatService {
       return { accepted: true, restored: [...restored] };
     } catch (error) {
       throw mapChatError(error, "Unable to abort agent session");
+    }
+  }
+
+  delete(worktreeId: string, sessionId: string): Promise<void> {
+    return this.runLifecycle(sessionId, () =>
+      this.deleteUnlocked(worktreeId, sessionId),
+    );
+  }
+
+  private async deleteUnlocked(
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<void> {
+    const cwd = await this.root(worktreeId);
+    if (this.deleting.has(sessionId))
+      throw new ChatError("CHAT_SESSION_BUSY", "Chat session is being deleted");
+    const loaded = this.sessions.get(sessionId);
+    if (loaded) {
+      this.assertOwner(loaded, worktreeId);
+      if (!loaded.session.isIdle || loaded.session.isStreaming)
+        throw new ChatError(
+          "CHAT_SESSION_BUSY",
+          "Stop the running chat before deleting it",
+        );
+    }
+
+    this.deleting.add(sessionId);
+    try {
+      const target = await (
+        await this.adapter()
+      ).resolveDeleteTarget(cwd, sessionId);
+      if (!target?.info.path) throw notFound();
+      let targetCwd: string;
+      try {
+        targetCwd = await realpath(target.info.cwd);
+      } catch {
+        throw notFound();
+      }
+      if (targetCwd !== cwd) throw notFound();
+      const [sessionPath, sessionRoot] = await Promise.all([
+        realpath(target.info.path),
+        realpath(target.sessionRoot),
+      ]);
+      if (!(await stat(sessionRoot)).isDirectory()) throw notFound();
+      if (
+        !(await stat(sessionPath)).isFile() ||
+        !isWithin(sessionRoot, sessionPath)
+      )
+        throw notFound();
+      if (!this.trashItem)
+        throw new ChatError("CHAT_FAILED", "Trash is unavailable");
+
+      if (loaded) {
+        loaded.subscriber = undefined;
+        loaded.attaching = false;
+        loaded.unsubscribe();
+        this.sessions.delete(sessionId);
+        this.owners.delete(sessionId);
+        await loaded.session.dispose();
+      }
+      try {
+        await this.trashItem(sessionPath);
+      } catch (error) {
+        throw mapChatError(error, "Unable to move chat session to Trash");
+      }
+      this.sessions.delete(sessionId);
+      this.owners.delete(sessionId);
+    } catch (error) {
+      throw mapChatError(error, "Unable to delete chat session");
+    } finally {
+      this.deleting.delete(sessionId);
     }
   }
 
@@ -286,6 +423,24 @@ export class ChatService {
     if (failure)
       throw mapChatError(failure, "Unable to dispose agent sessions");
     return { disposed: records.length };
+  }
+
+  private runLifecycle<T>(
+    sessionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.lifecycleTails.get(sessionId) ?? Promise.resolve();
+    const result = previous.catch(() => undefined).then(operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.lifecycleTails.set(sessionId, tail);
+    void tail.finally(() => {
+      if (this.lifecycleTails.get(sessionId) === tail)
+        this.lifecycleTails.delete(sessionId);
+    });
+    return result;
   }
 
   private adapter(): Promise<PiAdapter> {
@@ -450,6 +605,8 @@ export class ChatService {
   }
 
   private requireUsable(worktreeId: string, sessionId: string): SessionState {
+    if (this.deleting.has(sessionId))
+      throw new ChatError("CHAT_SESSION_BUSY", "Chat session is being deleted");
     const record = this.requireOwned(worktreeId, sessionId);
     if (record.needsResnapshot) throw resnapshotError();
     return record;
@@ -551,6 +708,16 @@ function notFound(message = "Chat session not found"): ChatError {
 
 function protocolError(message: string): ChatError {
   return new ChatError("CHAT_PROTOCOL_ERROR", message);
+}
+
+function isWithin(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return (
+    relative !== "" &&
+    !relative.startsWith(`..${path.sep}`) &&
+    relative !== ".." &&
+    !path.isAbsolute(relative)
+  );
 }
 
 function resnapshotError(): ChatError {
