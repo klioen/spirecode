@@ -8,7 +8,12 @@
 - `scripts/package-electron.mjs`：从 macOS 固定流水线改为目标宿主平台分派，同时保持公共准备步骤。
 - `scripts/smoke-packaged-app.mjs`：跨平台验证 Windows/Linux unpacked app、asar、Pi 扩展、node-pty、Pi SDK 和 GUI 启动；Linux 由 dispatcher 在 `xvfb-run` 下调用。
 - `electron/domains/terminal/service.ts`：增加 Windows/Unix 默认 shell 选择。
-- `electron/domains/terminal/service.test.ts`：覆盖 Windows COMSPEC 和 Unix fallback。
+- `electron/domains/terminal/service.test.ts`：覆盖 Windows COMSPEC、Unix fallback，并使用宿主平台期望 shell。
+- `electron/domains/persistence/{index.ts,persistence.test.ts}`：Windows 保留文件 fsync，但容忍目录 fsync 的 `EPERM` / `EINVAL`。
+- `electron/domains/filesystem/pathGuard.ts`：同时拒绝 POSIX 和 Windows 风格的绝对路径与 traversal 分隔符。
+- `electron/domains/chat/bundledResources.ts`：将 Windows drive 绝对路径识别为本地 package source。
+- `electron/core/gitProcess.ts`：超时/输出超限后等待 Git 子进程真正关闭再返回，避免 Windows 临时目录锁残留。
+- `electron/security/navigation.test.ts`：使用宿主平台生成的 file URL fixture。
 - `electron/domains/chat/shellEnvironment.ts`：限制登录 zsh bootstrap 的平台范围。
 - `electron/domains/chat/shellEnvironment.test.ts`：覆盖非 macOS 跳过行为。
 - `.github/workflows/ci.yml`：增加 macOS、Windows、Linux 原生 matrix build、bundle 和 artifact upload。
@@ -22,7 +27,8 @@
 3. 重构 package dispatcher，公共阶段只实现一次，平台特有签名、产物生成和 smoke 明确分支。
 4. 增加共享的 Windows/Linux artifact smoke；复用现有 Pi 扩展校验器和 asar API，实测最终 artifact 内的原生模块与 SDK。
 5. 将 CI 改为三平台 matrix，在 PR 执行检查，在 main push 打包并上传平台产物；用 `.gitattributes` 保证 Windows checkout 后 Prettier 看到的换行不漂移。
-6. 更新工程指南，运行格式、lint、typecheck、单元测试和当前 macOS bundle 回归。
+6. 根据三平台 PR CI 修复 Windows 暴露的目录 fsync、路径语义、Git 子进程清理和平台相关测试 fixture，禁止整个平台跳过测试。
+7. 更新工程指南，运行格式、lint、typecheck、单元测试和当前 macOS bundle 回归。
 
 ## Risks
 

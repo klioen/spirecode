@@ -81,17 +81,30 @@ export async function saveAtomic(
     await rename(temp, filePath);
 
     // Directory fsync makes the rename durable on platforms that support it.
-    const directory = await open(parent, constants.O_RDONLY);
     try {
-      await directory.sync();
-    } finally {
-      await directory.close();
+      const directory = await open(parent, constants.O_RDONLY);
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    } catch (error) {
+      if (!directorySyncUnsupported(error, process.platform)) throw error;
     }
   } catch (error) {
     if (handle) await handle.close().catch(() => undefined);
     await rm(temp, { force: true }).catch(() => undefined);
     throw error instanceof CommandError ? error : toCommandError(error);
   }
+}
+
+export function directorySyncUnsupported(
+  error: unknown,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") return false;
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EPERM" || code === "EINVAL";
 }
 
 export async function exists(filePath: string): Promise<boolean> {

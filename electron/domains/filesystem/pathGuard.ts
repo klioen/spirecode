@@ -18,14 +18,18 @@ function isWithin(root: string, candidate: string): boolean {
 }
 
 function validateRelativePath(relativePath: string): void {
-  if (path.isAbsolute(relativePath)) {
+  if (
+    path.isAbsolute(relativePath) ||
+    path.posix.isAbsolute(relativePath) ||
+    path.win32.isAbsolute(relativePath)
+  ) {
     throw new CommandError(
       "OUTSIDE_PROJECT",
       "path must contain only normal relative components",
     );
   }
 
-  const components = relativePath.split(path.sep);
+  const components = relativePath.split(/[\\/]/);
   if (components.some((component) => component === "." || component === "..")) {
     throw new CommandError(
       "OUTSIDE_PROJECT",

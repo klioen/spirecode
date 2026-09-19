@@ -123,8 +123,10 @@ describe("TerminalService", () => {
     const summary = await service.create("worktree-1", 80, 24);
 
     expect(resolveRoot).toHaveBeenCalledWith("worktree-1");
+    const expectedShell =
+      process.platform === "win32" ? process.env.COMSPEC : "/bin/sh";
     expect(spawn).toHaveBeenCalledWith(
-      "/bin/sh",
+      expectedShell,
       [],
       expect.objectContaining({
         cwd: "/tmp/worktree",
