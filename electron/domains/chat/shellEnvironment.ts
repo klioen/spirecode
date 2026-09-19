@@ -10,8 +10,9 @@ type ShellRunner = (file: string, args: readonly string[]) => Promise<Buffer>;
 export async function bootstrapArkApiKeyFromLoginShell(
   env: Record<string, string | undefined> = process.env,
   run: ShellRunner = runShell,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
-  if (env.ARK_API_KEY) return false;
+  if (env.ARK_API_KEY || platform !== "darwin") return false;
   let output: Buffer;
   try {
     output = await run("/bin/zsh", ["-ilc", READ_ARK_API_KEY]);

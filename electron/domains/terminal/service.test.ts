@@ -102,7 +102,7 @@ describe("shellForPlatform", () => {
     expect(() =>
       shellForPlatform(
         "win32",
-        { COMSPEC: "cmd.exe", SystemRoot: "relative" },
+        { COMSPEC: "cmd.exe", SystemRoot: "D:\\MissingWindows" },
         existing,
       ),
     ).toThrow("Windows command interpreter");

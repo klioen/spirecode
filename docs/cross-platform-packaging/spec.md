@@ -29,8 +29,8 @@
 `scripts/package-electron.mjs` 保留公共的 clean → prepare resources → check resources → build 流程，然后按 `process.platform` 分派：
 
 - Darwin：沿用当前 dir → verify extensions → sign → DMG → app smoke → DMG smoke。
-- Windows：先构建 unpacked app 并执行 PowerShell smoke，再生成 NSIS。
-- Linux：先构建 unpacked app 并执行 shell smoke，再生成 AppImage/deb。
+- Windows：先构建 unpacked app 并执行共享 Node artifact smoke，再生成 NSIS。
+- Linux：先构建 unpacked app，在 `xvfb-run` 下执行共享 Node artifact smoke，再生成 AppImage/deb。
 
 所有子进程继续通过 executable + argument array 启动，不使用拼接 shell 命令。
 
@@ -46,7 +46,7 @@
 - Pi SDK 可 import 且 `ModelRuntime.create()` 可离线初始化；
 - GUI 进程能启动并保持存活一个有界时间，然后由 smoke 主动结束。
 
-Windows 使用 PowerShell 脚本，Linux 使用 Bash。安装器本身至少验证文件存在且非空；安装交互/系统级安装不在 CI 中执行。
+Windows 和 Linux 共用 Node smoke runner，避免复制 asar、Pi SDK 和 native module 验证逻辑；平台 dispatcher 负责传入各自目录和 executable。安装器本身由 artifact upload 的 `if-no-files-found: error` 验证存在；安装交互/系统级安装不在 CI 中执行。
 
 ### CI
 

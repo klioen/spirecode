@@ -24,9 +24,9 @@ describe("bootstrapArkApiKeyFromLoginShell", () => {
   it("skips the macOS login shell bootstrap on other platforms", async () => {
     const env: Record<string, string | undefined> = {};
     const run = vi.fn();
-    expect(
-      await bootstrapArkApiKeyFromLoginShell(env, run, "win32"),
-    ).toBe(false);
+    expect(await bootstrapArkApiKeyFromLoginShell(env, run, "win32")).toBe(
+      false,
+    );
     expect(run).not.toHaveBeenCalled();
     expect(env.ARK_API_KEY).toBeUndefined();
   });

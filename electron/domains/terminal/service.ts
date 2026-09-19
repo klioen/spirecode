@@ -57,14 +57,18 @@ export class TerminalService {
 
     let pty: IPty;
     try {
-      pty = nodePty.spawn(validShell(), [], {
-        name: "xterm-256color",
-        cols,
-        rows,
-        cwd,
-        env: { ...process.env },
-        encoding: null,
-      });
+      pty = nodePty.spawn(
+        shellForPlatform(process.platform, process.env, isFile),
+        [],
+        {
+          name: "xterm-256color",
+          cols,
+          rows,
+          cwd,
+          env: { ...process.env },
+          encoding: null,
+        },
+      );
     } catch (error) {
       throw terminalError(error);
     }
@@ -355,11 +359,33 @@ function validateSize(cols: number, rows: number): void {
   );
 }
 
-function validShell(): string {
-  const configured = process.env.SHELL;
-  if (configured && path.isAbsolute(configured) && isFile(configured))
+export function shellForPlatform(
+  platform: NodeJS.Platform,
+  env: Record<string, string | undefined>,
+  exists: (candidate: string) => boolean,
+): string {
+  if (platform === "win32") {
+    const configured = env.COMSPEC;
+    if (configured && path.win32.isAbsolute(configured) && exists(configured)) {
+      return configured;
+    }
+    const configuredSystemRoot = env.SystemRoot ?? env.SYSTEMROOT;
+    const systemRoot =
+      configuredSystemRoot && path.win32.isAbsolute(configuredSystemRoot)
+        ? configuredSystemRoot
+        : "C:\\Windows";
+    const systemShell = path.win32.join(systemRoot, "System32", "cmd.exe");
+    if (exists(systemShell)) return systemShell;
+    throw new Error("Windows command interpreter is unavailable");
+  }
+
+  const configured = env.SHELL;
+  if (configured && path.posix.isAbsolute(configured) && exists(configured)) {
     return configured;
-  if (isFile("/bin/zsh")) return "/bin/zsh";
+  }
+  for (const candidate of ["/bin/zsh", "/bin/bash", "/bin/sh"]) {
+    if (exists(candidate)) return candidate;
+  }
   return "/bin/sh";
 }
 
