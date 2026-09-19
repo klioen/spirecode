@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Generate SpireCode platform icons from the Code Spire geometry."""
+"""Generate SpireCode platform icons from the simplified single-S geometry."""
 
 from __future__ import annotations
 
-import math
 import shutil
 import subprocess
 import tempfile
@@ -19,38 +18,34 @@ CANVAS = 1024
 
 BACKGROUND_TOP = (18, 37, 42, 255)
 BACKGROUND_BOTTOM = (8, 18, 23, 255)
-CYAN_TOP = (53, 226, 242, 255)
-CYAN_BOTTOM = (22, 166, 193, 255)
-GOLD_TOP = (255, 216, 102, 255)
-GOLD_BOTTOM = (243, 154, 30, 255)
-INK = (11, 23, 28, 255)
+CYAN = (53, 226, 242, 255)
+CYAN_MID = (32, 191, 210, 255)
+GOLD = (255, 209, 102, 255)
 
 
 def scaled(value: float) -> int:
     return round(value * SCALE)
 
 
-def vertical_gradient(top: tuple[int, ...], bottom: tuple[int, ...]) -> Image.Image:
+def vertical_gradient(stops: list[tuple[float, tuple[int, ...]]]) -> Image.Image:
     height = scaled(CANVAS)
     strip = Image.new("RGBA", (1, height))
     pixels = strip.load()
     for y in range(height):
-        ratio = y / max(height - 1, 1)
+        position = y / max(height - 1, 1)
+        left_offset, left_color = stops[0]
+        right_offset, right_color = stops[-1]
+        for index in range(len(stops) - 1):
+            if stops[index][0] <= position <= stops[index + 1][0]:
+                left_offset, left_color = stops[index]
+                right_offset, right_color = stops[index + 1]
+                break
+        ratio = (position - left_offset) / max(right_offset - left_offset, 1e-9)
         pixels[0, y] = tuple(
-            round(top[channel] * (1 - ratio) + bottom[channel] * ratio)
+            round(left_color[channel] * (1 - ratio) + right_color[channel] * ratio)
             for channel in range(4)
         )
     return strip.resize((height, height))
-
-
-def polygon_layer(points: list[tuple[int, int]], gradient: Image.Image) -> Image.Image:
-    mask = Image.new("L", gradient.size, 0)
-    ImageDraw.Draw(mask).polygon(
-        [(scaled(x), scaled(y)) for x, y in points], fill=255
-    )
-    layer = Image.new("RGBA", gradient.size)
-    layer.paste(gradient, mask=mask)
-    return layer
 
 
 def cubic_bezier(
@@ -64,18 +59,8 @@ def cubic_bezier(
     for index in range(steps + 1):
         t = index / steps
         inverse = 1 - t
-        x = (
-            inverse**3 * start[0]
-            + 3 * inverse**2 * t * control_one[0]
-            + 3 * inverse * t**2 * control_two[0]
-            + t**3 * end[0]
-        )
-        y = (
-            inverse**3 * start[1]
-            + 3 * inverse**2 * t * control_one[1]
-            + 3 * inverse * t**2 * control_two[1]
-            + t**3 * end[1]
-        )
+        x = inverse**3 * start[0] + 3 * inverse**2 * t * control_one[0] + 3 * inverse * t**2 * control_two[0] + t**3 * end[0]
+        y = inverse**3 * start[1] + 3 * inverse**2 * t * control_one[1] + 3 * inverse * t**2 * control_two[1] + t**3 * end[1]
         points.append((scaled(x), scaled(y)))
     return points
 
@@ -85,14 +70,12 @@ def render_master() -> Image.Image:
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
 
     shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow)
-    shadow_draw.rounded_rectangle(
+    ImageDraw.Draw(shadow).rounded_rectangle(
         (scaled(76), scaled(75), scaled(948), scaled(957)),
         radius=scaled(218),
         fill=(0, 0, 0, 120),
     )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(scaled(28)))
-    image.alpha_composite(shadow)
+    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(scaled(28))))
 
     tile_mask = Image.new("L", image.size, 0)
     ImageDraw.Draw(tile_mask).rounded_rectangle(
@@ -100,34 +83,29 @@ def render_master() -> Image.Image:
         radius=scaled(218),
         fill=255,
     )
-    background = vertical_gradient(BACKGROUND_TOP, BACKGROUND_BOTTOM)
+    background = vertical_gradient([(0, BACKGROUND_TOP), (1, BACKGROUND_BOTTOM)])
     tile = Image.new("RGBA", image.size)
     tile.paste(background, mask=tile_mask)
     image.alpha_composite(tile)
 
-    cyan_points = [(492, 168), (218, 378), (218, 670), (492, 860), (492, 704), (354, 610), (354, 448), (492, 344)]
-    gold_points = [(532, 168), (806, 378), (806, 670), (532, 860), (532, 704), (670, 610), (670, 448), (532, 344)]
-    image.alpha_composite(polygon_layer(cyan_points, vertical_gradient(CYAN_TOP, CYAN_BOTTOM)))
-    image.alpha_composite(polygon_layer(gold_points, vertical_gradient(GOLD_TOP, GOLD_BOTTOM)))
-
-    draw = ImageDraw.Draw(image)
-    s_curve = cubic_bezier((669, 331), (590, 276), (390, 291), (382, 421))
-    s_curve += cubic_bezier((382, 421), (374, 547), (658, 498), (651, 637))[1:]
-    s_curve += cubic_bezier((651, 637), (645, 753), (477, 776), (350, 701))[1:]
-    draw.line(
-        s_curve,
-        fill=INK,
-        width=scaled(92),
-        joint="curve",
-    )
-    radius = scaled(46)
-    for point in (s_curve[0], s_curve[-1]):
-        draw.ellipse(
+    curve = cubic_bezier((673, 267), (591, 202), (363, 225), (351, 402))
+    curve += cubic_bezier((351, 402), (340, 559), (675, 496), (665, 657))[1:]
+    curve += cubic_bezier((665, 657), (655, 817), (423, 837), (320, 731))[1:]
+    mark_mask = Image.new("L", image.size, 0)
+    mark_draw = ImageDraw.Draw(mark_mask)
+    mark_draw.line(curve, fill=255, width=scaled(126), joint="curve")
+    radius = scaled(63)
+    for point in (curve[0], curve[-1]):
+        mark_draw.ellipse(
             (point[0] - radius, point[1] - radius, point[0] + radius, point[1] + radius),
-            fill=INK,
+            fill=255,
         )
+    mark_gradient = vertical_gradient([(0, CYAN), (0.48, CYAN_MID), (1, GOLD)])
+    mark = Image.new("RGBA", image.size)
+    mark.paste(mark_gradient, mask=mark_mask)
+    image.alpha_composite(mark)
 
-    draw.rounded_rectangle(
+    ImageDraw.Draw(image).rounded_rectangle(
         (scaled(72), scaled(60), scaled(952), scaled(940)),
         radius=scaled(216),
         outline=(255, 255, 255, 32),
@@ -170,8 +148,7 @@ def generate_icns(master: Image.Image) -> None:
 
 def main() -> None:
     master = render_master()
-    png_sizes = (16, 32, 48, 64, 128, 256, 512)
-    for size in png_sizes:
+    for size in (16, 32, 48, 64, 128, 256, 512):
         save_png(master, size, LINUX_ICONS / f"{size}x{size}.png")
     master.save(
         ASSETS / "icon.ico",
@@ -179,7 +156,7 @@ def main() -> None:
         sizes=[(size, size) for size in (16, 24, 32, 48, 64, 128, 256)],
     )
     generate_icns(master)
-    print("Generated SpireCode icons from Code Spire geometry")
+    print("Generated simplified SpireCode single-S icons")
 
 
 if __name__ == "__main__":
