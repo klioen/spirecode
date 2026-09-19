@@ -58,9 +58,13 @@ beforeEach(() => {
 });
 
 describe("ChangesPanel view modes", () => {
-  it("defaults to the flat list mode", () => {
+  it("defaults to the flat list mode without a manual refresh control", () => {
     render(<ChangesPanel worktreeId="w1" />);
 
+    expect(refreshChanges).toHaveBeenCalledWith("w1");
+    expect(
+      screen.queryByRole("button", { name: "Refresh changes" }),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "List view" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -88,6 +92,16 @@ describe("ChangesPanel view modes", () => {
       screen.getByRole("button", { name: "ChangesPanel.tsx M" }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "main.tsx M" })).toBeVisible();
+
+    expect(src).toHaveStyle({ paddingLeft: "12px" });
+    expect(screen.getByRole("button", { name: "features" })).toHaveStyle({
+      paddingLeft: "20px",
+    });
+    const changedFile = screen.getByRole("button", {
+      name: "ChangesPanel.tsx M",
+    });
+    expect(changedFile).toHaveStyle({ paddingLeft: "36px" });
+    expect(changedFile.querySelector(".tree-indent")).toBeNull();
 
     fireEvent.click(src);
 

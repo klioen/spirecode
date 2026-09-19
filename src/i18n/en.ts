@@ -159,7 +159,6 @@ export const en = {
   "changes.viewMode": "Changes view mode",
   "changes.listView": "List view",
   "changes.treeView": "Tree view",
-  "changes.refresh": "Refresh changes",
   "changes.showingLast": "Showing last result · {error}",
   "changes.readingStatus": "Reading Git status…",
   "changes.unavailable": "Git status unavailable",

@@ -155,7 +155,6 @@ export const zhCN = {
   "changes.viewMode": "更改视图模式",
   "changes.listView": "列表视图",
   "changes.treeView": "树状视图",
-  "changes.refresh": "刷新更改",
   "changes.showingLast": "正在显示上次结果 · {error}",
   "changes.readingStatus": "正在读取 Git 状态…",
   "changes.unavailable": "Git 状态不可用",

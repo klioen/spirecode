@@ -6,7 +6,6 @@ import {
   RiFolder3Line,
   RiFolderOpenLine,
   RiGitCommitLine,
-  RiRefreshLine,
   RiTreeLine,
 } from "@remixicon/react";
 import { type DiffScope, type GitChange } from "../../bindings";
@@ -38,6 +37,8 @@ interface MutableDirectory {
 
 const compareNames = (left: string, right: string) =>
   left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+
+const treeRowPaddingLeft = (depth: number) => 12 + depth * 8;
 
 const buildChangeTree = (changes: GitChange[]): ChangeTreeNode[] => {
   const root: MutableDirectory = {
@@ -128,11 +129,14 @@ function ChangeFileRow({
       className={`change-row ${depth === undefined ? "" : "change-tree-row"} ${active ? "active" : ""}`}
       aria-current={active ? "page" : undefined}
       aria-label={`${label} ${status}`}
-      style={depth === undefined ? undefined : { paddingLeft: 12 + depth * 14 }}
+      style={
+        depth === undefined
+          ? undefined
+          : { paddingLeft: treeRowPaddingLeft(depth) }
+      }
       onClick={() => open(false)}
       onDoubleClick={() => open(true)}
     >
-      {depth !== undefined && <span className="tree-indent" />}
       {change.untracked ? (
         <RiFileAddLine size={14} />
       ) : (
@@ -186,7 +190,7 @@ function ChangeTree({
           className="change-row change-tree-row change-directory-row"
           aria-expanded={isOpen}
           aria-label={node.name}
-          style={{ paddingLeft: 12 + depth * 14 }}
+          style={{ paddingLeft: treeRowPaddingLeft(depth) }}
           onClick={() => toggleDirectory(key)}
         >
           <RiArrowRightSLine className={isOpen ? "rotated" : ""} size={14} />
@@ -325,13 +329,6 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
               <RiTreeLine size={15} />
             </button>
           </div>
-          <button
-            aria-label={t("changes.refresh")}
-            title={t("changes.refresh")}
-            onClick={() => void refreshChanges(worktreeId)}
-          >
-            <RiRefreshLine className={state?.loading ? "spin" : ""} size={15} />
-          </button>
         </div>
       </div>
       {state?.staleError && (

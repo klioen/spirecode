@@ -88,6 +88,22 @@ describe("Workbench panel handles", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses icon-only controls to switch files and changes", () => {
+    render(<Workbench />);
+
+    const files = screen.getByRole("button", { name: "FILES" });
+    const changes = screen.getByRole("button", { name: "CHANGES" });
+    expect(files).toHaveAttribute("title", "FILES");
+    expect(changes).toHaveAttribute("title", "CHANGES");
+    expect(files).toHaveTextContent("");
+    expect(changes).toHaveTextContent("");
+    expect(screen.getByText("Files")).toBeInTheDocument();
+
+    fireEvent.click(changes);
+
+    expect(screen.getByText("Changes")).toBeInTheDocument();
+  });
+
   it("exposes resize separators only for the two auxiliary side panels", () => {
     render(<Workbench />);
 
