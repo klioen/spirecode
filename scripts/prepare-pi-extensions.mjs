@@ -17,6 +17,7 @@ import {
   PI_EXTENSIONS_COMMIT,
   REQUIRED_FILES,
 } from "./pi-extensions-config.mjs";
+import { portableRelativePath } from "./package-helpers.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = join(root, ".build", "pi-extensions");
@@ -63,7 +64,7 @@ for (const [sourceName, expectedName] of BUNDLED_PACKAGES) {
 
 const files = {};
 for (const file of await listFiles(output)) {
-  files[relative(output, file)] = createHash("sha256")
+  files[portableRelativePath(relative(output, file))] = createHash("sha256")
     .update(await readFile(file))
     .digest("hex");
 }
