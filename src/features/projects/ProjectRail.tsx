@@ -8,6 +8,7 @@ import {
   RiMore2Fill,
 } from "@remixicon/react";
 import type { WorktreeSummary } from "../../bindings";
+import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { projectsApi } from "./projectsApi";
@@ -118,7 +119,7 @@ export function ProjectRail() {
   return (
     <aside className="project-rail" aria-label={t("projects.label")}>
       <div className="brand">
-        <span className="brand-mark">S</span>
+        <SpireCodeMark className="brand-mark" />
         <span>SPIRECODE</span>
       </div>
       <div className="project-rail-heading">

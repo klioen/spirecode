@@ -212,9 +212,10 @@ body.panel-resizing-vertical * {
   letter-spacing: 0.12em;
 }
 .brand-mark {
-  color: var(--accent);
-  font-size: 20px;
-  font-weight: 800;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  filter: drop-shadow(0 0 7px var(--accent-glow));
 }
 .project-rail-heading {
   height: 30px;
@@ -2653,10 +2654,9 @@ details[open] > summary > .chat-disclosure-icon {
   );
 }
 .empty-logo {
-  color: var(--accent);
-  font-size: 64px;
-  font-weight: 800;
-  text-shadow: 0 0 40px var(--accent-glow);
+  width: 88px;
+  height: 88px;
+  filter: drop-shadow(0 8px 24px var(--accent-glow));
 }
 .empty-workbench h1 {
   color: var(--text-default);

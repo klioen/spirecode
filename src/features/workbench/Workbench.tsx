@@ -6,6 +6,7 @@ import {
   RiLayoutRightLine,
   RiSettings3Line,
 } from "@remixicon/react";
+import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { useTranslation } from "../../i18n";
 import { ChangesPanel } from "../changes/ChangesPanel";
 import { refreshChanges } from "../changes/changesRefresh";
@@ -30,7 +31,7 @@ function EmptyWorkbench() {
       ?.click();
   return (
     <div className="empty-workbench">
-      <div className="empty-logo">S</div>
+      <SpireCodeMark className="empty-logo" />
       <h1>SpireCode</h1>
       <p className="product-slogan">{t("workbench.slogan")}</p>
       <p>{t("workbench.empty.description")}</p>
