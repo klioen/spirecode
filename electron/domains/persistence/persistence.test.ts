@@ -2,7 +2,12 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { corruptBackupPath, loadOrDefault, saveAtomic } from "./index.js";
+import {
+  corruptBackupPath,
+  directorySyncUnsupported,
+  loadOrDefault,
+  saveAtomic,
+} from "./index.js";
 
 const cleanup: string[] = [];
 
@@ -19,6 +24,18 @@ afterEach(async () => {
   await Promise.all(
     cleanup.splice(0).map((directory) => rm(directory, { recursive: true })),
   );
+});
+
+describe("directorySyncUnsupported", () => {
+  it("accepts the Windows directory fsync EPERM limitation", () => {
+    expect(directorySyncUnsupported({ code: "EPERM" }, "win32")).toBe(true);
+    expect(directorySyncUnsupported({ code: "EINVAL" }, "win32")).toBe(true);
+  });
+
+  it("does not suppress file-system errors on other platforms", () => {
+    expect(directorySyncUnsupported({ code: "EPERM" }, "linux")).toBe(false);
+    expect(directorySyncUnsupported({ code: "EIO" }, "win32")).toBe(false);
+  });
 });
 
 describe("persistence", () => {
