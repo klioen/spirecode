@@ -58,6 +58,11 @@ beforeEach(() => {
 });
 
 describe("ProjectRail", () => {
+  it("renders the shared SpireCode brand mark", () => {
+    render(<ProjectRail />);
+    expect(screen.getByTestId("spirecode-mark")).toBeInTheDocument();
+  });
+
   it("collapses projects by default and toggles their worktrees", () => {
     render(<ProjectRail />);
     const toggle = screen.getByRole("button", {

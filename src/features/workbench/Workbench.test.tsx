@@ -108,6 +108,7 @@ describe("Workbench panel handles", () => {
     expect(
       screen.getByRole("heading", { name: "SpireCode" }),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("spirecode-mark")).toBeInTheDocument();
     expect(
       screen.getByText("Fast Lightweight GUI Code Agent"),
     ).toBeInTheDocument();
