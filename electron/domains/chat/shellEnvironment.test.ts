@@ -21,6 +21,16 @@ describe("bootstrapArkApiKeyFromLoginShell", () => {
     expect(env.ARK_API_KEYS).toBe("pool-key-1,pool-key-2");
   });
 
+  it("skips the macOS login shell bootstrap on other platforms", async () => {
+    const env: Record<string, string | undefined> = {};
+    const run = vi.fn();
+    expect(
+      await bootstrapArkApiKeyFromLoginShell(env, run, "win32"),
+    ).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    expect(env.ARK_API_KEY).toBeUndefined();
+  });
+
   it("does not override an inherited ARK_API_KEY", async () => {
     const env = { ARK_API_KEY: "inherited-key", ARK_API_KEYS: "pool-key" };
     const run = vi.fn();
