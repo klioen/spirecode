@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsDialog } from "./SettingsDialog";
 import { memoryApi } from "./memoryApi";
 import { settingsApi } from "./settingsApi";
-import { initializeLanguage, setLanguage } from "../../i18n";
+import { commands } from "../../bindings";
+import { initializeLanguage } from "../../i18n";
 
 vi.mock("../../bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../bindings")>();
@@ -11,7 +12,7 @@ vi.mock("../../bindings", async (importOriginal) => {
     ...original,
     commands: {
       ...original.commands,
-      diagnosticsCopy: vi.fn().mockResolvedValue("redacted diagnostics"),
+      feedbackOpen: vi.fn().mockResolvedValue(undefined),
     },
   };
 });
@@ -165,15 +166,24 @@ describe("SettingsDialog", () => {
     expect(document.documentElement.lang).toBe("zh-CN");
   });
 
-  it("retranslates diagnostic success after a live language switch", async () => {
+  it("removes diagnostics and keeps feedback as a standalone setting", () => {
     render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
 
-    expect(await screen.findByText("Copied")).toBeInTheDocument();
-    setLanguage("zh-CN");
-    expect(await screen.findByText("已复制")).toBeInTheDocument();
-    expect(screen.queryByText("Copied")).not.toBeInTheDocument();
+    expect(screen.queryByText("Diagnostics")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Copy diagnostics" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reveal logs" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Feedback")).toBeInTheDocument();
+    expect(
+      screen.getByText("Report an issue or share feedback about SpireCode."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send feedback" }));
+
+    expect(commands.feedbackOpen).toHaveBeenCalledOnce();
   });
 
   it("keeps the previous language when persistence fails", async () => {

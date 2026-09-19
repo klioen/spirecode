@@ -19,13 +19,10 @@ export const en = {
   "settings.general.language.description": "Choose the interface language.",
   "settings.general.language.english": "English",
   "settings.general.language.chinese": "简体中文",
-  "settings.general.diagnostics.label": "Diagnostics",
-  "settings.general.diagnostics.description":
-    "Copy a redacted report or open local logs.",
-  "settings.general.diagnostics.copy": "Copy diagnostics",
-  "settings.general.diagnostics.copied": "Copied",
-  "settings.general.diagnostics.reveal": "Reveal logs",
-  "settings.general.feedback": "Send feedback",
+  "settings.general.feedback.label": "Feedback",
+  "settings.general.feedback.description":
+    "Report an issue or share feedback about SpireCode.",
+  "settings.general.feedback.action": "Send feedback",
   "settings.agent.description":
     "SpireCode uses your existing pi configuration.",
   "settings.agent.configuration": "Pi configuration",

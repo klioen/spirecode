@@ -122,7 +122,6 @@ export function SettingsDialog({
 function GeneralSettings() {
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
-  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [languageSaving, setLanguageSaving] = useState(false);
   const { language, t } = useTranslation();
@@ -179,53 +178,20 @@ function GeneralSettings() {
       </div>
       <div className="setting-row">
         <div>
-          <b>{t("settings.general.diagnostics.label")}</b>
-          <small>{t("settings.general.diagnostics.description")}</small>
+          <b>{t("settings.general.feedback.label")}</b>
+          <small>{t("settings.general.feedback.description")}</small>
         </div>
-        <div className="settings-actions">
-          <button
-            type="button"
-            onClick={() =>
-              void (async () => {
-                try {
-                  const text = await commands.diagnosticsCopy();
-                  await navigator.clipboard.writeText(text);
-                  setDiagnosticsCopied(true);
-                } catch (caught) {
-                  setError(commandError(caught).message);
-                }
-              })()
-            }
-          >
-            {t("settings.general.diagnostics.copy")}
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void commands
-                .diagnosticsRevealLogs()
-                .catch((caught) => setError(commandError(caught).message))
-            }
-          >
-            {t("settings.general.diagnostics.reveal")}
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void commands
-                .feedbackOpen()
-                .catch((caught) => setError(commandError(caught).message))
-            }
-          >
-            {t("settings.general.feedback")}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() =>
+            void commands
+              .feedbackOpen()
+              .catch((caught) => setError(commandError(caught).message))
+          }
+        >
+          {t("settings.general.feedback.action")}
+        </button>
       </div>
-      {diagnosticsCopied && (
-        <div className="settings-success">
-          {t("settings.general.diagnostics.copied")}
-        </div>
-      )}
       {error && <div className="dialog-error">{error}</div>}
     </section>
   );
