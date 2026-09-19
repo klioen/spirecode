@@ -345,6 +345,9 @@ async function fromPiResource(
 }
 
 async function canonicalPath(value: string): Promise<string> {
+  if (path.win32.isAbsolute(value) || path.posix.isAbsolute(value)) {
+    return realpath(value);
+  }
   if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return value;
   return realpath(value);
 }

@@ -11,7 +11,22 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            artifact_name: spirecode-macos-arm64
+            artifact_path: release/*.dmg
+          - os: windows-latest
+            artifact_name: spirecode-windows-x64
+            artifact_path: release/*.exe
+          - os: ubuntu-latest
+            artifact_name: spirecode-linux-x64
+            artifact_path: |
+              release/*.AppImage
+              release/*.deb
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
       CI_GITHUB_TOKEN: ${{ secrets.CI_GITHUB_TOKEN }}
@@ -29,9 +44,11 @@ jobs:
 
       - name: Configure private git access
         if: ${{ env.CI_GITHUB_TOKEN != '' }}
-        run: >
-          git config --global url."https://${{ env.CI_GITHUB_TOKEN }}@github.com/".insteadOf
-          "https://github.com/"
+        run: git config --global url."https://${{ env.CI_GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot xvfb
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -43,7 +60,7 @@ jobs:
         run: pnpm audit --prod --audit-level moderate
         continue-on-error: true
 
-      - name: Bundle (build, sign, DMG, smoke)
+      - name: Bundle and smoke native artifact
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: pnpm bundle
 
@@ -51,7 +68,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: spirecode-release
-          path: |
-            release/*.dmg
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
           retention-days: 14

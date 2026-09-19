@@ -12,13 +12,25 @@ describe("bootstrapArkApiKeyFromLoginShell", () => {
       ),
     );
 
-    expect(await bootstrapArkApiKeyFromLoginShell(env, run)).toBe(true);
+    expect(await bootstrapArkApiKeyFromLoginShell(env, run, "darwin")).toBe(
+      true,
+    );
     expect(run).toHaveBeenCalledWith("/bin/zsh", [
       "-ilc",
       'printf "\\036SPIRECODE_ARK_API_KEY\\037%s\\036" "${ARK_API_KEY-}"',
     ]);
     expect(env.ARK_API_KEY).toBe("shell-key");
     expect(env.ARK_API_KEYS).toBe("pool-key-1,pool-key-2");
+  });
+
+  it("skips the macOS login shell bootstrap on other platforms", async () => {
+    const env: Record<string, string | undefined> = {};
+    const run = vi.fn();
+    expect(await bootstrapArkApiKeyFromLoginShell(env, run, "win32")).toBe(
+      false,
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(env.ARK_API_KEY).toBeUndefined();
   });
 
   it("does not override an inherited ARK_API_KEY", async () => {

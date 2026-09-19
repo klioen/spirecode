@@ -325,7 +325,10 @@ function bundledNpmPackage(source: string): string | undefined {
 
 function isLocalPath(source: string): boolean {
   return (
-    source.startsWith(".") || source.startsWith("/") || source.startsWith("~")
+    source.startsWith(".") ||
+    source.startsWith("/") ||
+    source.startsWith("~") ||
+    path.win32.isAbsolute(source)
   );
 }
 

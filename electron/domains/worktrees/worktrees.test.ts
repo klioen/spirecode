@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -330,14 +331,26 @@ describe("WorktreeService", () => {
     ) as { projectId: string; gitCommonDir: string };
     expect(marker.projectId).toBe(value.project.id);
     expect(marker.projectId).not.toBe(oldProjectId);
-    expect(
-      await git(value.project.path, ["worktree", "list", "--porcelain"]),
-    ).toContain(
-      path.join(
-        value.managedHome,
-        "worktrees",
-        value.project.name,
-        "worktree1",
+    const porcelain = await git(value.project.path, [
+      "worktree",
+      "list",
+      "--porcelain",
+    ]);
+    const listedPaths = porcelain
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => line.slice("worktree ".length));
+    const canonicalListedPaths = await Promise.all(
+      listedPaths.map((listedPath) => realpath(listedPath)),
+    );
+    expect(canonicalListedPaths).toContain(
+      await realpath(
+        path.join(
+          value.managedHome,
+          "worktrees",
+          value.project.name,
+          "worktree1",
+        ),
       ),
     );
   });

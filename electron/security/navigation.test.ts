@@ -1,3 +1,5 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   createRendererLocationPolicy,
@@ -7,15 +9,11 @@ import {
 
 describe("renderer navigation policy", () => {
   it("allows only the packaged renderer entry for file URLs", () => {
-    const policy = createRendererLocationPolicy(
-      "/Applications/SpireCode.app/dist/index.html",
-    );
-    expect(
-      isAllowedRendererUrl(
-        "file:///Applications/SpireCode.app/dist/index.html#/project/1",
-        policy,
-      ),
-    ).toBe(true);
+    const entry = path.resolve("dist/index.html");
+    const policy = createRendererLocationPolicy(entry);
+    const rendererUrl = new URL(pathToFileURL(entry));
+    rendererUrl.hash = "/project/1";
+    expect(isAllowedRendererUrl(rendererUrl.href, policy)).toBe(true);
     expect(isAllowedRendererUrl("file:///tmp/evil.html", policy)).toBe(false);
   });
 

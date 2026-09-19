@@ -47,6 +47,7 @@ export async function runGit(
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let settled = false;
+    let terminationError: CommandError | undefined;
 
     const fail = (error: unknown) => {
       if (settled) return;
@@ -55,12 +56,18 @@ export async function runGit(
       child.kill("SIGKILL");
       reject(toCommandError(error));
     };
+    const terminate = (error: CommandError) => {
+      if (settled || terminationError) return;
+      terminationError = error;
+      clearTimeout(timer);
+      child.kill("SIGKILL");
+    };
     const collect =
       (chunks: Buffer[], stream: "stdout" | "stderr") => (chunk: Buffer) => {
         if (stream === "stdout") stdoutBytes += chunk.length;
         else stderrBytes += chunk.length;
         if (stdoutBytes > maxOutput || stderrBytes > maxOutput) {
-          fail(
+          terminate(
             new CommandError("GIT_FAILED", "Git output exceeded 20 MiB limit"),
           );
           return;
@@ -75,6 +82,10 @@ export async function runGit(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (terminationError) {
+        reject(terminationError);
+        return;
+      }
       const output = {
         stdout: Buffer.concat(stdout),
         stderr: Buffer.concat(stderr),
@@ -94,10 +105,7 @@ export async function runGit(
     });
 
     const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill("SIGKILL");
-      reject(new CommandError("GIT_TIMED_OUT", "Git command timed out"));
+      terminate(new CommandError("GIT_TIMED_OUT", "Git command timed out"));
     }, timeoutMs);
   });
 }

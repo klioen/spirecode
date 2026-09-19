@@ -9,9 +9,9 @@
 
 ## Commands
 - `pnpm check` — formatting, brand, lint, typecheck, and all Renderer/Electron tests. Healthy result: every command exits 0.
-- CI runs the same gate on every push and pull request via GitHub Actions (`.github/workflows/ci.yml`); `main` additionally builds and smoke-tests the unsigned local DMG artifact.
+- CI runs the same gate on macOS, Windows, and Linux for pull requests and pushes to `main` via GitHub Actions (`.github/workflows/ci.yml`); `main` additionally builds and smoke-tests each native artifact.
 - `pnpm dev` — run Vite, Electron main watch, and the development app.
-- `pnpm bundle` — build and package the Apple Silicon `.app` and `.dmg` under `release/`.
+- `pnpm bundle` — package the native host target under `release/`: macOS arm64 DMG, Windows x64 NSIS, or Linux x64 AppImage + deb. Run it on the target OS because `node-pty` is native.
 
 ## Conventions
 - Keep npm dependencies pinned and commit `pnpm-lock.yaml`.

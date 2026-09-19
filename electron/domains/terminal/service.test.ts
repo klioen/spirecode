@@ -63,13 +63,56 @@ const { spawned, spawn } = vi.hoisted(() => {
 
 vi.mock("node-pty", () => ({ spawn }));
 
-import { TerminalService } from "./service.js";
+import { shellForPlatform, TerminalService } from "./service.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
   spawned.length = 0;
   spawn.mockClear();
   process.env.SHELL = "/bin/sh";
+});
+
+describe("shellForPlatform", () => {
+  const existing = (candidate: string) =>
+    ["/bin/bash", "/bin/sh", "C:\\Windows\\System32\\cmd.exe"].includes(
+      candidate,
+    );
+
+  it("uses a valid absolute COMSPEC on Windows", () => {
+    expect(
+      shellForPlatform(
+        "win32",
+        { COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+        existing,
+      ),
+    ).toBe("C:\\Windows\\System32\\cmd.exe");
+  });
+
+  it("rejects a relative Windows COMSPEC and uses the system cmd path", () => {
+    expect(
+      shellForPlatform(
+        "win32",
+        { COMSPEC: "cmd.exe", SystemRoot: "C:\\Windows" },
+        existing,
+      ),
+    ).toBe("C:\\Windows\\System32\\cmd.exe");
+  });
+
+  it("fails closed when Windows has no trusted system shell", () => {
+    expect(() =>
+      shellForPlatform(
+        "win32",
+        { COMSPEC: "cmd.exe", SystemRoot: "D:\\MissingWindows" },
+        existing,
+      ),
+    ).toThrow("Windows command interpreter");
+  });
+
+  it("uses the first available Unix shell fallback", () => {
+    expect(shellForPlatform("linux", { SHELL: "bash" }, existing)).toBe(
+      "/bin/bash",
+    );
+  });
 });
 
 describe("TerminalService", () => {
@@ -80,8 +123,10 @@ describe("TerminalService", () => {
     const summary = await service.create("worktree-1", 80, 24);
 
     expect(resolveRoot).toHaveBeenCalledWith("worktree-1");
+    const expectedShell =
+      process.platform === "win32" ? process.env.COMSPEC : "/bin/sh";
     expect(spawn).toHaveBeenCalledWith(
-      "/bin/sh",
+      expectedShell,
       [],
       expect.objectContaining({
         cwd: "/tmp/worktree",

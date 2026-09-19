@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "description": "Fast Lightweight GUI Code Agent",
+  "author": {
+    "name": "SpireCode Maintainers",
+    "email": "klioen@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/klioen/spirecode",
   "type": "module",
   "main": "dist-electron/main.js",
   "packageManager": "pnpm@10.29.2",
@@ -113,6 +118,42 @@
           ]
         }
       ]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}-setup.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "icon": "assets/icons",
+      "category": "Development",
+      "maintainer": "SpireCode Maintainers <klioen@users.noreply.github.com>",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     }
   },
   "pnpm": {
@@ -121,5 +162,10 @@
       "esbuild",
       "node-pty"
     ]
+  },
+  "optionalDependencies": {
+    "@mariozechner/clipboard-darwin-arm64": "0.3.9",
+    "@mariozechner/clipboard-linux-x64-gnu": "0.3.9",
+    "@mariozechner/clipboard-win32-x64-msvc": "0.3.9"
   }
 }
