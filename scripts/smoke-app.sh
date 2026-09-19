@@ -44,6 +44,12 @@ ELECTRON_RUN_AS_NODE=1 "$executable" -e '
   terminal.onData((data) => output += data);
   terminal.onExit(() => process.exit(output.includes("pty-ok") ? 0 : 2));
 ' "$app/Contents/Resources/app.asar"
+ELECTRON_RUN_AS_NODE=1 "$executable" -e '
+  const { createRequire } = require("node:module");
+  const requireFromApp = createRequire(process.argv[1] + "/package.json");
+  const clipboard = requireFromApp("@mariozechner/clipboard-darwin-arm64");
+  process.exit(clipboard ? 0 : 2);
+' "$app/Contents/Resources/app.asar"
 PI_OFFLINE=1 ELECTRON_RUN_AS_NODE=1 "$executable" -e '
   const entry = "file://" + process.argv[1] + "/node_modules/@earendil-works/pi-coding-agent/dist/index.js";
   import(entry).then(async (sdk) => {

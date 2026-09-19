@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { access, rm } from "node:fs/promises";
 import path from "node:path";
+import { stageClipboardPackage } from "./package-helpers.mjs";
 
 const packageManagerCli = process.env.npm_execpath;
 
@@ -27,20 +28,30 @@ function run(command, args, env = process.env) {
 
 const pnpm = "pnpm";
 const buildEnv = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
+const root = process.cwd();
 
 await rm("release", { recursive: true, force: true });
 await run(pnpm, ["prepare:pi-extensions"]);
 await run(pnpm, ["check:pi-extensions"]);
 await run(pnpm, ["build"]);
-
-if (process.platform === "darwin") {
-  await packageMac();
-} else if (process.platform === "win32") {
-  await packageWindows();
-} else if (process.platform === "linux") {
-  await packageLinux();
-} else {
-  throw new Error(`Unsupported packaging platform: ${process.platform}`);
+const stagedClipboard = await stageClipboardPackage(
+  root,
+  process.platform,
+  process.arch,
+);
+console.log(`Staged ${stagedClipboard.packageName} for packaging`);
+try {
+  if (process.platform === "darwin") {
+    await packageMac();
+  } else if (process.platform === "win32") {
+    await packageWindows();
+  } else if (process.platform === "linux") {
+    await packageLinux();
+  } else {
+    throw new Error(`Unsupported packaging platform: ${process.platform}`);
+  }
+} finally {
+  await stagedClipboard.cleanup();
 }
 
 async function packageMac() {
