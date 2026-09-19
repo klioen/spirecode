@@ -20,6 +20,25 @@ vi.mock("../changes/changesRefresh", () => ({
 vi.mock("../editor/EditorPane", () => ({
   EditorPane: () => <main>Editor</main>,
 }));
+vi.mock("./BreadcrumbSwitcher", () => ({
+  BreadcrumbSwitcher: ({
+    activeProject,
+    activeWorktree,
+    branch,
+  }: {
+    activeProject: { name: string };
+    activeWorktree: { name: string };
+    branch: string;
+  }) => (
+    <div data-testid="breadcrumb-switcher">
+      <button>{activeProject.name}</button>
+      <span>{" > "}</span>
+      <button>{activeWorktree.name}</button>
+      <span>{" > "}</span>
+      <span className="breadcrumb-branch">{branch}</span>
+    </div>
+  ),
+}));
 vi.mock("../settings/SettingsDialog", () => ({
   SettingsDialog: ({ onClose }: { onClose: () => void }) => (
     <div role="dialog" aria-label="Settings dialog">
@@ -89,13 +108,9 @@ describe("Workbench panel handles", () => {
     expect(breadcrumb).toHaveTextContent(
       "Project > main > feat/cross-platform-packaging",
     );
-    expect(
-      Array.from(breadcrumb.querySelectorAll(".breadcrumb-level"), (element) =>
-        element.textContent?.trim(),
-      ),
-    ).toEqual(["Project", "main", "feat/cross-platform-packaging"]);
-    expect(breadcrumb.querySelector(".branch")).toHaveClass(
-      "breadcrumb-level-fixed",
+    expect(screen.getByTestId("breadcrumb-switcher")).toBeInTheDocument();
+    expect(breadcrumb.querySelector(".breadcrumb-branch")).toHaveTextContent(
+      "feat/cross-platform-packaging",
     );
     expect(refreshChanges).toHaveBeenCalledWith("w1");
   });

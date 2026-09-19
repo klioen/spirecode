@@ -17,6 +17,7 @@ import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
 import { SettingsDialog } from "../settings/SettingsDialog";
 import { ThemeToggle } from "../theme/ThemeToggle";
+import { BreadcrumbSwitcher } from "./BreadcrumbSwitcher";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 import { PANEL_LIMITS, useWorkbenchStore } from "./workbenchStore";
 
@@ -134,19 +135,11 @@ export function Workbench() {
         >
           <span className="traffic-spacer" />
           {active ? (
-            <>
-              <b className="breadcrumb-level">{active.project.name}</b>
-              <span className="breadcrumb-separator" aria-hidden="true">
-                {" > "}
-              </span>
-              <span className="breadcrumb-level">{active.worktree.name}</span>
-              <span className="breadcrumb-separator" aria-hidden="true">
-                {" > "}
-              </span>
-              <span className="breadcrumb-level breadcrumb-level-fixed branch">
-                {liveBranch ?? active.worktree.branch}
-              </span>
-            </>
+            <BreadcrumbSwitcher
+              activeProject={active.project}
+              activeWorktree={active.worktree}
+              branch={liveBranch ?? active.worktree.branch}
+            />
           ) : (
             <span>{t("workbench.noProject")}</span>
           )}
