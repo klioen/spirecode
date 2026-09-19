@@ -1,18 +1,33 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import { ChatComposer } from "./ChatComposer";
 
 describe("ChatComposer", () => {
-  it("uses the concise input copy without a keyboard hint", () => {
+  beforeEach(() => setLanguage("en"));
+
+  it("uses English by default and switches visible chrome without changing draft content", () => {
     render(<ChatComposer running={false} onSend={vi.fn()} onStop={vi.fn()} />);
 
     expect(
       screen.getByRole("textbox", { name: "Chat message" }),
-    ).toHaveAttribute("placeholder", "随心输入");
-    expect(
-      screen.queryByText("Enter 发送 · Shift+Enter 换行"),
-    ).not.toBeInTheDocument();
+    ).toHaveAttribute("placeholder", "Type anything");
+    const input = screen.getByRole("textbox", { name: "Chat message" });
+    fireEvent.change(input, { target: { value: "/external-command payload" } });
+
+    act(() => setLanguage("zh-CN"));
+    expect(screen.getByRole("textbox", { name: "聊天消息" })).toHaveAttribute(
+      "placeholder",
+      "随心输入",
+    );
+    expect(input).toHaveValue("/external-command payload");
   });
 
   it("submits Enter, preserves Shift+Enter, and ignores IME Enter", async () => {
@@ -137,7 +152,9 @@ describe("ChatComposer", () => {
     );
     expect(onThinkingLevelChange).toHaveBeenCalledWith("xhigh");
     expect(screen.getByRole("option", { name: "Off" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "XHigh" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Extra high" }),
+    ).toBeInTheDocument();
   });
 
   it("filters and completes runtime slash commands with keyboard controls", async () => {

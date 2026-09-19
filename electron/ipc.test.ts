@@ -111,6 +111,25 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: path");
   });
 
+  it("validates narrow language settings arguments", () => {
+    expect(validateCommandArgs("settings_language_get", {})).toEqual({});
+    expect(
+      validateCommandArgs("settings_language_set", { language: "en" }),
+    ).toEqual({ language: "en" });
+    expect(
+      validateCommandArgs("settings_language_set", { language: "zh-CN" }),
+    ).toEqual({ language: "zh-CN" });
+    expect(() =>
+      validateCommandArgs("settings_language_set", { language: "fr" }),
+    ).toThrow("language is invalid");
+    expect(() =>
+      validateCommandArgs("settings_language_set", {
+        language: "en",
+        locale: "en-US",
+      }),
+    ).toThrow("Unexpected argument: locale");
+  });
+
   it("validates memory document IDs without accepting paths", () => {
     expect(
       validateCommandArgs("settings_memory_read", { document: "summary" }),

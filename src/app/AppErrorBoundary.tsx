@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { t } from "../i18n";
 export class AppErrorBoundary extends Component<
   { children: ReactNode },
   { error: Error | null }
@@ -15,9 +16,11 @@ export class AppErrorBoundary extends Component<
       return (
         <main className="fatal-error">
           <span>S</span>
-          <h1>SpireCode could not start</h1>
+          <h1>{t("app.error.title")}</h1>
           <p>{this.state.error.message}</p>
-          <button onClick={() => location.reload()}>Reload</button>
+          <button onClick={() => location.reload()}>
+            {t("app.error.reload")}
+          </button>
         </main>
       );
     return this.props.children;

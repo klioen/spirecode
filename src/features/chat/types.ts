@@ -54,10 +54,14 @@ export interface ChatToolModel {
   status: "running" | "done" | "error";
 }
 
+export type ChatNoticeFallback =
+  "compaction-start" | "compaction-end" | "retry-start" | "retry-end";
+
 export interface ChatNoticeModel {
   id: string;
   kind: "retry" | "compaction" | "error";
-  text: string;
+  text?: string;
+  fallback?: ChatNoticeFallback;
   active: boolean;
 }
 

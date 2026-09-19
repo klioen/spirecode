@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, expect, it } from "vitest";
+import { setLanguage } from "../../i18n";
 import { ProcessFlow } from "./ProcessFlow";
 import type { ChatTimelineItem } from "./types";
 
@@ -18,11 +19,12 @@ const readTool: Extract<ChatTimelineItem, { type: "tool" }> = {
   status: "done",
 };
 
+beforeEach(() => setLanguage("en"));
+
 it("renders a single thinking step directly with a reasoning icon", () => {
   const { container } = render(<ProcessFlow steps={[thinking]} />);
 
-  expect(screen.queryByText(/已执行/)).toBeNull();
-  expect(screen.getByText("深度思考")).toBeInTheDocument();
+  expect(screen.getByText("Thinking")).toBeInTheDocument();
   expect(
     container.querySelector('[data-process-icon="thinking"]'),
   ).not.toBeNull();
@@ -40,13 +42,13 @@ it("renders a single tool directly with a semantic icon and summary", () => {
 it("groups multiple process steps and preserves their icons when expanded", () => {
   const { container } = render(<ProcessFlow steps={[thinking, readTool]} />);
 
-  const groupLabel = screen.getByText("读取文件等多项操作");
+  const groupLabel = screen.getByText("Read file and other operations");
   const group = groupLabel.closest("details");
   expect(group).not.toHaveAttribute("open");
   expect(container.querySelector('[data-process-icon="group"]')).not.toBeNull();
 
   fireEvent.click(groupLabel);
-  expect(within(group!).getByText("深度思考")).toBeVisible();
+  expect(within(group!).getByText("Thinking")).toBeVisible();
   expect(within(group!).getByText("read")).toBeVisible();
   expect(
     container.querySelector('[data-process-icon="thinking"]'),
@@ -69,7 +71,7 @@ it("shows the active semantic action with shimmer while running", () => {
   );
 
   const activeLabel = screen
-    .getAllByText("正在读取文件")
+    .getAllByText("Reading file")
     .find((element) => element.closest(".chat-process-group > summary"));
   expect(activeLabel?.closest("summary")).toHaveClass("chat-process-shimmer");
 });
@@ -126,7 +128,9 @@ it("summarizes completed process groups by semantic actions", () => {
     />,
   );
 
-  expect(screen.getByText("读取文件、执行命令等多项操作")).toBeInTheDocument();
+  expect(
+    screen.getByText("Read file and Run command and other operations"),
+  ).toBeInTheDocument();
 });
 
 it("uses the running tool icon and basename in the active group summary", () => {
@@ -144,11 +148,25 @@ it("uses the running tool icon and basename in the active group summary", () => 
     />,
   );
 
-  const summary = screen.getByText("正在读取文件").closest("summary");
+  const summary = screen.getByText("Reading file").closest("summary");
   expect(summary?.querySelectorAll("[data-process-icon]")).toHaveLength(1);
   expect(summary?.querySelector('[data-process-icon="read"]')).not.toBeNull();
   expect(within(summary!).getByText("ChatView.tsx")).toBeInTheDocument();
   expect(
     within(summary!).queryByText("src/features/chat/ChatView.tsx"),
   ).toBeNull();
+});
+
+it("live-switches semantic process actions while preserving tool content", () => {
+  render(<ProcessFlow steps={[thinking, readTool]} />);
+  expect(screen.getByText("Read file and other operations")).toBeVisible();
+
+  act(() => setLanguage("zh-CN"));
+  expect(screen.getByText("读取文件等多项操作")).toBeVisible();
+  fireEvent.click(screen.getByText("读取文件等多项操作"));
+  expect(screen.getByText("inspect the project")).toBeInTheDocument();
+  expect(screen.getByText("chat.tsx")).toBeInTheDocument();
+  expect(
+    screen.getByRole("tablist", { name: "工具调用详情" }).parentElement,
+  ).toHaveTextContent("src/chat.tsx");
 });

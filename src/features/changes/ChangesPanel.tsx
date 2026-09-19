@@ -10,6 +10,7 @@ import {
   RiTreeLine,
 } from "@remixicon/react";
 import { type DiffScope, type GitChange } from "../../bindings";
+import { formatNumber, useTranslation } from "../../i18n";
 import { diffResourceId, useEditorStore } from "../editor/editorStore";
 import { refreshChanges } from "./changesRefresh";
 import { useChangesStore } from "./changesStore";
@@ -265,6 +266,7 @@ function ChangeGroup({
 }
 
 export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
+  const { t } = useTranslation();
   const state = useChangesStore((store) => store.byWorktree[worktreeId]);
   const mode = useChangesStore((store) => store.mode);
   const setMode = useChangesStore((store) => store.setMode);
@@ -295,32 +297,37 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
     <div className="changes-panel">
       <div className="panel-toolbar">
         <span>
-          {count} change{count === 1 ? "" : "s"}
+          {t(count === 1 ? "changes.count.one" : "changes.count.other", {
+            count: formatNumber(count),
+          })}
         </span>
         <div className="change-toolbar-actions">
-          <div className="change-mode-toggle" aria-label="Changes view mode">
+          <div
+            className="change-mode-toggle"
+            aria-label={t("changes.viewMode")}
+          >
             <button
               className={mode === "list" ? "active" : ""}
-              aria-label="List view"
+              aria-label={t("changes.listView")}
               aria-pressed={mode === "list"}
-              title="List view"
+              title={t("changes.listView")}
               onClick={() => setMode("list")}
             >
               <RiFileListLine size={15} />
             </button>
             <button
               className={mode === "tree" ? "active" : ""}
-              aria-label="Tree view"
+              aria-label={t("changes.treeView")}
               aria-pressed={mode === "tree"}
-              title="Tree view"
+              title={t("changes.treeView")}
               onClick={() => setMode("tree")}
             >
               <RiTreeLine size={15} />
             </button>
           </div>
           <button
-            aria-label="Refresh changes"
-            title="Refresh changes"
+            aria-label={t("changes.refresh")}
+            title={t("changes.refresh")}
             onClick={() => void refreshChanges(worktreeId)}
           >
             <RiRefreshLine className={state?.loading ? "spin" : ""} size={15} />
@@ -329,26 +336,26 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
       </div>
       {state?.staleError && (
         <div className="stale-banner">
-          Showing last result · {state.staleError.message}
+          {t("changes.showingLast", { error: state.staleError.message })}
         </div>
       )}
       {!snapshot && state?.loading && (
-        <div className="tree-state">Reading Git status…</div>
+        <div className="tree-state">{t("changes.readingStatus")}</div>
       )}
       {!snapshot && state?.staleError && (
-        <div className="tree-state error">Git status unavailable</div>
+        <div className="tree-state error">{t("changes.unavailable")}</div>
       )}
       {snapshot && count === 0 && (
         <div className="empty-mini">
           <RiGitCommitLine size={22} />
-          <span>Working tree clean</span>
+          <span>{t("changes.clean")}</span>
         </div>
       )}
       {snapshot && (
         <>
           <ChangeGroup
             worktreeId={worktreeId}
-            title="STAGED"
+            title={t("changes.staged")}
             changes={staged}
             scope="staged"
             activeTabId={activeTabId}
@@ -358,7 +365,7 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
           />
           <ChangeGroup
             worktreeId={worktreeId}
-            title="CHANGES"
+            title={t("changes.changes")}
             changes={unstaged}
             scope="unstaged"
             activeTabId={activeTabId}
@@ -368,7 +375,7 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
           />
           <ChangeGroup
             worktreeId={worktreeId}
-            title="UNTRACKED"
+            title={t("changes.untracked")}
             changes={untracked}
             scope="untracked"
             activeTabId={activeTabId}

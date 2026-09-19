@@ -5,13 +5,23 @@ import type {
   WorktreeDeleteInspection,
   WorktreeSummary,
 } from "../../bindings";
+import { formatNumber, useTranslation, type TranslationKey } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { useChangesStore } from "../changes/changesStore";
 import { useEditorStore } from "../editor/editorStore";
 import { useFileTreeStore } from "../files/fileTreeStore";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
-import { validateWorktreeName } from "./worktreeValidation";
+import {
+  validateWorktreeName,
+  type WorktreeNameValidation,
+} from "./worktreeValidation";
+
+const validationKeys: Record<WorktreeNameValidation, TranslationKey> = {
+  required: "worktree.validation.required",
+  tooLong: "worktree.validation.tooLong",
+  pattern: "worktree.validation.pattern",
+};
 
 function DialogFrame({
   title,
@@ -56,6 +66,7 @@ export function NewWorktreeDialog({
   projectName: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const store = useProjectsStore();
   const [catalog, setCatalog] = useState<OriginBranchCatalog | null>(null);
   const [baseRef, setBaseRef] = useState("");
@@ -131,14 +142,17 @@ export function NewWorktreeDialog({
   };
   const creating = store.creatingProjectId === projectId;
   return (
-    <DialogFrame title={`New worktree for ${projectName}`} onClose={onClose}>
+    <DialogFrame
+      title={t("worktree.new.title", { name: projectName })}
+      onClose={onClose}
+    >
       <label>
-        Base branch
+        {t("worktree.baseBranch")}
         <div className="branch-field-row">
           <div className="branch-combobox">
             <input
               role="combobox"
-              aria-label="Base branch"
+              aria-label={t("worktree.baseBranch")}
               aria-autocomplete="list"
               aria-controls="base-branch-options"
               aria-expanded={branchOptionsOpen}
@@ -156,7 +170,7 @@ export function NewWorktreeDialog({
                 id="base-branch-options"
                 className="branch-options"
                 role="listbox"
-                aria-label="Origin branches"
+                aria-label={t("worktree.originBranches")}
               >
                 {filteredBranches.length > 0 ? (
                   filteredBranches.map((branch) => (
@@ -173,7 +187,7 @@ export function NewWorktreeDialog({
                   ))
                 ) : (
                   <div className="branch-options-empty">
-                    No matching branches
+                    {t("worktree.noMatchingBranches")}
                   </div>
                 )}
               </div>
@@ -181,8 +195,8 @@ export function NewWorktreeDialog({
           </div>
           <button
             className="branch-icon-button"
-            aria-label="Refresh origin branches"
-            title="Refresh origin branches"
+            aria-label={t("worktree.refreshBranches")}
+            title={t("worktree.refreshBranches")}
             onClick={() => void refresh()}
             disabled={!catalog || refreshing || creating}
           >
@@ -191,38 +205,35 @@ export function NewWorktreeDialog({
         </div>
       </label>
       {catalog && !catalog.originConfigured && (
-        <div className="branch-notice">
-          No origin remote configured. Configure and fetch origin outside Pi
-          App, then refresh.
-        </div>
+        <div className="branch-notice">{t("worktree.noOrigin")}</div>
       )}
       {catalog?.originConfigured && catalog.branches.length === 0 && (
-        <div className="branch-notice">
-          No fetched origin branches. Run git fetch origin, then refresh.
-        </div>
+        <div className="branch-notice">{t("worktree.noFetchedBranches")}</div>
       )}
       <label>
-        Worktree name
+        {t("worktree.name")}
         <input
-          aria-label="Worktree name"
+          aria-label={t("worktree.name")}
           value={name}
           onChange={(event) => setName(event.target.value)}
           autoFocus
           disabled={!catalog || creating}
         />
       </label>
-      {catalog && validation && <div className="field-error">{validation}</div>}
+      {catalog && validation && (
+        <div className="field-error">{t(validationKeys[validation])}</div>
+      )}
       <DialogError error={error} />
       <div className="dialog-actions">
         <button onClick={onClose} disabled={creating}>
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           className="primary"
           onClick={() => void create()}
           disabled={!catalog || !baseRef || Boolean(validation) || creating}
         >
-          {creating ? "Creating…" : "Create"}
+          {creating ? t("worktree.creating") : t("worktree.create")}
         </button>
       </div>
     </DialogFrame>
@@ -236,6 +247,7 @@ export function RenameWorktreeDialog({
   worktree: WorktreeSummary;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(worktree.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,22 +269,27 @@ export function RenameWorktreeDialog({
     }
   };
   return (
-    <DialogFrame title={`Rename ${worktree.name}`} onClose={onClose}>
+    <DialogFrame
+      title={t("worktree.rename.title", { name: worktree.name })}
+      onClose={onClose}
+    >
       <label>
-        Worktree name
+        {t("worktree.name")}
         <input
-          aria-label="Worktree name"
+          aria-label={t("worktree.name")}
           value={name}
           onChange={(event) => setName(event.target.value)}
           autoFocus
           disabled={saving}
         />
       </label>
-      {validation && <div className="field-error">{validation}</div>}
+      {validation && (
+        <div className="field-error">{t(validationKeys[validation])}</div>
+      )}
       <DialogError error={error} />
       <div className="dialog-actions">
         <button onClick={onClose} disabled={saving}>
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           className="primary"
@@ -281,7 +298,7 @@ export function RenameWorktreeDialog({
             Boolean(validation) || saving || name.trim() === worktree.name
           }
         >
-          {saving ? "Renaming…" : "Rename"}
+          {saving ? t("worktree.renaming") : t("worktree.rename")}
         </button>
       </div>
     </DialogFrame>
@@ -295,6 +312,7 @@ export function DeleteWorktreeDialog({
   worktree: WorktreeSummary;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [inspection, setInspection] = useState<WorktreeDeleteInspection | null>(
     null,
   );
@@ -329,24 +347,29 @@ export function DeleteWorktreeDialog({
     }
   };
   return (
-    <DialogFrame title={`Delete ${worktree.name}?`} onClose={onClose}>
-      {!inspection && !error && <p>Inspecting worktree…</p>}
+    <DialogFrame
+      title={t("worktree.delete.title", { name: worktree.name })}
+      onClose={onClose}
+    >
+      {!inspection && !error && <p>{t("worktree.inspecting")}</p>}
       {inspection && (
         <>
-          <p>
-            The local branch <b>{inspection.branch}</b> will be preserved.
-          </p>
+          <p>{t("worktree.branchPreserved", { branch: inspection.branch })}</p>
           {destructive && (
             <div className="destructive-warning">
-              This worktree requires force deletion.
+              {t("worktree.forceRequired")}
               {inspection.dirty && (
-                <span> Uncommitted changes will be lost.</span>
+                <span> {t("worktree.uncommittedLost")}</span>
               )}
               {inspection.terminalCount > 0 && (
                 <span>
                   {" "}
-                  {inspection.terminalCount} running terminal(s) will be
-                  stopped.
+                  {t(
+                    inspection.terminalCount === 1
+                      ? "worktree.runningTerminals.one"
+                      : "worktree.runningTerminals.other",
+                    { count: formatNumber(inspection.terminalCount) },
+                  )}
                 </span>
               )}
             </div>
@@ -356,14 +379,18 @@ export function DeleteWorktreeDialog({
       <DialogError error={error} />
       <div className="dialog-actions">
         <button onClick={onClose} disabled={deleting}>
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           className="danger"
           onClick={() => void remove()}
           disabled={!inspection || deleting}
         >
-          {deleting ? "Deleting…" : destructive ? "Force delete" : "Delete"}
+          {deleting
+            ? t("worktree.deleting")
+            : destructive
+              ? t("worktree.forceDelete")
+              : t("worktree.delete")}
         </button>
       </div>
     </DialogFrame>

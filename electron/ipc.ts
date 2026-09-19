@@ -5,7 +5,10 @@ import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
 import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
-import type { MemoryReasoningEffort } from "./domains/settings/index.js";
+import type {
+  AppLanguage,
+  MemoryReasoningEffort,
+} from "./domains/settings/index.js";
 import {
   isAllowedRendererUrl,
   type RendererLocationPolicy,
@@ -315,6 +318,10 @@ async function invoke(
         boolean(args, "enabled"),
       );
     }
+    case "settings_language_get":
+      return state.settings.language();
+    case "settings_language_set":
+      return state.settings.setLanguage(appLanguage(args));
     case "settings_memory_read":
       return state.memory.read(memoryDocument(args));
     case "settings_memory_models_list": {
@@ -398,6 +405,8 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_delete: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
   settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
+  settings_language_get: [],
+  settings_language_set: ["language"],
   settings_memory_read: ["document"],
   settings_memory_models_list: ["worktreeId"],
   settings_memory_config_get: [],
@@ -413,6 +422,13 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   diagnostics_reveal_logs: [],
   feedback_open: [],
 };
+
+function appLanguage(args: Args): AppLanguage {
+  const value = text(args, "language");
+  if (value !== "en" && value !== "zh-CN")
+    throw new TypeError("language is invalid");
+  return value;
+}
 
 function memoryReasoningEffort(
   args: Args,
@@ -463,6 +479,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     if (key === "cols" || key === "rows") number(args, key);
     else if (key === "force" || key === "enabled") boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
+    else if (key === "language") appLanguage(args);
     else if (key === "document") memoryDocument(args);
     else if (key === "content") fileContent(args);
     else if (key === "phase1ReasoningEffort" || key === "phase2ReasoningEffort")

@@ -1,5 +1,6 @@
 import { RiCheckLine, RiFileCopyLine } from "@remixicon/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "../../i18n";
 
 export type ToolPreviewKind = "generic" | "shell" | "diff" | "web";
 
@@ -49,6 +50,7 @@ export function ToolPreview({
   kind = "generic",
   object,
 }: ToolPreviewProps) {
+  const { t } = useTranslation();
   const initialTab: ToolPreviewTab = input !== null ? "input" : "output";
   const [activeTab, setActiveTab] = useState<ToolPreviewTab>(initialTab);
   const [copied, setCopied] = useState(false);
@@ -74,7 +76,7 @@ export function ToolPreview({
         className="chat-tool-preview chat-tool-shell"
         data-tool-preview="shell"
       >
-        <div className="chat-tool-special-header">Shell</div>
+        <div className="chat-tool-special-header">{t("chat.tool.shell")}</div>
         <pre className="chat-tool-shell-command">{object ?? "—"}</pre>
         <pre className="chat-tool-preview-content">{output ?? "—"}</pre>
       </div>
@@ -88,7 +90,7 @@ export function ToolPreview({
         data-tool-preview="diff"
       >
         <div className="chat-tool-special-header">
-          {object ?? "File changes"}
+          {object ?? t("chat.tool.fileChanges")}
         </div>
         <pre className="chat-tool-preview-content">
           {output.split("\n").map((line, index) => (
@@ -114,7 +116,9 @@ export function ToolPreview({
   if (kind === "web" && webResults.length > 0) {
     return (
       <div className="chat-tool-preview chat-tool-web" data-tool-preview="web">
-        <div className="chat-tool-special-header">Search results</div>
+        <div className="chat-tool-special-header">
+          {t("chat.tool.searchResults")}
+        </div>
         <ul>
           {webResults.slice(0, 8).map((result) => (
             <li key={result.url}>
@@ -134,7 +138,7 @@ export function ToolPreview({
       <div
         className="chat-tool-preview-tabs"
         role="tablist"
-        aria-label="Tool call details"
+        aria-label={t("chat.tool.details")}
       >
         {input !== null && (
           <button
@@ -147,7 +151,7 @@ export function ToolPreview({
               setCopied(false);
             }}
           >
-            input
+            {t("chat.tool.input")}
           </button>
         )}
         {output !== null && (
@@ -161,13 +165,17 @@ export function ToolPreview({
               setCopied(false);
             }}
           >
-            output
+            {t("chat.tool.output")}
           </button>
         )}
         <button
           type="button"
           className="chat-tool-copy"
-          aria-label={`Copy ${activeTab}`}
+          aria-label={t(
+            activeTab === "input"
+              ? "chat.tool.copyInput"
+              : "chat.tool.copyOutput",
+          )}
           onClick={() => void copy()}
         >
           {copied ? (

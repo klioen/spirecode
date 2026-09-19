@@ -1,4 +1,5 @@
 import { RiArrowDownSLine } from "@remixicon/react";
+import { formatList, useTranslation } from "../../i18n";
 import { ProcessGroupIcon, toolPresentation } from "./ProcessIcon";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCard } from "./ToolCard";
@@ -21,6 +22,7 @@ function ProcessStep({ step }: { step: ChatProcessStep }) {
 }
 
 export function ProcessFlow({ steps }: ProcessFlowProps) {
+  const { t } = useTranslation();
   if (steps.length === 1) return <ProcessStep step={steps[0]} />;
 
   const runningTool = [...steps]
@@ -36,21 +38,27 @@ export function ProcessFlow({ steps }: ProcessFlowProps) {
     ? toolPresentation(runningTool)
     : undefined;
   const ActiveIcon = runningPresentation?.icon;
-  const actions = steps.flatMap((step) =>
-    step.type === "tool" && step.status !== "error"
-      ? [toolPresentation(step).action]
-      : [],
-  );
+  const actions = steps.flatMap((step) => {
+    if (step.type !== "tool" || step.status === "error") return [];
+    const presentation = toolPresentation(step);
+    return [
+      t(presentation.actionKey, {
+        name: step.name,
+      }),
+    ];
+  });
   const uniqueActions = [...new Set(actions)];
   const completedLabel =
     uniqueActions.length === 0
-      ? "分析任务"
-      : `${uniqueActions.slice(0, 3).join("、")}${uniqueActions.length > 3 || steps.length > 1 ? "等多项操作" : ""}`;
+      ? t("chat.process.analyzing")
+      : t("chat.process.multiple", {
+          actions: formatList(uniqueActions.slice(0, 3)),
+        });
   const label = runningPresentation
-    ? runningPresentation.activeAction
+    ? t(runningPresentation.activeActionKey, { name: runningTool?.name ?? "" })
     : failed === steps.filter((step) => step.type === "tool").length &&
         failed > 0
-      ? "分析任务"
+      ? t("chat.process.analyzing")
       : completedLabel;
 
   return (

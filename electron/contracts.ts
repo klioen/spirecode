@@ -36,6 +36,8 @@ export const COMMANDS = [
   "chat_session_delete",
   "settings_extensions_list",
   "settings_extension_set_enabled",
+  "settings_language_get",
+  "settings_language_set",
   "settings_memory_read",
   "settings_memory_models_list",
   "settings_memory_config_get",

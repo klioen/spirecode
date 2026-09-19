@@ -1,11 +1,12 @@
 import { RiArrowDownSLine } from "@remixicon/react";
+import { useTranslation } from "../../i18n";
 import { toolPresentation } from "./ProcessIcon";
 import { ToolPreview } from "./ToolPreview";
 import type { ChatToolModel } from "./types";
 
 const MAX_VALUE_LENGTH = 16_000;
 
-function display(value: unknown): string | null {
+function display(value: unknown, truncatedLabel: string): string | null {
   if (value === undefined) return null;
   let text: string;
   if (typeof value === "string") {
@@ -18,7 +19,7 @@ function display(value: unknown): string | null {
     }
   }
   return text.length > MAX_VALUE_LENGTH
-    ? `${text.slice(0, MAX_VALUE_LENGTH)}\n… truncated …`
+    ? `${text.slice(0, MAX_VALUE_LENGTH)}\n${truncatedLabel}`
     : text;
 }
 
@@ -28,8 +29,10 @@ export interface ToolCardProps {
 }
 
 export function ToolCard({ tool, defaultOpen = false }: ToolCardProps) {
-  const argumentsText = display(tool.arguments);
-  const resultText = display(tool.error ?? tool.result);
+  const { t } = useTranslation();
+  const truncatedLabel = t("chat.tool.truncated");
+  const argumentsText = display(tool.arguments, truncatedLabel);
+  const resultText = display(tool.error ?? tool.result, truncatedLabel);
   const presentation = toolPresentation(tool);
   const Icon = presentation.icon;
   const running = tool.status === "running";

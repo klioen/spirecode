@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../bindings";
+import { setLanguage } from "../../i18n";
 import { useProjectsStore } from "../projects/projectsStore";
 import { terminalStream } from "../terminal/terminalStream";
 import { hostChatApi } from "../chat";
@@ -83,6 +84,7 @@ vi.mock("../chat", async (importOriginal) => {
     ...actual,
     hostChatApi: {
       ...actual.hostChatApi,
+      create: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       delete: vi.fn().mockResolvedValue(undefined),
     },
@@ -101,6 +103,7 @@ const deferred = <T,>() => {
 };
 
 beforeEach(() => {
+  setLanguage("en");
   fileEditorValues.length = 0;
   clearEditorResourceCache();
   clearEditorDrafts();
@@ -108,6 +111,7 @@ beforeEach(() => {
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
+  vi.mocked(hostChatApi.create).mockReset();
   vi.mocked(hostChatApi.delete).mockReset().mockResolvedValue(undefined);
   vi.mocked(commands.terminalAttach).mockReset();
   vi.mocked(commands.terminalClose).mockReset();
@@ -425,6 +429,18 @@ describe("EditorPane resources", () => {
 });
 
 describe("EditorPane terminals", () => {
+  it("renders semantic terminal titles in Chinese", () => {
+    setLanguage("zh-CN");
+    useEditorStore.getState().openTerminal("p1", "terminal-a");
+
+    render(<EditorPane worktreeId="p1" />);
+
+    expect(screen.getByText("终端1")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "关闭 终端1" }),
+    ).toBeInTheDocument();
+  });
+
   it("creates, attaches, and opens a numbered central terminal tab", async () => {
     vi.mocked(commands.terminalCreate).mockResolvedValue({
       terminalId: "terminal-a",
@@ -661,6 +677,24 @@ describe("Chat history popover", () => {
     expect(
       screen.getByRole("region", { name: "Chat history" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the localized new-chat fallback for an empty external title", async () => {
+    vi.mocked(hostChatApi.create).mockResolvedValueOnce({
+      sessionId: "untitled",
+      worktreeId: "p1",
+      title: "",
+    });
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+
+    await user.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(await screen.findByText("chat body untitled")).toBeInTheDocument();
+    expect(screen.getByText("New chat").closest(".editor-tab")).not.toBeNull();
+
+    act(() => setLanguage("zh-CN"));
+    expect(screen.getByText("新建聊天").closest(".editor-tab")).not.toBeNull();
   });
 
   it("opens a selected session and closes history", async () => {

@@ -1,3 +1,4 @@
+import { formatNumber, useTranslation } from "../../i18n";
 import type { ChatTodoModel, ChatTodoStatus } from "./types";
 
 const MARKERS: Record<ChatTodoStatus, string> = {
@@ -8,16 +9,17 @@ const MARKERS: Record<ChatTodoStatus, string> = {
 };
 
 export function TodoListCard({ todo }: { todo: ChatTodoModel }) {
+  const { t } = useTranslation();
   const completed = todo.todos.filter(
     (item) => item.status === "completed",
   ).length;
 
   return (
-    <section className="chat-todo-card" aria-label="Todo progress">
+    <section className="chat-todo-card" aria-label={t("chat.todo.progress")}>
       <header className="chat-todo-header">
-        <span>Updated Todos</span>
+        <span>{t("chat.todo.updated")}</span>
         <span className="chat-todo-progress">
-          {completed}/{todo.todos.length}
+          {formatNumber(completed)}/{formatNumber(todo.todos.length)}
         </span>
       </header>
       {todo.explanation && (

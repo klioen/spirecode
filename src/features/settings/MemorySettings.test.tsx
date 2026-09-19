@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemorySettings } from "./MemorySettings";
 import { memoryApi } from "./memoryApi";
 import { settingsApi } from "./settingsApi";
+import { initializeLanguage, setLanguage } from "../../i18n";
 
 vi.mock("./settingsApi", () => ({
   settingsApi: { listExtensions: vi.fn().mockResolvedValue([]) },
@@ -50,6 +51,7 @@ const models = [
 ];
 
 beforeEach(() => {
+  initializeLanguage("en");
   vi.mocked(settingsApi.listExtensions).mockResolvedValue([]);
   vi.mocked(memoryApi.read).mockImplementation(async (document) =>
     document === "summary" ? summary : handbook,
@@ -143,6 +145,53 @@ describe("MemorySettings", () => {
         phase2ReasoningEffort: "max",
       }),
     );
+  });
+
+  it("retranslates saved state after a live language switch", async () => {
+    render(<MemorySettings />);
+    const save = await screen.findByRole("button", {
+      name: "Save Memory configuration",
+    });
+    fireEvent.click(save);
+
+    expect(
+      await screen.findByText("Restart SpireCode to apply these changes."),
+    ).toBeInTheDocument();
+    setLanguage("zh-CN");
+    expect(
+      await screen.findByText("重启 SpireCode 以应用这些更改。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Restart SpireCode to apply these changes."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stores validation semantics so validation retranslates live", async () => {
+    vi.mocked(memoryApi.listModels).mockResolvedValue([
+      ...models,
+      { provider: "", id: "bad", label: "Invalid model", reasoning: true },
+    ]);
+    render(<MemorySettings />);
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Phase 1 Model" }),
+      { target: { value: "/bad" } },
+    );
+    const save = screen.getByRole("button", {
+      name: "Save Memory configuration",
+    });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    expect(
+      await screen.findByText("Select available Phase 1 and Phase 2 models."),
+    ).toBeInTheDocument();
+    setLanguage("zh-CN");
+    expect(
+      await screen.findByText("请选择可用的阶段 1 和阶段 2 模型。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Select available Phase 1 and Phase 2 models."),
+    ).not.toBeInTheDocument();
   });
 
   it("preserves a configured unavailable model and disables saving", async () => {

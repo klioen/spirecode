@@ -21,6 +21,7 @@ import {
   type FileContent,
   type GitDiff,
 } from "../../bindings";
+import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
 import { chatRuntime, ChatHistory, ChatView, hostChatApi } from "../chat";
@@ -69,6 +70,7 @@ type LoadState =
 type DocumentTab = Extract<ResourceTab, { type: "file" | "diff" }>;
 
 function ResourceView({ tab }: { tab: DocumentTab }) {
+  const { t } = useTranslation();
   const [state, setState] = useState<LoadState>(() => {
     const cached = cache.get(tab.id);
     return cached
@@ -147,7 +149,7 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
     return (
       <div className="viewer-state">
         <span className="spinner" />
-        Loading resource…
+        {t("editor.loadingResource")}
       </div>
     );
   if (state.status === "error")
@@ -187,6 +189,7 @@ function FileView({
   tab: Extract<ResourceTab, { type: "file" }>;
   onSaved: (saved: FileContent) => void;
 }) {
+  const { t } = useTranslation();
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const editorFontSize = useSettingsStore(
     (settings) => settings.editorFontSize,
@@ -204,6 +207,22 @@ function FileView({
   const [saving, setSaving] = useState(false);
   const skipNextFileSync = useRef(false);
   const dirty = content !== savedContent;
+  const saveState = useRef({
+    conflictAction,
+    content,
+    dirty,
+    saveError,
+    saving,
+    version,
+  });
+  saveState.current = {
+    conflictAction,
+    content,
+    dirty,
+    saveError,
+    saving,
+    version,
+  };
 
   useEffect(() => {
     if (skipNextFileSync.current) {
@@ -288,15 +307,22 @@ function FileView({
 
   useEffect(() => {
     const save = async () => {
-      if (!dirty || saving || conflictAction || saveError) return;
+      const latest = saveState.current;
+      if (
+        !latest.dirty ||
+        latest.saving ||
+        latest.conflictAction ||
+        latest.saveError
+      )
+        return;
       setSaving(true);
       setSaveError(null);
       try {
         const saved = await commands.fsWriteFile(
           tab.worktreeId,
           tab.relativePath,
-          content,
-          version,
+          latest.content,
+          latest.version,
         );
         cache.set(tab.id, {
           generation: resourceGeneration,
@@ -320,18 +346,7 @@ function FileView({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    conflictAction,
-    content,
-    dirty,
-    onSaved,
-    resourceGeneration,
-    saving,
-    tab.id,
-    tab.relativePath,
-    tab.worktreeId,
-    version,
-  ]);
+  }, [onSaved, resourceGeneration, tab.id, tab.relativePath, tab.worktreeId]);
 
   return (
     <div className="editable-file-view">
@@ -345,21 +360,27 @@ function FileView({
                 disabled={conflictAction !== null || saving}
                 onClick={() => void reloadFromDisk()}
               >
-                {conflictAction === "reload" ? "Loading…" : "Reload"}
+                {conflictAction === "reload"
+                  ? t("common.loading")
+                  : t("editor.conflict.reload")}
               </button>
               <button
                 type="button"
                 disabled={conflictAction !== null || saving}
                 onClick={() => void compareWithDisk()}
               >
-                {conflictAction === "compare" ? "Loading…" : "Compare"}
+                {conflictAction === "compare"
+                  ? t("common.loading")
+                  : t("editor.conflict.compare")}
               </button>
               <button
                 type="button"
                 disabled={conflictAction !== null || saving}
                 onClick={() => void overwriteDisk()}
               >
-                {conflictAction === "overwrite" ? "Loading…" : "Overwrite"}
+                {conflictAction === "overwrite"
+                  ? t("common.loading")
+                  : t("editor.conflict.overwrite")}
               </button>
             </div>
           )}
@@ -369,13 +390,17 @@ function FileView({
         <div
           className="file-conflict-compare"
           role="region"
-          aria-label="Disk version"
+          aria-label={t("editor.diskVersion")}
         >
-          <b>Disk version</b>
+          <b>{t("editor.diskVersion")}</b>
           <pre>{compareContent}</pre>
         </div>
       )}
-      <Suspense fallback={<div className="viewer-state">Loading editor…</div>}>
+      <Suspense
+        fallback={
+          <div className="viewer-state">{t("editor.loadingEditor")}</div>
+        }
+      >
         <MonacoEditor
           value={content}
           language={language}
@@ -428,30 +453,35 @@ function languageForPath(path: string): string | undefined {
 }
 
 function DiffView({ diff }: { diff: GitDiff }) {
+  const { t } = useTranslation();
   const resolvedTheme = useThemeStore((theme) => theme.resolved);
   const diffMode = useChangesStore((store) => store.diffMode);
   const setDiffMode = useChangesStore((store) => store.setDiffMode);
   return (
     <div className="diff-source-view">
       <div className="diff-source-note">
-        <span>File comparison</span>
-        <div className="diff-mode-toggle" role="group" aria-label="Diff layout">
+        <span>{t("editor.fileComparison")}</span>
+        <div
+          className="diff-mode-toggle"
+          role="group"
+          aria-label={t("editor.diffLayout")}
+        >
           <button
             className={diffMode === "unified" ? "active" : ""}
             onClick={() => setDiffMode("unified")}
           >
-            Inline
+            {t("editor.diffInline")}
           </button>
           <button
             className={diffMode === "split" ? "active" : ""}
             onClick={() => setDiffMode("split")}
           >
-            Split
+            {t("editor.diffSplit")}
           </button>
         </div>
       </div>
       <Suspense
-        fallback={<div className="viewer-state">Loading diff viewer…</div>}
+        fallback={<div className="viewer-state">{t("editor.loadingDiff")}</div>}
       >
         <MonacoDiffEditor
           original={diff.original ?? ""}
@@ -473,6 +503,7 @@ function DiffView({ diff }: { diff: GitDiff }) {
 }
 
 export function EditorPane({ worktreeId }: { worktreeId: string }) {
+  const { t } = useTranslation();
   const view = useEditorStore((state) => state.views[worktreeId]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyConfirmOpen, setHistoryConfirmOpen] = useState(false);
@@ -599,35 +630,43 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 <RiFileCodeLine size={14} />
               )}
               <span className={tab.preview ? "preview-label" : ""}>
-                {tab.type === "terminal" || tab.type === "chat"
-                  ? tab.title
-                  : tab.relativePath.split("/").slice(-1)[0]}
+                {tab.type === "terminal"
+                  ? t("editor.terminalTitle", { number: tab.sequence })
+                  : tab.type === "chat"
+                    ? tab.title || t("editor.newChat")
+                    : tab.relativePath.split("/").slice(-1)[0]}
               </span>
               {tab.type === "file" && tab.dirty && (
-                <span className="tab-dirty" aria-label="Unsaved changes">
+                <span
+                  className="tab-dirty"
+                  aria-label={t("editor.unsavedChanges")}
+                >
                   ●
                 </span>
               )}
               {tab.type === "terminal" && tab.status !== "running" && (
                 <span className={`tab-status tab-status-${tab.status}`}>
-                  {tab.status}
+                  {t(`editor.terminal.${tab.status}`)}
                 </span>
               )}
               <span
                 className="tab-close"
                 role="button"
-                aria-label={`Close ${
-                  tab.type === "terminal" || tab.type === "chat"
-                    ? tab.title
-                    : tab.relativePath.split("/").slice(-1)[0]
-                }`}
+                aria-label={t("editor.closeTab", {
+                  name:
+                    tab.type === "terminal"
+                      ? t("editor.terminalTitle", { number: tab.sequence })
+                      : tab.type === "chat"
+                        ? tab.title || t("editor.newChat")
+                        : tab.relativePath.split("/").slice(-1)[0],
+                })}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (
                     tab.type === "file" &&
                     tab.dirty &&
                     !window.confirm(
-                      `Discard unsaved changes to ${tab.relativePath}?`,
+                      t("editor.discardConfirm", { path: tab.relativePath }),
                     )
                   )
                     return;
@@ -642,8 +681,8 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
         <div className="editor-resource-actions">
           <button
             ref={historyTriggerRef}
-            title="Chat history"
-            aria-label="Chat history"
+            title={t("editor.chatHistory")}
+            aria-label={t("editor.chatHistory")}
             aria-expanded={historyOpen}
             aria-controls={historyOpen ? historyId : undefined}
             onClick={() => setHistoryOpen((open) => !open)}
@@ -651,15 +690,15 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
             <RiChatHistoryLine size={16} />
           </button>
           <button
-            title="New chat"
-            aria-label="New chat"
+            title={t("editor.newChat")}
+            aria-label={t("editor.newChat")}
             onClick={() => void createChat()}
           >
             <RiChatNewLine size={16} />
           </button>
           <button
-            title="New terminal"
-            aria-label="New terminal"
+            title={t("editor.newTerminal")}
+            aria-label={t("editor.newTerminal")}
             onClick={() => void createTerminal()}
           >
             <RiTerminalBoxLine size={16} />
@@ -705,15 +744,15 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 <div className="terminal-status-banner" role="status">
                   <span>
                     {active.status === "error"
-                      ? "Process failed."
-                      : "Process exited."}
+                      ? t("editor.terminal.processFailed")
+                      : t("editor.terminal.processExited")}
                   </span>
                   <button
                     type="button"
                     className="terminal-status-restart"
                     onClick={() => void restartTerminal(active)}
                   >
-                    Restart
+                    {t("editor.terminal.restart")}
                   </button>
                 </div>
               )}
@@ -739,15 +778,15 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
         ) : (
           <div className="editor-empty">
             <RiFileCodeLine size={42} />
-            <h2>Your code, in focus.</h2>
-            <p>Select a file to edit, or a change to preview its diff.</p>
+            <h2>{t("editor.empty.title")}</h2>
+            <p>{t("editor.empty.description")}</p>
             <div>
               <RiChatNewLine size={14} />
-              <span>Open a Chat Agent from the tab header</span>
+              <span>{t("editor.empty.chat")}</span>
             </div>
             <div>
               <RiTerminalBoxLine size={14} />
-              <span>Open a terminal from the tab header</span>
+              <span>{t("editor.empty.terminal")}</span>
             </div>
           </div>
         )}
