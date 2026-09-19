@@ -5,6 +5,7 @@ import {
   RiLayoutRightLine,
   RiSettings3Line,
 } from "@remixicon/react";
+import { useTranslation } from "../../i18n";
 import { ChangesPanel } from "../changes/ChangesPanel";
 import { EditorPane } from "../editor/EditorPane";
 import { FileTree } from "../files/FileTree";
@@ -19,25 +20,24 @@ const MIN_EDITOR_WIDTH = 340;
 const PANEL_GAP = 16;
 
 function EmptyWorkbench() {
-  const open = () =>
+  const { t } = useTranslation();
+  const openProject = () =>
     document
-      .querySelector<HTMLButtonElement>('[title="Open project"]')
+      .querySelector<HTMLButtonElement>('[data-action="open-project"]')
       ?.click();
   return (
     <div className="empty-workbench">
       <div className="empty-logo">S</div>
       <h1>SpireCode</h1>
-      <p className="product-slogan">Fast Lightweight GUI Code Agent</p>
-      <p>
-        Open a Git repository to explore files, review changes, and run
-        commands.
-      </p>
-      <button onClick={open}>Open a project</button>
+      <p className="product-slogan">{t("workbench.slogan")}</p>
+      <p>{t("workbench.empty.description")}</p>
+      <button onClick={openProject}>{t("workbench.openProject")}</button>
     </div>
   );
 }
 
 export function Workbench() {
+  const { t } = useTranslation();
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
@@ -104,7 +104,7 @@ export function Workbench() {
         <>
           <ProjectRail />
           <PanelResizeHandle
-            label="Resize projects panel"
+            label={t("workbench.resizeProjects")}
             edge="projects"
             value={workbench.projectsWidth}
             min={PANEL_LIMITS.projects.min}
@@ -126,28 +126,28 @@ export function Workbench() {
               <span className="branch">· {active.worktree.branch}</span>
             </>
           ) : (
-            <span>No project open</span>
+            <span>{t("workbench.noProject")}</span>
           )}
         </div>
         <div className="layout-actions">
           <ThemeToggle />
           <button
-            title="Settings"
-            aria-label="Settings"
+            title={t("workbench.settings")}
+            aria-label={t("workbench.settings")}
             onClick={() => setSettingsOpen(true)}
           >
             <RiSettings3Line size={17} />
           </button>
           <button
-            title="Toggle projects panel"
-            aria-label="Toggle projects panel"
+            title={t("workbench.toggleProjects")}
+            aria-label={t("workbench.toggleProjects")}
             onClick={workbench.toggleProjects}
           >
             <RiLayoutLeftLine size={17} />
           </button>
           <button
-            title="Toggle files panel"
-            aria-label="Toggle files panel"
+            title={t("workbench.toggleFiles")}
+            aria-label={t("workbench.toggleFiles")}
             onClick={workbench.toggleRight}
           >
             <RiLayoutRightLine size={17} />
@@ -163,7 +163,7 @@ export function Workbench() {
       </div>
       {!workbench.rightCollapsed && (
         <PanelResizeHandle
-          label="Resize files and changes panel"
+          label={t("workbench.resizeRight")}
           edge="right"
           value={workbench.rightPanelWidth}
           min={PANEL_LIMITS.right.min}
@@ -179,13 +179,13 @@ export function Workbench() {
             className={workbench.rightView === "files" ? "active" : ""}
             onClick={() => workbench.setRightView("files")}
           >
-            FILES
+            {t("workbench.files")}
           </button>
           <button
             className={workbench.rightView === "changes" ? "active" : ""}
             onClick={() => workbench.setRightView("changes")}
           >
-            CHANGES
+            {t("workbench.changes")}
           </button>
         </div>
         {active ? (
@@ -195,7 +195,7 @@ export function Workbench() {
             <ChangesPanel worktreeId={active.worktree.id} />
           )
         ) : (
-          <div className="tree-state">Open a project to browse</div>
+          <div className="tree-state">{t("workbench.openToBrowse")}</div>
         )}
       </aside>
       {settingsOpen && (
@@ -208,7 +208,10 @@ export function Workbench() {
         <div className="toast">
           <b>{error.code}</b>
           <span>{error.message}</span>
-          <button onClick={() => useProjectsStore.getState().setError(null)}>
+          <button
+            aria-label={t("workbench.dismissError")}
+            onClick={() => useProjectsStore.getState().setError(null)}
+          >
             ×
           </button>
         </div>

@@ -8,6 +8,13 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import { useEffect, useState, type ReactNode } from "react";
+import {
+  formatNumber,
+  setLanguage,
+  useTranslation,
+  type AppLanguage,
+  type TranslationKey,
+} from "../../i18n";
 import { commands, type ExtensionSetting } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { useThemeStore } from "../theme/themeStore";
@@ -18,17 +25,41 @@ import { settingsApi } from "./settingsApi";
 type Section =
   "general" | "agent" | "memory" | "extensions" | "editor" | "terminal";
 
-const sections: Array<{ id: Section; label: string; icon: ReactNode }> = [
-  { id: "general", label: "General", icon: <RiSettings3Line size={16} /> },
-  { id: "agent", label: "Agent", icon: <RiRobot2Line size={16} /> },
-  { id: "memory", label: "Memory", icon: <RiFileList3Line size={16} /> },
+const sections: Array<{
+  id: Section;
+  label: TranslationKey;
+  icon: ReactNode;
+}> = [
+  {
+    id: "general",
+    label: "settings.section.general",
+    icon: <RiSettings3Line size={16} />,
+  },
+  {
+    id: "agent",
+    label: "settings.section.agent",
+    icon: <RiRobot2Line size={16} />,
+  },
+  {
+    id: "memory",
+    label: "settings.section.memory",
+    icon: <RiFileList3Line size={16} />,
+  },
   {
     id: "extensions",
-    label: "Extensions",
+    label: "settings.section.extensions",
     icon: <RiExternalLinkLine size={16} />,
   },
-  { id: "editor", label: "Editor", icon: <RiComputerLine size={16} /> },
-  { id: "terminal", label: "Terminal", icon: <RiTerminalBoxLine size={16} /> },
+  {
+    id: "editor",
+    label: "settings.section.editor",
+    icon: <RiComputerLine size={16} />,
+  },
+  {
+    id: "terminal",
+    label: "settings.section.terminal",
+    icon: <RiTerminalBoxLine size={16} />,
+  },
 ];
 
 export function SettingsDialog({
@@ -39,6 +70,7 @@ export function SettingsDialog({
   onClose: () => void;
 }) {
   const [section, setSection] = useState<Section>("extensions");
+  const { t } = useTranslation();
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -50,13 +82,16 @@ export function SettingsDialog({
         onKeyDown={(event) => event.key === "Escape" && onClose()}
       >
         <header className="settings-header">
-          <h2 id="settings-title">Settings</h2>
-          <button aria-label="Close settings" onClick={onClose} autoFocus>
+          <h2 id="settings-title">{t("settings.title")}</h2>
+          <button aria-label={t("settings.close")} onClick={onClose} autoFocus>
             <RiCloseLine size={18} />
           </button>
         </header>
         <div className="settings-body">
-          <nav className="settings-nav" aria-label="Settings sections">
+          <nav
+            className="settings-nav"
+            aria-label={t("settings.sections.label")}
+          >
             {sections.map((item) => (
               <button
                 key={item.id}
@@ -64,7 +99,7 @@ export function SettingsDialog({
                 onClick={() => setSection(item.id)}
               >
                 {item.icon}
-                {item.label}
+                {t(item.label)}
               </button>
             ))}
           </nav>
@@ -87,30 +122,65 @@ export function SettingsDialog({
 function GeneralSettings() {
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
-  const [diagnostics, setDiagnostics] = useState<string | null>(null);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [languageSaving, setLanguageSaving] = useState(false);
+  const { language, t } = useTranslation();
+  const changeLanguage = async (next: AppLanguage) => {
+    if (next === language) return;
+    setLanguageSaving(true);
+    setError(null);
+    try {
+      setLanguage(await settingsApi.setLanguage(next));
+    } catch (caught) {
+      setError(commandError(caught).message);
+    } finally {
+      setLanguageSaving(false);
+    }
+  };
   return (
     <section>
-      <h3>General</h3>
-      <p className="settings-description">Application appearance.</p>
+      <h3>{t("settings.section.general")}</h3>
+      <p className="settings-description">
+        {t("settings.general.description")}
+      </p>
       <div className="setting-row">
         <div>
-          <b>Theme</b>
-          <small>Choose the interface color theme.</small>
+          <b>{t("settings.general.theme.label")}</b>
+          <small>{t("settings.general.theme.description")}</small>
         </div>
         <select
-          aria-label="Theme"
+          aria-label={t("settings.general.theme.label")}
           value={mode}
           onChange={(event) => setMode(event.target.value as "light" | "dark")}
         >
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
+          <option value="light">{t("settings.general.theme.light")}</option>
+          <option value="dark">{t("settings.general.theme.dark")}</option>
         </select>
       </div>
       <div className="setting-row">
         <div>
-          <b>Diagnostics</b>
-          <small>Copy a redacted report or open local logs.</small>
+          <b>{t("settings.general.language.label")}</b>
+          <small>{t("settings.general.language.description")}</small>
+        </div>
+        <select
+          aria-label={t("settings.general.language.label")}
+          value={language}
+          disabled={languageSaving}
+          onChange={(event) =>
+            void changeLanguage(event.target.value as AppLanguage)
+          }
+        >
+          <option value="en">{t("settings.general.language.english")}</option>
+          <option value="zh-CN">
+            {t("settings.general.language.chinese")}
+          </option>
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <b>{t("settings.general.diagnostics.label")}</b>
+          <small>{t("settings.general.diagnostics.description")}</small>
         </div>
         <div className="settings-actions">
           <button
@@ -120,14 +190,14 @@ function GeneralSettings() {
                 try {
                   const text = await commands.diagnosticsCopy();
                   await navigator.clipboard.writeText(text);
-                  setDiagnostics("Copied");
+                  setDiagnosticsCopied(true);
                 } catch (caught) {
                   setError(commandError(caught).message);
                 }
               })()
             }
           >
-            Copy diagnostics
+            {t("settings.general.diagnostics.copy")}
           </button>
           <button
             type="button"
@@ -137,7 +207,7 @@ function GeneralSettings() {
                 .catch((caught) => setError(commandError(caught).message))
             }
           >
-            Reveal logs
+            {t("settings.general.diagnostics.reveal")}
           </button>
           <button
             type="button"
@@ -147,11 +217,15 @@ function GeneralSettings() {
                 .catch((caught) => setError(commandError(caught).message))
             }
           >
-            Send feedback
+            {t("settings.general.feedback")}
           </button>
         </div>
       </div>
-      {diagnostics && <div className="settings-success">{diagnostics}</div>}
+      {diagnosticsCopied && (
+        <div className="settings-success">
+          {t("settings.general.diagnostics.copied")}
+        </div>
+      )}
       {error && <div className="dialog-error">{error}</div>}
     </section>
   );
@@ -159,6 +233,7 @@ function GeneralSettings() {
 
 function AgentSettings() {
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslation();
   const copy = async () => {
     await navigator.clipboard.writeText("~/.pi/agent");
     setCopied(true);
@@ -166,23 +241,19 @@ function AgentSettings() {
   };
   return (
     <section>
-      <h3>Agent</h3>
-      <p className="settings-description">
-        SpireCode uses your existing pi configuration.
-      </p>
+      <h3>{t("settings.section.agent")}</h3>
+      <p className="settings-description">{t("settings.agent.description")}</p>
       <div className="setting-row">
         <div>
-          <b>Pi configuration</b>
-          <small>Authentication and models are managed by pi.</small>
+          <b>{t("settings.agent.configuration")}</b>
+          <small>{t("settings.agent.configuration.description")}</small>
         </div>
         <code>~/.pi/agent</code>
         <button type="button" onClick={() => void copy()}>
-          {copied ? "Copied" : "Copy path"}
+          {copied ? t("settings.agent.copied") : t("settings.agent.copyPath")}
         </button>
       </div>
-      <p className="settings-description">
-        Agent tools and extensions run with the current user permissions.
-      </p>
+      <p className="settings-description">{t("settings.agent.permissions")}</p>
     </section>
   );
 }
@@ -190,16 +261,17 @@ function EditorSettings() {
   const fontSize = useSettingsStore((s) => s.editorFontSize);
   const wordWrap = useSettingsStore((s) => s.wordWrap);
   const set = useSettingsStore((s) => s.setSetting);
+  const { t } = useTranslation();
   return (
     <section>
-      <h3>Editor</h3>
-      <p className="settings-description">Configure source editing.</p>
+      <h3>{t("settings.section.editor")}</h3>
+      <p className="settings-description">{t("settings.editor.description")}</p>
       <div className="setting-row">
         <div>
-          <b>Font size</b>
+          <b>{t("settings.editor.fontSize")}</b>
         </div>
         <select
-          aria-label="Editor font size"
+          aria-label={t("settings.editor.fontSize.aria")}
           value={fontSize}
           onChange={(e) =>
             set("editorFontSize", Number(e.target.value) as 13 | 14 | 16 | 18)
@@ -214,34 +286,37 @@ function EditorSettings() {
       </div>
       <div className="setting-row">
         <div>
-          <b>Word wrap</b>
+          <b>{t("settings.editor.wordWrap")}</b>
         </div>
         <select
-          aria-label="Word wrap"
+          aria-label={t("settings.editor.wordWrap")}
           value={wordWrap}
           onChange={(e) => set("wordWrap", e.target.value as "off" | "on")}
         >
-          <option value="off">Off</option>
-          <option value="on">On</option>
+          <option value="off">{t("settings.common.off")}</option>
+          <option value="on">{t("settings.common.on")}</option>
         </select>
       </div>
     </section>
   );
 }
 function TerminalSettings() {
+  const { t } = useTranslation();
   const fontSize = useSettingsStore((s) => s.terminalFontSize);
   const scrollback = useSettingsStore((s) => s.terminalScrollback);
   const set = useSettingsStore((s) => s.setSetting);
   return (
     <section>
-      <h3>Terminal</h3>
-      <p className="settings-description">Configure terminal rendering.</p>
+      <h3>{t("settings.section.terminal")}</h3>
+      <p className="settings-description">
+        {t("settings.terminal.description")}
+      </p>
       <div className="setting-row">
         <div>
-          <b>Font size</b>
+          <b>{t("settings.editor.fontSize")}</b>
         </div>
         <select
-          aria-label="Terminal font size"
+          aria-label={t("settings.terminal.fontSize.aria")}
           value={fontSize}
           onChange={(e) =>
             set("terminalFontSize", Number(e.target.value) as 12 | 13 | 14 | 16)
@@ -256,10 +331,10 @@ function TerminalSettings() {
       </div>
       <div className="setting-row">
         <div>
-          <b>Scrollback</b>
+          <b>{t("settings.terminal.scrollback")}</b>
         </div>
         <select
-          aria-label="Terminal scrollback"
+          aria-label={t("settings.terminal.scrollback.aria")}
           value={scrollback}
           onChange={(e) =>
             set(
@@ -270,7 +345,7 @@ function TerminalSettings() {
         >
           {[1000, 5000, 10000, 20000].map((v) => (
             <option key={v} value={v}>
-              {v.toLocaleString()}
+              {formatNumber(v)}
             </option>
           ))}
         </select>
@@ -280,6 +355,7 @@ function TerminalSettings() {
 }
 
 function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
+  const { t } = useTranslation();
   const [extensions, setExtensions] = useState<ExtensionSetting[]>([]);
   const [loading, setLoading] = useState(Boolean(worktreeId));
   const [changing, setChanging] = useState<string | null>(null);
@@ -342,7 +418,9 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
               <b>{extension.name}</b>
               {extension.version && <span>v{extension.version}</span>}
               <span>
-                {extension.kind === "builtin" ? "Built-in" : extension.source}
+                {extension.kind === "builtin"
+                  ? t("settings.extensions.builtin")
+                  : extension.source}
               </span>
             </div>
             {extension.kind === "user" && (
@@ -352,7 +430,12 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
           <label className="switch">
             <input
               type="checkbox"
-              aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.name}`}
+              aria-label={t(
+                extension.enabled
+                  ? "settings.extensions.toggle.disable"
+                  : "settings.extensions.toggle.enable",
+                { name: extension.name },
+              )}
               checked={extension.enabled}
               disabled={changing === extension.id}
               onChange={() => void toggle(extension)}
@@ -366,33 +449,34 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
 
   return (
     <section>
-      <h3>Extensions</h3>
+      <h3>{t("settings.section.extensions")}</h3>
       <p className="settings-description">
-        Extensions run local code with your permissions. Changes apply to new
-        Agent sessions.
+        {t("settings.extensions.description")}
       </p>
       {!worktreeId && (
         <div className="settings-empty">
-          Open a project to manage extensions.
+          {t("settings.extensions.projectRequired")}
         </div>
       )}
-      {loading && <div className="settings-empty">Loading extensions…</div>}
+      {loading && (
+        <div className="settings-empty">{t("settings.extensions.loading")}</div>
+      )}
       {error && <div className="dialog-error">{error}</div>}
       {!loading && worktreeId && (
         <div className="extension-sections">
           <section className="extension-section">
-            <h4>System built-in</h4>
-            <p>Extensions bundled and maintained by SpireCode.</p>
+            <h4>{t("settings.extensions.system")}</h4>
+            <p>{t("settings.extensions.system.description")}</p>
             {extensionList(builtins)}
           </section>
           <section className="extension-section">
-            <h4>User extensions</h4>
-            <p>Packages and extensions from ~/.pi/agent/settings.json.</p>
+            <h4>{t("settings.extensions.user")}</h4>
+            <p>{t("settings.extensions.user.description")}</p>
             {users.length > 0 ? (
               extensionList(users)
             ) : (
               <div className="settings-empty">
-                No user extensions configured.
+                {t("settings.extensions.user.empty")}
               </div>
             )}
           </section>

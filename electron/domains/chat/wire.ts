@@ -45,7 +45,7 @@ export function normalizeSummary(record: Record<string, unknown>): {
       stringValue(record.name) ??
       (typeof firstMessage === "string" && firstMessage.trim()
         ? firstMessage.trim()
-        : "New chat"),
+        : ""),
     createdAt,
     updatedAt: epoch(record.updatedAt ?? record.modified) ?? createdAt,
     status: record.status === "streaming" ? "streaming" : "idle",

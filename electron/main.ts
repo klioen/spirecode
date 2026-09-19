@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppState } from "./appState.js";
 import { registerIpc } from "./ipc.js";
+import { unsavedChangesDialogOptions } from "./nativeDialog.js";
 import {
   createRendererLocationPolicy,
   isAllowedExternalUrl,
@@ -56,12 +57,13 @@ async function createWindow(): Promise<BrowserWindow> {
   };
   window.webContents.on("will-navigate", guardNavigation);
 
-  state = await AppState.create(app.getPath("userData"), window);
-  unregisterIpc = registerIpc(state, locationPolicy);
+  const windowState = await AppState.create(app.getPath("userData"), window);
+  state = windowState;
+  unregisterIpc = registerIpc(windowState, locationPolicy);
   window.on("close", (event) => {
     if (
-      !state?.windowCloseGuard.allowClose((count) =>
-        confirmDiscard(window, count),
+      !windowState.windowCloseGuard.allowClose((count) =>
+        confirmDiscard(window, count, windowState.settings.currentLanguage()),
       )
     )
       event.preventDefault();
@@ -99,7 +101,7 @@ app.on("before-quit", (event) => {
   if (
     state &&
     !state.windowCloseGuard.allowClose((count) =>
-      confirmDiscard(state!.window, count),
+      confirmDiscard(state!.window, count, state!.settings.currentLanguage()),
     )
   ) {
     event.preventDefault();
@@ -119,18 +121,15 @@ app.on("before-quit", (event) => {
     .finally(() => app.quit());
 });
 
-function confirmDiscard(window: BrowserWindow, count: number): boolean {
-  const noun = count === 1 ? "file has" : "files have";
+function confirmDiscard(
+  window: BrowserWindow,
+  count: number,
+  language: import("./domains/settings/index.js").AppLanguage,
+): boolean {
   return (
-    dialog.showMessageBoxSync(window, {
-      type: "warning",
-      buttons: ["Cancel", "Discard and Quit"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-      title: "Unsaved changes",
-      message: `${count} ${noun} unsaved changes.`,
-      detail: "Discarding will permanently lose those changes.",
-    }) === 1
+    dialog.showMessageBoxSync(
+      window,
+      unsavedChangesDialogOptions(language, count),
+    ) === 1
   );
 }

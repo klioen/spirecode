@@ -1,5 +1,6 @@
 import type {
   ChatError,
+  ChatNoticeFallback,
   ChatNoticeModel,
   ChatSessionEvent,
   ChatSessionState,
@@ -61,7 +62,8 @@ function updateTool(
 function notice(
   items: ChatTimelineItem[],
   kind: ChatNoticeModel["kind"],
-  text: string,
+  text: string | undefined,
+  fallback: ChatNoticeFallback | undefined,
   active: boolean,
 ): ChatTimelineItem[] {
   const id = `notice:${kind}`;
@@ -70,6 +72,7 @@ function notice(
     id,
     kind,
     text,
+    fallback,
     active,
   });
 }
@@ -174,7 +177,8 @@ export function sessionReducer(
         items: notice(
           state.items,
           "compaction",
-          event.message ?? "Compacting conversation context…",
+          event.message,
+          event.message ? undefined : "compaction-start",
           true,
         ),
       };
@@ -184,14 +188,21 @@ export function sessionReducer(
         items: notice(
           state.items,
           "compaction",
-          event.message ?? "Conversation context compacted",
+          event.message,
+          event.message ? undefined : "compaction-end",
           false,
         ),
       };
     case "auto_retry_start":
       return {
         ...next,
-        items: notice(state.items, "retry", event.message ?? "Retrying…", true),
+        items: notice(
+          state.items,
+          "retry",
+          event.message,
+          event.message ? undefined : "retry-start",
+          true,
+        ),
       };
     case "auto_retry_end":
       return {
@@ -199,7 +210,8 @@ export function sessionReducer(
         items: notice(
           state.items,
           "retry",
-          event.message ?? "Retry finished",
+          event.message,
+          event.message ? undefined : "retry-end",
           false,
         ),
       };
@@ -210,7 +222,13 @@ export function sessionReducer(
         ...next,
         status,
         error: event.error,
-        items: notice(state.items, "error", event.error.message, false),
+        items: notice(
+          state.items,
+          "error",
+          event.error.message,
+          undefined,
+          false,
+        ),
       };
     }
     default:

@@ -85,10 +85,10 @@ describe("preview and keep tabs", () => {
     expect(first).toMatchObject({
       id: terminalResourceId("p1", "terminal-a"),
       type: "terminal",
-      title: "Terminal1",
+      sequence: 1,
       preview: false,
     });
-    expect(second.type === "terminal" ? second.title : null).toBe("Terminal2");
+    expect(second.type === "terminal" ? second.sequence : null).toBe(2);
     expect(
       useEditorStore.getState().views.p1.tabs.map((item) => item.type),
     ).toEqual(["file", "terminal"]);
@@ -140,6 +140,29 @@ describe("preview and keep tabs", () => {
       stored.p1.tabs.some((item: { type: string }) => item.type === "terminal"),
     ).toBe(false);
     expect(stored.p1.activeTabId).toBe(chatResourceId("p1", "session-a"));
+  });
+
+  it("migrates the legacy app-owned New chat title to a semantic empty title", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        p1: {
+          tabs: [
+            {
+              worktreeId: "p1",
+              type: "chat",
+              sessionId: "session-a",
+              title: "New chat",
+              preview: false,
+            },
+          ],
+          activeTabId: chatResourceId("p1", "session-a"),
+        },
+      }),
+    );
+
+    const restored = loadPersistedEditorViews();
+    expect(restored.p1.tabs[0]).toMatchObject({ type: "chat", title: "" });
   });
 
   it("restores valid metadata and drops invalid or terminal tabs", () => {

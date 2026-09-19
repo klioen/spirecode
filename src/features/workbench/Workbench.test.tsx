@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import { useProjectsStore } from "../projects/projectsStore";
 import { Workbench } from "./Workbench";
 import { resetWorkbenchStore } from "./workbenchStore";
@@ -23,6 +24,7 @@ vi.mock("../settings/SettingsDialog", () => ({
 }));
 
 beforeEach(() => {
+  setLanguage("en");
   localStorage.clear();
   resetWorkbenchStore();
   useProjectsStore.setState({
@@ -64,6 +66,25 @@ describe("Workbench panel handles", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText("Fast Lightweight GUI Code Agent"),
+    ).toBeInTheDocument();
+  });
+
+  it("live-switches empty chrome while preserving the product name", () => {
+    useProjectsStore.setState({ projects: [], activeWorktreeId: null });
+
+    render(<Workbench />);
+    expect(
+      screen.getByText("Fast Lightweight GUI Code Agent"),
+    ).toBeInTheDocument();
+
+    act(() => setLanguage("zh-CN"));
+
+    expect(
+      screen.getByRole("heading", { name: "SpireCode" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("快速轻量的图形化代码智能体")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "打开项目" }),
     ).toBeInTheDocument();
   });
 

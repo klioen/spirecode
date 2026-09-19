@@ -1,6 +1,7 @@
 import {
   Children,
   isValidElement,
+  useMemo,
   type ComponentPropsWithoutRef,
   type ReactElement,
 } from "react";
@@ -9,6 +10,7 @@ import ReactMarkdown, {
   defaultUrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useTranslation, type TranslationKey } from "../../i18n";
 
 export interface MarkdownContentProps {
   content: string;
@@ -67,46 +69,50 @@ function textOf(
   return String(children ?? "").replace(/\n$/, "");
 }
 
-const components = {
-  a({ href, children, ...props }) {
-    if (!href) return <span>{children}</span>;
-    return (
-      <a {...props} href={href} target="_blank" rel="noreferrer noopener">
-        {children}
-      </a>
-    );
-  },
-  img() {
-    return null;
-  },
-  [RUNNING_INDICATOR_TAG]() {
-    return <span className="chat-stream-cursor" aria-label="Streaming" />;
-  },
-  pre({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
-    const code = Children.toArray(children).find(
-      (child): child is ReactElement<ComponentPropsWithoutRef<"code">> =>
-        isValidElement<ComponentPropsWithoutRef<"code">>(child),
-    );
-    const className = code?.props.className;
-    const language = /(?:^|\s)language-([^\s]+)/.exec(className ?? "")?.[1];
-    const value = textOf(code?.props.children);
-    return (
-      <div className="chat-markdown-code">
-        <div className="chat-markdown-code-header">
-          <span>{language ?? "text"}</span>
-          <button
-            type="button"
-            aria-label="Copy code"
-            onClick={() => void navigator.clipboard?.writeText(value)}
-          >
-            Copy
-          </button>
+function markdownComponents(t: (key: TranslationKey) => string): Components {
+  return {
+    a({ href, children, ...props }) {
+      if (!href) return <span>{children}</span>;
+      return (
+        <a {...props} href={href} target="_blank" rel="noreferrer noopener">
+          {children}
+        </a>
+      );
+    },
+    img() {
+      return null;
+    },
+    [RUNNING_INDICATOR_TAG]() {
+      return (
+        <span className="chat-stream-cursor" aria-label={t("chat.streaming")} />
+      );
+    },
+    pre({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
+      const code = Children.toArray(children).find(
+        (child): child is ReactElement<ComponentPropsWithoutRef<"code">> =>
+          isValidElement<ComponentPropsWithoutRef<"code">>(child),
+      );
+      const className = code?.props.className;
+      const language = /(?:^|\s)language-([^\s]+)/.exec(className ?? "")?.[1];
+      const value = textOf(code?.props.children);
+      return (
+        <div className="chat-markdown-code">
+          <div className="chat-markdown-code-header">
+            <span>{language ?? t("chat.markdown.plainText")}</span>
+            <button
+              type="button"
+              aria-label={t("chat.markdown.copyCode")}
+              onClick={() => void navigator.clipboard?.writeText(value)}
+            >
+              {t("chat.markdown.copy")}
+            </button>
+          </div>
+          <pre {...props}>{children}</pre>
         </div>
-        <pre {...props}>{children}</pre>
-      </div>
-    );
-  },
-} as Components;
+      );
+    },
+  } as Components;
+}
 
 function safeUrlTransform(url: string): string {
   const transformed = defaultUrlTransform(url);
@@ -117,6 +123,8 @@ export function MarkdownContent({
   content,
   running = false,
 }: MarkdownContentProps) {
+  const { t } = useTranslation();
+  const components = useMemo(() => markdownComponents(t), [t]);
   return (
     <div className="chat-markdown">
       <ReactMarkdown

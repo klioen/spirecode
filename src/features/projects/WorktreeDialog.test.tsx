@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorktreeSummary } from "../../bindings";
+import { setLanguage } from "../../i18n";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
 import { DeleteWorktreeDialog, NewWorktreeDialog } from "./WorktreeDialog";
@@ -26,6 +27,7 @@ const managed: WorktreeSummary = {
 };
 
 beforeEach(() => {
+  setLanguage("en");
   vi.mocked(projectsApi.listOriginBranches).mockReset();
   vi.mocked(projectsApi.createWorktree).mockReset();
   vi.mocked(projectsApi.inspectDeleteWorktree).mockReset();
@@ -181,6 +183,25 @@ describe("worktree dialogs", () => {
 
     expect(
       await screen.findByText(/No fetched origin branches/),
+    ).toBeInTheDocument();
+  });
+
+  it("localizes deletion chrome while preserving branch names", async () => {
+    setLanguage("zh-CN");
+    vi.mocked(projectsApi.inspectDeleteWorktree).mockResolvedValue({
+      dirty: true,
+      terminalCount: 2,
+      branch: "feature/raw-name",
+    });
+
+    render(<DeleteWorktreeDialog worktree={managed} onClose={vi.fn()} />);
+
+    expect(
+      await screen.findByText("本地分支 feature/raw-name 将被保留。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("2 个运行中的终端将被停止。")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "强制删除" }),
     ).toBeInTheDocument();
   });
 

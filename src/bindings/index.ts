@@ -1,5 +1,6 @@
 import "./host";
 import type {
+  AppLanguage,
   ChatAccepted,
   ChatEvent,
   ChatModelOption,
@@ -68,6 +69,9 @@ export const commands = {
     command<void>("project_reveal", { projectId }),
   projectCatalog: () => command<ProjectCatalog>("project_catalog"),
 
+  settingsLanguageGet: () => command<AppLanguage>("settings_language_get"),
+  settingsLanguageSet: (language: AppLanguage) =>
+    command<AppLanguage>("settings_language_set", { language }),
   settingsExtensionsList: (worktreeId: string) =>
     command<ExtensionSetting[]>("settings_extensions_list", { worktreeId }),
   settingsExtensionSetEnabled: (

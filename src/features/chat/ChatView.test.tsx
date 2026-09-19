@@ -1,6 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { StrictMode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import type { ChatApi } from "./chatApi";
 import { ChatRuntime } from "./chatRuntime";
 import { ChatView } from "./ChatView";
@@ -120,6 +127,8 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
 }
 
 describe("ChatView", () => {
+  beforeEach(() => setLanguage("en"));
+
   it("does not render the old empty conversation prompt", async () => {
     render(
       <ChatView
@@ -161,13 +170,13 @@ describe("ChatView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("safe").tagName).toBe("STRONG");
 
-    const thinking = screen.getByText("深度思考").closest("details");
+    const thinking = screen.getByText("Thinking").closest("details");
     expect(thinking).not.toHaveAttribute("open");
-    expect(screen.getByText("深度思考")).toBeVisible();
+    expect(screen.getByText("Thinking")).toBeVisible();
     expect(screen.getByText("reasoning")).not.toBeVisible();
 
     const processGroup = screen
-      .getByText("读取文件、执行命令等多项操作")
+      .getByText("Read file and Run command and other operations")
       .closest("details");
     expect(processGroup).not.toHaveAttribute("open");
     expect(screen.getByText("read")).not.toBeVisible();
@@ -175,6 +184,35 @@ describe("ChatView", () => {
     expect(screen.getByText("edit")).toBeVisible();
     expect(screen.getByRole("region", { name: "Todo progress" })).toBeVisible();
     expect(screen.getByText("1/2")).toBeVisible();
+  });
+
+  it("live-switches semantic notices while preserving external messages", async () => {
+    const runtime = new ChatRuntime({ batchMs: 0 });
+    render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={api()}
+        runtime={runtime}
+      />,
+    );
+    await screen.findByRole("textbox", { name: "Chat message" });
+    runtime.push({
+      sessionId: "session-1",
+      sequence: 2,
+      event: { type: "auto_retry_start" },
+    });
+    runtime.push({
+      sessionId: "session-1",
+      sequence: 3,
+      event: { type: "compaction_start", message: "External compact status" },
+    });
+    expect(await screen.findByText("Retrying…")).toBeVisible();
+    expect(screen.getByText("External compact status")).toBeVisible();
+
+    act(() => setLanguage("zh-CN"));
+    expect(screen.getByText("正在重试…")).toBeVisible();
+    expect(screen.getByText("External compact status")).toBeVisible();
   });
 
   it("shows and clears model capacity activity above the composer", async () => {

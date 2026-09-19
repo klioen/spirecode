@@ -277,6 +277,47 @@ describe("piAdapter", () => {
     ]);
   });
 
+  it("leaves app-owned fallback titles empty without breaking open or delete metadata", async () => {
+    const { sdk, manager, loadResources } = sdkFixture({});
+    sdk.SessionManager.list = async () => [
+      {
+        id: "named",
+        cwd: "/repo",
+        path: "/sessions/current/named.jsonl",
+        firstMessage: { text: "  External first message  " },
+      },
+      {
+        id: "untitled",
+        cwd: "/repo",
+        path: "/sessions/current/untitled.jsonl",
+      },
+    ];
+    const adapter = await createPiAdapter(sdk, { loadResources });
+
+    await expect(adapter.create("/repo")).resolves.toMatchObject({ title: "" });
+    const sessions = await adapter.list("/repo");
+    expect(
+      sessions.map(({ sessionId, title }) => ({ sessionId, title })),
+    ).toEqual([
+      { sessionId: "named", title: "External first message" },
+      { sessionId: "untitled", title: "" },
+    ]);
+    await expect(adapter.open(sessions[1], "/repo")).resolves.toMatchObject({
+      sessionId: "s1",
+      title: "",
+    });
+    await expect(
+      adapter.resolveDeleteTarget("/repo", "untitled"),
+    ).resolves.toEqual({
+      info: expect.objectContaining({
+        sessionId: "untitled",
+        title: "",
+        path: "/sessions/current/untitled.jsonl",
+      }),
+      sessionRoot: manager.getSessionDir(),
+    });
+  });
+
   it("resolves deletion only from complete raw SDK metadata", async () => {
     const { sdk, manager, loadResources } = sdkFixture({});
     sdk.SessionManager.list = async () => [

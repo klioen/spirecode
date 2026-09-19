@@ -8,6 +8,7 @@ import {
   RiMore2Fill,
 } from "@remixicon/react";
 import type { WorktreeSummary } from "../../bindings";
+import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
@@ -24,6 +25,7 @@ type DialogState =
   | null;
 
 export function ProjectRail() {
+  const { t } = useTranslation();
   const store = useProjectsStore();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
@@ -114,17 +116,18 @@ export function ProjectRail() {
     }
   };
   return (
-    <aside className="project-rail" aria-label="Projects">
+    <aside className="project-rail" aria-label={t("projects.label")}>
       <div className="brand">
         <span className="brand-mark">S</span>
         <span>SPIRECODE</span>
       </div>
       <div className="project-rail-heading">
-        <span>PROJECTS</span>
+        <span>{t("projects.heading")}</span>
         <button
           className="project-add"
-          title="Open project"
-          aria-label="Open project"
+          data-action="open-project"
+          title={t("workbench.openProject")}
+          aria-label={t("workbench.openProject")}
           onClick={() => void open()}
           disabled={store.loading}
         >
@@ -144,7 +147,10 @@ export function ProjectRail() {
                 <button
                   className="project-name"
                   title={project.path}
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${project.name}`}
+                  aria-label={t(
+                    expanded ? "projects.collapse" : "projects.expand",
+                    { name: project.name },
+                  )}
                   aria-expanded={expanded}
                   onClick={() => toggleProject(project.id)}
                 >
@@ -157,8 +163,12 @@ export function ProjectRail() {
                 </button>
                 <button
                   className="worktree-add"
-                  aria-label={`Create worktree for ${project.name}`}
-                  title={`Create worktree for ${project.name}`}
+                  aria-label={t("projects.createWorktreeFor", {
+                    name: project.name,
+                  })}
+                  title={t("projects.createWorktreeFor", {
+                    name: project.name,
+                  })}
                   disabled={store.creatingProjectId === project.id}
                   onClick={() =>
                     setDialog({
@@ -178,8 +188,8 @@ export function ProjectRail() {
                 >
                   <button
                     className="project-menu-button"
-                    aria-label={`Manage ${project.name}`}
-                    title={`Manage ${project.name}`}
+                    aria-label={t("projects.manage", { name: project.name })}
+                    title={t("projects.manage", { name: project.name })}
                     aria-expanded={menuProjectId === project.id}
                     onClick={() => {
                       setMenuWorktreeId(null);
@@ -197,7 +207,7 @@ export function ProjectRail() {
                         disabled={projectActionPending === project.id}
                         onClick={() => void revealProject(project.id)}
                       >
-                        Reveal in Finder
+                        {t("projects.revealFinder")}
                       </button>
 
                       <button
@@ -206,7 +216,7 @@ export function ProjectRail() {
                         disabled={projectActionPending === project.id}
                         onClick={() => void closeProject(project.id)}
                       >
-                        Close project
+                        {t("projects.close")}
                       </button>
                     </div>
                   )}
@@ -236,7 +246,10 @@ export function ProjectRail() {
                           className="worktree-name"
                           aria-current={active ? "page" : undefined}
                           aria-label={worktree.name}
-                          title={`${worktree.path} · ${worktree.branch} · Double-click to reveal`}
+                          title={t("projects.worktree.revealTitle", {
+                            path: worktree.path,
+                            branch: worktree.branch,
+                          })}
                           onClick={() => void select(worktree.id)}
                           onDoubleClick={() => void reveal(worktree.id)}
                         >
@@ -246,7 +259,9 @@ export function ProjectRail() {
                         {managed && (
                           <button
                             className="worktree-menu-button"
-                            aria-label={`Manage ${worktree.name}`}
+                            aria-label={t("projects.manage", {
+                              name: worktree.name,
+                            })}
                             onClick={() =>
                               setMenuWorktreeId(
                                 menuWorktreeId === worktree.id
@@ -267,7 +282,7 @@ export function ProjectRail() {
                                 setDialog({ type: "rename", worktree });
                               }}
                             >
-                              Rename
+                              {t("projects.worktree.rename")}
                             </button>
                             <button
                               role="menuitem"
@@ -277,7 +292,7 @@ export function ProjectRail() {
                                 setDialog({ type: "delete", worktree });
                               }}
                             >
-                              Delete
+                              {t("projects.worktree.delete")}
                             </button>
                           </div>
                         )}
@@ -287,7 +302,7 @@ export function ProjectRail() {
                   {store.creatingProjectId === project.id && (
                     <div className="worktree-progress">
                       <span className="spinner" />
-                      Creating worktree…
+                      {t("projects.worktree.creating")}
                     </div>
                   )}
                 </div>
@@ -299,8 +314,8 @@ export function ProjectRail() {
       {store.projects.length === 0 && (
         <button className="project-empty" onClick={() => void open()}>
           <RiFolderOpenLine size={20} />
-          <span>No projects</span>
-          <small>Open a Git repository</small>
+          <span>{t("projects.empty")}</span>
+          <small>{t("projects.empty.action")}</small>
         </button>
       )}
       {dialog?.type === "new" && (

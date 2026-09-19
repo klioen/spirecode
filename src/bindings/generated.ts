@@ -191,6 +191,8 @@ export interface ChatAccepted {
   restored?: string[];
 }
 
+export type AppLanguage = "en" | "zh-CN";
+
 export interface ExtensionSetting {
   id: string;
   name: string;

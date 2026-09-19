@@ -13,6 +13,8 @@ describe("Electron host allowlists", () => {
         "settings_memory_models_list",
         "settings_memory_config_get",
         "settings_memory_config_set",
+        "settings_language_get",
+        "settings_language_set",
       ]),
     );
     expect(isCommand("chat_session_invoke")).toBe(false);

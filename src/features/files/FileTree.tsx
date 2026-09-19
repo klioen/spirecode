@@ -6,6 +6,7 @@ import {
   RiFolderOpenLine,
 } from "@remixicon/react";
 import { commands, type FileEntry } from "../../bindings";
+import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { fileResourceId, useEditorStore } from "../editor/editorStore";
 import { directoryKey, useFileTreeStore } from "./fileTreeStore";
@@ -29,6 +30,7 @@ function Directory({
   path?: string;
   depth?: number;
 }) {
+  const { t } = useTranslation();
   const tree = useFileTreeStore();
   const state = tree.directories[directoryKey(worktreeId, path)];
   const expanded = tree.expandedByWorktree[worktreeId] ?? [];
@@ -59,11 +61,11 @@ function Directory({
   }, [generation, path, worktreeId, state, tree]);
 
   if (!state || state.status === "loading")
-    return <div className="tree-state">Loading…</div>;
+    return <div className="tree-state">{t("files.loading")}</div>;
   if (state.status === "error")
     return <div className="tree-state error">{state.error?.message}</div>;
   if (state.entries.length === 0 && depth === 0)
-    return <div className="tree-state">No files</div>;
+    return <div className="tree-state">{t("files.empty")}</div>;
   return (
     <>
       {state.entries.map((entry) => {

@@ -20,10 +20,11 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "brand:check": "node scripts/check-brand.mjs",
+    "i18n:check": "node scripts/check-localized-copy.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.electron.json --noEmit",
     "test": "vitest run",
-    "check": "pnpm format:check && pnpm brand:check && pnpm lint && pnpm typecheck && pnpm test",
+    "check": "pnpm format:check && pnpm brand:check && pnpm i18n:check && pnpm lint && pnpm typecheck && pnpm test",
     "smoke:app": "./scripts/smoke-app.sh",
     "smoke:dmg": "./scripts/smoke-dmg.sh",
     "bundle": "node scripts/package-electron.mjs"

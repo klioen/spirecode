@@ -23,7 +23,7 @@ export type ResourceTab =
       worktreeId: string;
       type: "terminal";
       terminalId: string;
-      title: string;
+      sequence: number;
       status: "running" | "exited" | "error";
       preview: false;
     }
@@ -107,7 +107,8 @@ function restoreTab(value: unknown, worktreeId: string): ResourceTab | null {
       worktreeId,
       type: "chat",
       sessionId: candidate.sessionId,
-      title: candidate.title.slice(0, 256),
+      title:
+        candidate.title === "New chat" ? "" : candidate.title.slice(0, 256),
       preview: false,
     };
   return null;
@@ -190,7 +191,7 @@ interface EditorState {
   openChat: (
     worktreeId: string,
     sessionId: string,
-    title?: string,
+    title: string,
   ) => ResourceTab;
   setTerminalStatus: (
     worktreeId: string,
@@ -246,7 +247,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       worktreeId,
       type: "terminal",
       terminalId,
-      title: `Terminal${sequence}`,
+      sequence,
       status: "running",
       preview: false,
     };
@@ -270,7 +271,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
     return terminal;
   },
-  openChat: (worktreeId, sessionId, title = "New chat") => {
+  openChat: (worktreeId, sessionId, title) => {
     const chat: ResourceTab = {
       id: chatResourceId(worktreeId, sessionId),
       worktreeId,

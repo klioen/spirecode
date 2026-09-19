@@ -381,7 +381,7 @@ export async function createPiAdapter(
       ),
       sessionId: session.sessionId,
       cwd,
-      title: session.sessionName ?? metadata.title ?? "New chat",
+      title: session.sessionName ?? metadata.title ?? "",
       createdAt: metadata.createdAt ?? now,
       updatedAt: metadata.updatedAt ?? now,
     };
@@ -400,8 +400,7 @@ export async function createPiAdapter(
             ? info.firstMessage.text.trim()
             : typeof info.firstMessage === "string"
               ? info.firstMessage.trim()
-              : "") ||
-          "New chat",
+              : ""),
         path: typeof info.path === "string" ? info.path : undefined,
         createdAt: dateValue(info.created) ?? Date.now(),
         updatedAt:
@@ -423,7 +422,7 @@ export async function createPiAdapter(
         info: {
           sessionId,
           cwd: raw.cwd,
-          title: typeof raw.name === "string" ? raw.name : "New chat",
+          title: typeof raw.name === "string" ? raw.name : "",
           path: raw.path,
           createdAt: dateValue(raw.created) ?? Date.now(),
           updatedAt:

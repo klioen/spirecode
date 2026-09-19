@@ -8,13 +8,14 @@ import {
   RiTerminalBoxLine,
   RiToolsLine,
 } from "@remixicon/react";
+import type { TranslationKey } from "../../i18n";
 import type { ChatToolModel } from "./types";
 
 type ProcessIconComponent = typeof RiToolsLine;
 
 interface ToolPresentation {
-  action: string;
-  activeAction: string;
+  actionKey: TranslationKey;
+  activeActionKey: TranslationKey;
   icon: ProcessIconComponent;
   iconKind: string;
   summary: string | null;
@@ -48,56 +49,56 @@ export function toolPresentation(tool: ChatToolModel): ToolPresentation {
     case "bash":
       return {
         ...common,
-        action: "执行命令",
-        activeAction: "正在执行命令",
+        actionKey: "chat.process.action.runCommand",
+        activeActionKey: "chat.process.action.runningCommand",
         icon: RiTerminalBoxLine,
         iconKind: "bash",
       };
     case "read":
       return {
         ...common,
-        action: "读取文件",
-        activeAction: "正在读取文件",
+        actionKey: "chat.process.action.readFile",
+        activeActionKey: "chat.process.action.readingFile",
         icon: RiFileSearchLine,
         iconKind: "read",
       };
     case "write":
       return {
         ...common,
-        action: "写入文件",
-        activeAction: "正在写入文件",
+        actionKey: "chat.process.action.writeFile",
+        activeActionKey: "chat.process.action.writingFile",
         icon: RiFileAddLine,
         iconKind: "write",
       };
     case "edit":
       return {
         ...common,
-        action: "编辑文件",
-        activeAction: "正在编辑文件",
+        actionKey: "chat.process.action.editFile",
+        activeActionKey: "chat.process.action.editingFile",
         icon: RiFileEditLine,
         iconKind: "edit",
       };
     case "web_search":
       return {
         ...common,
-        action: "搜索网页",
-        activeAction: "正在搜索网页",
+        actionKey: "chat.process.action.searchWeb",
+        activeActionKey: "chat.process.action.searchingWeb",
         icon: RiSearchLine,
         iconKind: "web_search",
       };
     case "web_fetch":
       return {
         ...common,
-        action: "读取网页",
-        activeAction: "正在读取网页",
+        actionKey: "chat.process.action.fetchWeb",
+        activeActionKey: "chat.process.action.fetchingWeb",
         icon: RiGlobalLine,
         iconKind: "web_fetch",
       };
     default:
       return {
         ...common,
-        action: tool.name,
-        activeAction: `正在执行 ${tool.name}`,
+        actionKey: "chat.process.action.tool",
+        activeActionKey: "chat.process.action.runningTool",
         icon: RiToolsLine,
         iconKind: "unknown",
       };

@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   realpath,
+  rm,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -64,6 +65,78 @@ async function fixture() {
 }
 
 describe("SettingsService", () => {
+  it("persists English on first launch", async () => {
+    const { agentDir, statePath } = await fixture();
+
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.language()).resolves.toBe("en");
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      version: 5,
+      language: "en",
+    });
+  });
+
+  it("migrates v4 state to English without changing other settings", async () => {
+    const { agentDir, statePath } = await fixture();
+    await mkdir(path.dirname(statePath), { recursive: true });
+    const previous = {
+      version: 4,
+      overrides: { abcdefabcdefabcdefabcdef: false },
+      memoryConfig: {
+        phase1Provider: "openai",
+        phase1ModelId: "gpt-5.6",
+        phase1ReasoningEffort: "high",
+        phase2Provider: "traex",
+        phase2ModelId: "DeepSeek-V4-Flash",
+        phase2ReasoningEffort: "medium",
+      },
+    };
+    await writeFile(statePath, JSON.stringify(previous));
+
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.language()).resolves.toBe("en");
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toEqual({
+      ...previous,
+      version: 5,
+      language: "en",
+    });
+  });
+
+  it("repairs invalid persisted language and persists language updates", async () => {
+    const { agentDir, statePath } = await fixture();
+    await mkdir(path.dirname(statePath), { recursive: true });
+    await writeFile(
+      statePath,
+      JSON.stringify({ version: 5, language: "fr", overrides: {} }),
+    );
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.language()).resolves.toBe("en");
+    await expect(service.setLanguage("zh-CN")).resolves.toBe("zh-CN");
+    await expect(service.language()).resolves.toBe("zh-CN");
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      version: 5,
+      language: "zh-CN",
+    });
+    await expect(service.setLanguage("fr" as "en")).rejects.toThrow(
+      "language is invalid",
+    );
+    await expect(service.language()).resolves.toBe("zh-CN");
+  });
+
+  it("keeps the previous language when an atomic write fails", async () => {
+    const { root, agentDir } = await fixture();
+    const blockedPath = path.join(root, "blocked", "state.json");
+    const blockedService = await SettingsService.load(blockedPath, agentDir);
+    await rm(blockedPath);
+    await mkdir(blockedPath);
+
+    await expect(blockedService.setLanguage("zh-CN")).rejects.toBeDefined();
+    await expect(blockedService.language()).resolves.toBe("en");
+  });
+
   it("loads, persists, and migrates the global Memory configuration", async () => {
     const { agentDir, statePath } = await fixture();
     const service = await SettingsService.load(statePath, agentDir);
@@ -94,7 +167,7 @@ describe("SettingsService", () => {
       phase2ReasoningEffort: "max",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 4,
+      version: 5,
       memoryConfig: {
         phase1Provider: "openai",
         phase1ModelId: "gpt-5.6",
@@ -252,7 +325,7 @@ describe("SettingsService", () => {
     const updated = await service.setEnabled(cwd, extension.id, false);
     expect(updated.find(({ id }) => id === extension.id)?.enabled).toBe(false);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 4,
+      version: 5,
       overrides: { [extension.id]: false },
     });
 

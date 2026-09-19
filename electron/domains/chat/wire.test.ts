@@ -23,6 +23,8 @@ describe("chat wire normalization", () => {
       status: "idle",
     });
 
+    expect(normalizeSummary({ id: "untitled" }).title).toBe("");
+
     expect(
       normalizeMessages([
         { role: "user", content: "hello", timestamp: 1 },

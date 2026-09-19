@@ -1,3 +1,4 @@
+import { useTranslation } from "../../i18n";
 import type { ChatMessageModel } from "./types";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -6,11 +7,12 @@ export interface ChatMessageProps {
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
+  const { t } = useTranslation();
   const assistant = message.role === "assistant";
   return (
     <article
       className={`chat-message chat-message-${message.role}`}
-      aria-label={`${message.role} message`}
+      aria-label={t(`chat.message.${message.role}`)}
     >
       <div className="chat-message-content">
         {assistant ? (
@@ -22,7 +24,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
           <>
             {message.content}
             {message.status === "streaming" && (
-              <span className="chat-stream-cursor" aria-label="Streaming" />
+              <span
+                className="chat-stream-cursor"
+                aria-label={t("chat.streaming")}
+              />
             )}
           </>
         )}

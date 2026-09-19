@@ -14,6 +14,7 @@ import { loadOrDefault, saveAtomic } from "../persistence/index.js";
 
 export type ExtensionSource = "spirecode" | "pi" | "package";
 export type ExtensionScope = "global" | "project";
+export type AppLanguage = "en" | "zh-CN";
 
 export interface ExtensionSetting {
   id: string;
@@ -39,7 +40,8 @@ export interface MemoryConfig {
 }
 
 interface SettingsState {
-  version: 4;
+  version: 5;
+  language: AppLanguage;
   overrides: Record<string, boolean>;
   memoryConfig: MemoryConfig;
 }
@@ -87,11 +89,33 @@ export class SettingsService {
     agentDir = path.join(homedir(), ".pi", "agent"),
   ): Promise<SettingsService> {
     const loaded = await loadOrDefault<unknown>(statePath, () => ({
-      version: 4,
+      version: 5,
+      language: "en",
       overrides: {},
       memoryConfig: DEFAULT_MEMORY_CONFIG,
     }));
-    return new SettingsService(statePath, agentDir, sanitizeState(loaded));
+    const state = sanitizeState(loaded);
+    await saveAtomic(statePath, state);
+    return new SettingsService(statePath, agentDir, state);
+  }
+
+  language(): Promise<AppLanguage> {
+    return this.queue.run(async () => this.state.language);
+  }
+
+  currentLanguage(): AppLanguage {
+    return this.state.language;
+  }
+
+  setLanguage(language: AppLanguage): Promise<AppLanguage> {
+    return this.queue.run(async () => {
+      if (language !== "en" && language !== "zh-CN")
+        throw new CommandError("INVALID_ARGUMENT", "language is invalid");
+      const next: SettingsState = { ...this.state, language };
+      await saveAtomic(this.statePath, next);
+      this.state = next;
+      return language;
+    });
   }
 
   list(cwd: string): Promise<ExtensionSetting[]> {
@@ -454,5 +478,11 @@ function sanitizeState(value: unknown): SettingsState {
       memoryConfig = DEFAULT_MEMORY_CONFIG;
     }
   }
-  return { version: 4, overrides, memoryConfig: { ...memoryConfig } };
+  const language: AppLanguage = record.language === "zh-CN" ? "zh-CN" : "en";
+  return {
+    version: 5,
+    language,
+    overrides,
+    memoryConfig: { ...memoryConfig },
+  };
 }

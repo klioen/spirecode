@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import type { ChatApi } from "./chatApi";
 import { ChatHistory } from "./ChatHistory";
 
@@ -24,6 +25,8 @@ function historyApi(): ChatApi {
 }
 
 describe("ChatHistory", () => {
+  beforeEach(() => setLanguage("en"));
+
   it("sorts and groups sessions, marks the active chat, and filters titles", async () => {
     const now = new Date();
     const today = new Date(
@@ -111,6 +114,18 @@ describe("ChatHistory", () => {
     expect(screen.getByText("No matching chats")).toBeInTheDocument();
     fireEvent.change(search, { target: { value: "" } });
     expect(screen.getByText("First today")).toBeInTheDocument();
+  });
+
+  it("live-switches semantic date groups while preserving session titles", async () => {
+    const api = historyApi();
+    render(<ChatHistory worktreeId="w" api={api} onOpen={vi.fn()} />);
+    await screen.findByText("Fix tests");
+    expect(screen.getByRole("list", { name: "Earlier" })).toBeVisible();
+
+    act(() => setLanguage("zh-CN"));
+    expect(screen.getByRole("list", { name: "更早" })).toBeVisible();
+    expect(screen.getByText("Fix tests")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "搜索聊天" })).toBeVisible();
   });
 
   it("shows loading, an empty label, and invokes explicit close", async () => {

@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { formatNumber, useTranslation, type TranslationKey } from "../../i18n";
 import type {
   ChatQueuedInput,
   ChatSessionConfig,
@@ -16,14 +17,14 @@ import type {
 const MAX_INPUT_BYTES = 64 * 1024;
 const MAX_TEXTAREA_HEIGHT = 240;
 const encoder = new TextEncoder();
-const THINKING_LABELS: Record<ChatThinkingLevel, string> = {
-  off: "Off",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "XHigh",
-  max: "Max",
+const THINKING_KEYS: Record<ChatThinkingLevel, TranslationKey> = {
+  off: "chat.thinkingLevel.off",
+  minimal: "chat.thinkingLevel.minimal",
+  low: "chat.thinkingLevel.low",
+  medium: "chat.thinkingLevel.medium",
+  high: "chat.thinkingLevel.high",
+  xhigh: "chat.thinkingLevel.xhigh",
+  max: "chat.thinkingLevel.max",
 };
 
 export interface ChatComposerProps {
@@ -83,6 +84,7 @@ export function ChatComposer({
   onSend,
   onStop,
 }: ChatComposerProps) {
+  const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState(initialValue);
   const [composing, setComposing] = useState(false);
@@ -188,7 +190,9 @@ export function ChatComposer({
     void submit();
   };
 
-  const actionLabel = running ? "Follow up" : "Send";
+  const actionLabel = t(
+    running ? "chat.composer.followUp" : "chat.composer.send",
+  );
   const modelValue = config?.model
     ? `${config.model.provider}/${config.model.id}`
     : "";
@@ -196,8 +200,11 @@ export function ChatComposer({
   return (
     <div className="chat-composer-shell">
       {queue.length > 0 && (
-        <div className="chat-queue" aria-label="Queued follow-ups">
-          <span>待处理</span>
+        <div
+          className="chat-queue"
+          aria-label={t("chat.composer.queuedFollowUps")}
+        >
+          <span>{t("chat.composer.pending")}</span>
           {queue.map((entry) => (
             <div key={entry.id}>{entry.text}</div>
           ))}
@@ -209,7 +216,7 @@ export function ChatComposer({
             id="chat-slash-commands"
             className="chat-slash-menu"
             role="listbox"
-            aria-label="Slash commands"
+            aria-label={t("chat.composer.slashCommands")}
           >
             {commands.map((command, index) => (
               <button
@@ -239,7 +246,7 @@ export function ChatComposer({
         )}
         <textarea
           ref={textareaRef}
-          aria-label="Chat message"
+          aria-label={t("chat.composer.message")}
           aria-autocomplete="list"
           aria-controls={
             commands.length > 0 ? "chat-slash-commands" : undefined
@@ -247,7 +254,7 @@ export function ChatComposer({
           value={value}
           disabled={disabled}
           rows={1}
-          placeholder="随心输入"
+          placeholder={t("chat.composer.placeholder")}
           onChange={(event) => {
             setValue(event.target.value);
             setActiveCommand(0);
@@ -258,7 +265,7 @@ export function ChatComposer({
         />
         {tooLarge && (
           <div className="chat-composer-error" role="alert">
-            Message exceeds the 64 KiB UTF-8 limit.
+            {t("chat.composer.tooLarge")}
           </div>
         )}
         {error && (
@@ -269,7 +276,7 @@ export function ChatComposer({
         <div className="chat-composer-actions">
           <div className="chat-composer-config">
             <select
-              aria-label="Model"
+              aria-label={t("chat.composer.model")}
               value={modelValue}
               disabled={controlsDisabled}
               onChange={(event) => {
@@ -283,7 +290,9 @@ export function ChatComposer({
                 );
               }}
             >
-              {!modelValue && <option value="">No model</option>}
+              {!modelValue && (
+                <option value="">{t("chat.composer.noModel")}</option>
+              )}
               {modelGroups.map((group) => (
                 <optgroup key={group.provider} label={group.provider}>
                   {group.models.map((model) => (
@@ -298,7 +307,7 @@ export function ChatComposer({
               ))}
             </select>
             <select
-              aria-label="Thinking level"
+              aria-label={t("chat.composer.thinkingLevel")}
               value={config?.thinkingLevel ?? "off"}
               disabled={controlsDisabled}
               onChange={(event) => {
@@ -312,22 +321,22 @@ export function ChatComposer({
             >
               {(config?.availableThinkingLevels ?? ["off"]).map((level) => (
                 <option key={level} value={level}>
-                  {THINKING_LABELS[level]}
+                  {t(THINKING_KEYS[level])}
                 </option>
               ))}
             </select>
           </div>
           {(byteLength > MAX_INPUT_BYTES * 0.8 || tooLarge) && (
             <span className="chat-composer-count">
-              {byteLength.toLocaleString()} / 65,536
+              {formatNumber(byteLength)} / {formatNumber(MAX_INPUT_BYTES)}
             </span>
           )}
           {showStop && (
             <button
               className="chat-composer-submit chat-composer-stop"
               type="button"
-              aria-label="Stop"
-              title="Stop"
+              aria-label={t("chat.composer.stop")}
+              title={t("chat.composer.stop")}
               disabled={pending || disabled}
               onClick={() => void stop()}
             >

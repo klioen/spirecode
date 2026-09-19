@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation, type TranslationKey } from "../../i18n";
 import type { ChatApi } from "./chatApi";
 import { chatRuntime, type ChatRuntime, useChatSession } from "./chatRuntime";
 import { ChatComposer } from "./ChatComposer";
@@ -9,7 +10,18 @@ import { TodoListCard } from "./TodoListCard";
 import { projectChatTimeline } from "./chatDisplayItems";
 import { toChatError } from "./sessionReducer";
 import { useChatScrollController } from "./useChatScrollController";
-import type { ChatSessionConfig, ChatThinkingLevel } from "./types";
+import type {
+  ChatNoticeFallback,
+  ChatSessionConfig,
+  ChatThinkingLevel,
+} from "./types";
+
+const NOTICE_KEYS: Record<ChatNoticeFallback, TranslationKey> = {
+  "compaction-start": "chat.notice.compactionStart",
+  "compaction-end": "chat.notice.compactionEnd",
+  "retry-start": "chat.notice.retryStart",
+  "retry-end": "chat.notice.retryEnd",
+};
 
 export interface ChatViewProps {
   worktreeId: string;
@@ -27,6 +39,7 @@ function ChatViewContent({
   onError,
 }: Required<Pick<ChatViewProps, "worktreeId" | "sessionId" | "api">> &
   Pick<ChatViewProps, "onError"> & { runtime: ChatRuntime }) {
+  const { t } = useTranslation();
   const state = useChatSession(sessionId, runtime);
   const running = state.status === "streaming";
   const [config, setConfig] = useState<ChatSessionConfig>();
@@ -103,11 +116,15 @@ function ChatViewContent({
   };
 
   return (
-    <section className="chat-view" aria-label="Chat session">
+    <section className="chat-view" aria-label={t("chat.session")}>
       <div className="chat-transcript-shell">
         <div ref={transcriptRef} className="chat-transcript" aria-live="polite">
-          {state.status === "loading" && <div>Loading conversation…</div>}
-          {state.status === "reconnecting" && <div>Reconnecting…</div>}
+          {state.status === "loading" && (
+            <div>{t("chat.loadingConversation")}</div>
+          )}
+          {state.status === "reconnecting" && (
+            <div>{t("chat.reconnecting")}</div>
+          )}
           {configError && <div role="alert">{configError}</div>}
           {state.status === "failed" || state.status === "auth-required" ? (
             <div className="chat-error-banner" role="alert">
@@ -115,12 +132,11 @@ function ChatViewContent({
                 {state.error && (
                   <b className="chat-error-code">{state.error.code}</b>
                 )}
-                <span>{state.error?.message ?? "Chat unavailable"}</span>
+                <span>{state.error?.message ?? t("chat.unavailable")}</span>
               </div>
               {state.status === "auth-required" && (
                 <small className="chat-error-guidance">
-                  Run `pi` in a terminal or configure auth under ~/.pi/agent,
-                  then retry.
+                  {t("chat.authGuidance")}
                 </small>
               )}
               <button
@@ -128,7 +144,7 @@ function ChatViewContent({
                 className="chat-error-retry"
                 onClick={retry}
               >
-                Retry
+                {t("chat.common.retry")}
               </button>
             </div>
           ) : null}
@@ -151,7 +167,8 @@ function ChatViewContent({
                     className={`chat-notice chat-notice-${item.kind}`}
                     role={item.kind === "error" ? "alert" : "status"}
                   >
-                    {item.text}
+                    {item.text ??
+                      (item.fallback ? t(NOTICE_KEYS[item.fallback]) : "")}
                   </div>
                 );
             }
@@ -161,8 +178,8 @@ function ChatViewContent({
           <button
             type="button"
             className="chat-scroll-bottom"
-            aria-label="Scroll to latest message"
-            title="Scroll to latest message"
+            aria-label={t("chat.scrollLatest")}
+            title={t("chat.scrollLatest")}
             onClick={scrollToBottom}
           >
             <RiArrowDownLine aria-hidden="true" />
@@ -173,7 +190,7 @@ function ChatViewContent({
         <div
           className="chat-agent-activity"
           role="status"
-          aria-label="Agent activity"
+          aria-label={t("chat.agentActivity")}
         >
           <span className="chat-agent-activity-spinner" aria-hidden="true" />
           <span>{state.activity}</span>

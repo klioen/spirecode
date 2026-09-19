@@ -3,6 +3,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsDialog } from "./SettingsDialog";
 import { memoryApi } from "./memoryApi";
 import { settingsApi } from "./settingsApi";
+import { initializeLanguage, setLanguage } from "../../i18n";
+
+vi.mock("../../bindings", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../bindings")>();
+  return {
+    ...original,
+    commands: {
+      ...original.commands,
+      diagnosticsCopy: vi.fn().mockResolvedValue("redacted diagnostics"),
+    },
+  };
+});
 
 vi.mock("./memoryApi", () => ({
   memoryApi: {
@@ -17,6 +29,8 @@ vi.mock("./settingsApi", () => ({
   settingsApi: {
     listExtensions: vi.fn(),
     setExtensionEnabled: vi.fn(),
+    getLanguage: vi.fn(),
+    setLanguage: vi.fn(),
   },
 }));
 
@@ -32,6 +46,15 @@ const extension = {
 };
 
 beforeEach(() => {
+  initializeLanguage("en");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  vi.mocked(settingsApi.getLanguage).mockResolvedValue("en");
+  vi.mocked(settingsApi.setLanguage).mockImplementation(
+    async (language) => language,
+  );
   vi.mocked(memoryApi.listModels).mockResolvedValue([
     {
       provider: "traex",
@@ -114,6 +137,61 @@ describe("SettingsDialog", () => {
       await screen.findByRole("heading", { name: "Memory Summary" }),
     ).toBeInTheDocument();
     expect(memoryApi.read).toHaveBeenCalledWith("summary");
+  });
+
+  it("switches language live only after Main persists it", async () => {
+    let resolveLanguage!: (language: "zh-CN") => void;
+    vi.mocked(settingsApi.setLanguage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveLanguage = resolve;
+      }),
+    );
+    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    const language = screen.getByRole("combobox", { name: "Language" });
+    fireEvent.change(language, { target: { value: "zh-CN" } });
+
+    expect(settingsApi.setLanguage).toHaveBeenCalledWith("zh-CN");
+    expect(language).toBeDisabled();
+    expect(
+      screen.getByRole("heading", { name: "General" }),
+    ).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("en");
+
+    resolveLanguage("zh-CN");
+    expect(
+      await screen.findByRole("heading", { name: "通用" }),
+    ).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("zh-CN");
+  });
+
+  it("retranslates diagnostic success after a live language switch", async () => {
+    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+    setLanguage("zh-CN");
+    expect(await screen.findByText("已复制")).toBeInTheDocument();
+    expect(screen.queryByText("Copied")).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous language when persistence fails", async () => {
+    vi.mocked(settingsApi.setLanguage).mockRejectedValueOnce({
+      code: "SETTINGS_FAILED",
+      message: "write failed",
+    });
+    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
+      target: { value: "zh-CN" },
+    });
+
+    expect(await screen.findByText("write failed")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "General" }),
+    ).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("en");
   });
 
   it("closes from the close button", () => {
