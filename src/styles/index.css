@@ -2447,13 +2447,14 @@ details[open] > summary > .chat-disclosure-icon {
   gap: 17px;
 }
 .right-tabs button {
+  width: 30px;
   border: 0;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: var(--text-subtle);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 .right-tabs button:hover {

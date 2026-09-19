@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   RiArrowDownSLine,
+  RiFolder3Line,
+  RiGitCommitLine,
   RiLayoutLeftLine,
   RiLayoutRightLine,
   RiSettings3Line,
@@ -177,15 +179,19 @@ export function Workbench() {
         <div className="right-tabs">
           <button
             className={workbench.rightView === "files" ? "active" : ""}
+            aria-label={t("workbench.files")}
+            title={t("workbench.files")}
             onClick={() => workbench.setRightView("files")}
           >
-            {t("workbench.files")}
+            <RiFolder3Line size={15} />
           </button>
           <button
             className={workbench.rightView === "changes" ? "active" : ""}
+            aria-label={t("workbench.changes")}
+            title={t("workbench.changes")}
             onClick={() => workbench.setRightView("changes")}
           >
-            {t("workbench.changes")}
+            <RiGitCommitLine size={15} />
           </button>
         </div>
         {active ? (
