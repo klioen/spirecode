@@ -12,15 +12,16 @@
 - `electron/domains/chat/shellEnvironment.ts`：限制登录 zsh bootstrap 的平台范围。
 - `electron/domains/chat/shellEnvironment.test.ts`：覆盖非 macOS 跳过行为。
 - `.github/workflows/ci.yml`：增加 macOS、Windows、Linux 原生 matrix build、bundle 和 artifact upload。
+- `.gitattributes`：强制跨平台 checkout 对源文件保持 LF，避免 Windows 自动 CRLF 转换破坏 Prettier gate。
 - `AGENTS.md`：更新跨平台打包命令和 artifact 说明。
 
 ## Order of work
 
-1. 将 shell 选择和 ARK 登录 shell bootstrap 变成可注入平台、可单测的逻辑，先增加跨平台测试，再实现到通过。
+1. 将 shell 选择和 ARK 登录 shell bootstrap 变成可注入平台、可单测的逻辑；平台特定测试显式传入平台，避免依赖测试 runner 的宿主 OS。
 2. 从现有 macOS 图标生成并提交 Windows/Linux 图标，配置 electron-builder 的 NSIS、AppImage 和 deb target。
 3. 重构 package dispatcher，公共阶段只实现一次，平台特有签名、产物生成和 smoke 明确分支。
 4. 增加共享的 Windows/Linux artifact smoke；复用现有 Pi 扩展校验器和 asar API，实测最终 artifact 内的原生模块与 SDK。
-5. 将 CI 改为三平台 matrix，在 PR 执行检查，在 main push 打包并上传平台产物。
+5. 将 CI 改为三平台 matrix，在 PR 执行检查，在 main push 打包并上传平台产物；用 `.gitattributes` 保证 Windows checkout 后 Prettier 看到的换行不漂移。
 6. 更新工程指南，运行格式、lint、typecheck、单元测试和当前 macOS bundle 回归。
 
 ## Risks

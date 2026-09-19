@@ -12,7 +12,9 @@ describe("bootstrapArkApiKeyFromLoginShell", () => {
       ),
     );
 
-    expect(await bootstrapArkApiKeyFromLoginShell(env, run)).toBe(true);
+    expect(await bootstrapArkApiKeyFromLoginShell(env, run, "darwin")).toBe(
+      true,
+    );
     expect(run).toHaveBeenCalledWith("/bin/zsh", [
       "-ilc",
       'printf "\\036SPIRECODE_ARK_API_KEY\\037%s\\036" "${ARK_API_KEY-}"',
