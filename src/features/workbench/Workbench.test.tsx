@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLanguage } from "../../i18n";
+import { useChangesStore } from "../changes/changesStore";
+import { refreshChanges } from "../changes/changesRefresh";
 import { useProjectsStore } from "../projects/projectsStore";
 import { Workbench } from "./Workbench";
 import { resetWorkbenchStore } from "./workbenchStore";
@@ -11,6 +13,9 @@ vi.mock("../projects/ProjectRail", () => ({
 vi.mock("../files/FileTree", () => ({ FileTree: () => <div>Files</div> }));
 vi.mock("../changes/ChangesPanel", () => ({
   ChangesPanel: () => <div>Changes</div>,
+}));
+vi.mock("../changes/changesRefresh", () => ({
+  refreshChanges: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../editor/EditorPane", () => ({
   EditorPane: () => <main>Editor</main>,
@@ -27,6 +32,8 @@ beforeEach(() => {
   setLanguage("en");
   localStorage.clear();
   resetWorkbenchStore();
+  vi.mocked(refreshChanges).mockClear();
+  useChangesStore.setState({ byWorktree: {} });
   useProjectsStore.setState({
     projects: [
       {
@@ -56,6 +63,43 @@ beforeEach(() => {
 });
 
 describe("Workbench panel handles", () => {
+  it("shows project, worktree, and the live Git branch as a three-level breadcrumb", () => {
+    useChangesStore.setState({
+      byWorktree: {
+        w1: {
+          snapshot: {
+            branch: "feat/cross-platform-packaging",
+            upstream: "origin/feat/cross-platform-packaging",
+            ahead: 0,
+            behind: 0,
+            changes: [],
+          },
+          loading: false,
+          staleError: null,
+          generation: 1,
+        },
+      },
+    });
+
+    render(<Workbench />);
+
+    const breadcrumb = screen.getByRole("navigation", {
+      name: "Project context",
+    });
+    expect(breadcrumb).toHaveTextContent(
+      "Project > main > feat/cross-platform-packaging",
+    );
+    expect(
+      Array.from(breadcrumb.querySelectorAll(".breadcrumb-level"), (element) =>
+        element.textContent?.trim(),
+      ),
+    ).toEqual(["Project", "main", "feat/cross-platform-packaging"]);
+    expect(breadcrumb.querySelector(".branch")).toHaveClass(
+      "breadcrumb-level-fixed",
+    );
+    expect(refreshChanges).toHaveBeenCalledWith("w1");
+  });
+
   it("shows the SpireCode identity and slogan when no project is active", () => {
     useProjectsStore.setState({ projects: [], activeWorktreeId: null });
 

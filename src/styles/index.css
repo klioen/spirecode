@@ -972,11 +972,21 @@ body.panel-resizing-vertical * {
   -webkit-app-region: drag;
 }
 .project-crumb {
-  min-width: 0;
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 7px;
+  overflow: hidden;
   font-size: 12px;
+  white-space: nowrap;
+}
+.breadcrumb-level {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breadcrumb-level-fixed {
+  flex-shrink: 0;
 }
 .project-crumb b {
   min-width: 0;
@@ -984,6 +994,10 @@ body.panel-resizing-vertical * {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-default);
+}
+.breadcrumb-separator {
+  flex: 0 0 auto;
+  color: var(--text-subtle);
 }
 .project-crumb > span:last-child {
   color: var(--text-muted);
