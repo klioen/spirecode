@@ -97,6 +97,7 @@ export const en = {
     "Open a Git repository to explore files, review changes, and run commands.",
   "workbench.openProject": "Open a project",
   "workbench.noProject": "No project open",
+  "workbench.projectContext": "Project context",
   "workbench.settings": "Settings",
   "workbench.toggleProjects": "Toggle projects panel",
   "workbench.toggleFiles": "Toggle files panel",

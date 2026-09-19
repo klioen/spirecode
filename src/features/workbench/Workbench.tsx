@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
-  RiArrowDownSLine,
   RiFolder3Line,
   RiGitCommitLine,
   RiLayoutLeftLine,
@@ -9,6 +8,8 @@ import {
 } from "@remixicon/react";
 import { useTranslation } from "../../i18n";
 import { ChangesPanel } from "../changes/ChangesPanel";
+import { refreshChanges } from "../changes/changesRefresh";
+import { useChangesStore } from "../changes/changesStore";
 import { EditorPane } from "../editor/EditorPane";
 import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
@@ -58,6 +59,14 @@ export function Workbench() {
     }
     return null;
   }, [activeWorktreeId, projects]);
+  const liveBranch = useChangesStore((state) =>
+    activeWorktreeId
+      ? state.byWorktree[activeWorktreeId]?.snapshot?.branch
+      : null,
+  );
+  useEffect(() => {
+    if (activeWorktreeId) void refreshChanges(activeWorktreeId);
+  }, [activeWorktreeId]);
   const error = useProjectsStore((state) => state.error);
   const workbench = useWorkbenchStore();
   const resizeProjects = (width: number) => {
@@ -118,19 +127,29 @@ export function Workbench() {
         </>
       )}
       <header className="topbar">
-        <div className="project-crumb">
+        <nav
+          className="project-crumb"
+          aria-label={t("workbench.projectContext")}
+        >
           <span className="traffic-spacer" />
           {active ? (
             <>
-              <b>{active.project.name}</b>
-              <RiArrowDownSLine size={15} />
-              <span>{active.worktree.name}</span>
-              <span className="branch">· {active.worktree.branch}</span>
+              <b className="breadcrumb-level">{active.project.name}</b>
+              <span className="breadcrumb-separator" aria-hidden="true">
+                {" > "}
+              </span>
+              <span className="breadcrumb-level">{active.worktree.name}</span>
+              <span className="breadcrumb-separator" aria-hidden="true">
+                {" > "}
+              </span>
+              <span className="breadcrumb-level breadcrumb-level-fixed branch">
+                {liveBranch ?? active.worktree.branch}
+              </span>
             </>
           ) : (
             <span>{t("workbench.noProject")}</span>
           )}
-        </div>
+        </nav>
         <div className="layout-actions">
           <ThemeToggle />
           <button

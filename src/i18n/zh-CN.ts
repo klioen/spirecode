@@ -94,6 +94,7 @@ export const zhCN = {
     "打开 Git 仓库以浏览文件、审阅更改并运行命令。",
   "workbench.openProject": "打开项目",
   "workbench.noProject": "未打开项目",
+  "workbench.projectContext": "项目上下文",
   "workbench.settings": "设置",
   "workbench.toggleProjects": "切换项目面板",
   "workbench.toggleFiles": "切换文件面板",
