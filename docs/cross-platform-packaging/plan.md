@@ -12,6 +12,8 @@
 - `electron/domains/persistence/{index.ts,persistence.test.ts}`：Windows 保留文件 fsync，但容忍目录 fsync 的 `EPERM` / `EINVAL`。
 - `electron/domains/filesystem/pathGuard.ts`：同时拒绝 POSIX 和 Windows 风格的绝对路径与 traversal 分隔符。
 - `electron/domains/chat/bundledResources.ts`：将 Windows drive 绝对路径识别为本地 package source。
+- `electron/domains/settings/index.ts`：先识别 Windows/POSIX 绝对路径再识别 URI scheme，避免将 Windows drive letter 误判为协议。
+- `electron/domains/worktrees/worktrees.test.ts`：canonicalize Git porcelain 返回路径后断言，兼容 Windows 的 `/`、大小写和短路径表示。
 - `electron/core/gitProcess.ts`：超时/输出超限后等待 Git 子进程真正关闭再返回，避免 Windows 临时目录锁残留。
 - `electron/security/navigation.test.ts`：使用宿主平台生成的 file URL fixture。
 - `electron/domains/chat/shellEnvironment.ts`：限制登录 zsh bootstrap 的平台范围。
