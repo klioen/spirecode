@@ -21,13 +21,10 @@ export const zhCN = {
   "settings.general.language.description": "选择界面语言。",
   "settings.general.language.english": "English",
   "settings.general.language.chinese": "简体中文",
-  "settings.general.diagnostics.label": "诊断",
-  "settings.general.diagnostics.description":
-    "复制已脱敏的报告或打开本地日志。",
-  "settings.general.diagnostics.copy": "复制诊断信息",
-  "settings.general.diagnostics.copied": "已复制",
-  "settings.general.diagnostics.reveal": "显示日志",
-  "settings.general.feedback": "发送反馈",
+  "settings.general.feedback.label": "反馈",
+  "settings.general.feedback.description":
+    "报告问题或分享你对 SpireCode 的建议。",
+  "settings.general.feedback.action": "发送反馈",
   "settings.agent.description": "SpireCode 使用你现有的 pi 配置。",
   "settings.agent.configuration": "Pi 配置",
   "settings.agent.configuration.description": "身份验证和模型由 pi 管理。",
