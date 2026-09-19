@@ -98,6 +98,16 @@ describe("shellForPlatform", () => {
     ).toBe("C:\\Windows\\System32\\cmd.exe");
   });
 
+  it("fails closed when Windows has no trusted system shell", () => {
+    expect(() =>
+      shellForPlatform(
+        "win32",
+        { COMSPEC: "cmd.exe", SystemRoot: "relative" },
+        existing,
+      ),
+    ).toThrow("Windows command interpreter");
+  });
+
   it("uses the first available Unix shell fallback", () => {
     expect(shellForPlatform("linux", { SHELL: "bash" }, existing)).toBe(
       "/bin/bash",
