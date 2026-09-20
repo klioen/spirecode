@@ -39,7 +39,7 @@ vi.mock("../../bindings", async (importOriginal) => {
   };
 });
 
-vi.mock("@monaco-editor/react", () => ({
+vi.mock("./monacoEditors", () => ({
   default: ({
     value,
     onChange,
@@ -138,6 +138,49 @@ describe("EditorPane resources", () => {
       false,
     );
 
+  it("renders accessible tabs with sibling close buttons and roving focus", async () => {
+    vi.mocked(commands.fsReadFile).mockImplementation(
+      async (_worktreeId, relativePath) => ({
+        relativePath,
+        content: relativePath,
+        version: `version-${relativePath}`,
+      }),
+    );
+    openFile();
+    useEditorStore.getState().open(
+      {
+        id: "file:p1:src/other.ts",
+        worktreeId: "p1",
+        type: "file",
+        relativePath: "src/other.ts",
+        preview: false,
+      },
+      true,
+    );
+
+    render(<EditorPane worktreeId="p1" />);
+
+    const tablist = screen.getByRole("tablist");
+    const exampleTab = screen.getByRole("tab", { name: "example.ts" });
+    const otherTab = screen.getByRole("tab", { name: "other.ts" });
+    const closeOther = screen.getByRole("button", { name: "Close other.ts" });
+    expect(tablist).toContainElement(exampleTab);
+    expect(tablist).toContainElement(otherTab);
+    expect(exampleTab).toHaveAttribute("aria-selected", "false");
+    expect(exampleTab).toHaveAttribute("tabindex", "-1");
+    expect(otherTab).toHaveAttribute("aria-selected", "true");
+    expect(otherTab).toHaveAttribute("tabindex", "0");
+    expect(otherTab.parentElement).toBe(closeOther.parentElement);
+    expect(otherTab).not.toContainElement(closeOther);
+
+    otherTab.focus();
+    fireEvent.keyDown(otherTab, { key: "ArrowLeft" });
+    expect(exampleTab).toHaveFocus();
+    expect(exampleTab).toHaveAttribute("aria-selected", "true");
+    expect(exampleTab).toHaveAttribute("tabindex", "0");
+    expect(otherTab).toHaveAttribute("tabindex", "-1");
+  });
+
   it("edits the selected file and saves it with Command-S", async () => {
     vi.mocked(commands.fsReadFile).mockResolvedValue({
       relativePath: "src/example.ts",
@@ -173,6 +216,71 @@ describe("EditorPane resources", () => {
       ).not.toBeInTheDocument(),
     );
     expect(fileEditorValues).not.toContain("before");
+  });
+
+  it("preserves edits typed while an earlier save is in flight", async () => {
+    const pending = deferred<{
+      relativePath: string;
+      content: string;
+      version: string;
+    }>();
+    vi.mocked(commands.fsReadFile).mockResolvedValue({
+      relativePath: "src/example.ts",
+      content: "before",
+      version: "version-1",
+    });
+    vi.mocked(commands.fsWriteFile).mockReturnValue(pending.promise);
+    openFile();
+
+    render(<EditorPane worktreeId="p1" />);
+    const editor = await screen.findByRole("textbox", { name: "File editor" });
+    fireEvent.change(editor, { target: { value: "first edit" } });
+    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    await waitFor(() => expect(commands.fsWriteFile).toHaveBeenCalledOnce());
+    fireEvent.change(editor, { target: { value: "newer edit" } });
+    pending.resolve({
+      relativePath: "src/example.ts",
+      content: "first edit",
+      version: "version-2",
+    });
+
+    await waitFor(() => expect(editor).toHaveValue("newer edit"));
+    expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("supports Ctrl-S and retries a transient save failure", async () => {
+    vi.mocked(commands.fsReadFile).mockResolvedValue({
+      relativePath: "src/example.ts",
+      content: "before",
+      version: "version-1",
+    });
+    vi.mocked(commands.fsWriteFile)
+      .mockRejectedValueOnce({
+        code: "PERMISSION_DENIED",
+        message: "try again",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "src/example.ts",
+        content: "after",
+        version: "version-2",
+      });
+    openFile();
+
+    render(<EditorPane worktreeId="p1" />);
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "File editor" }),
+      { target: { value: "after" } },
+    );
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    expect(await screen.findByText("try again")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(commands.fsWriteFile).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText("Unsaved changes"),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("preserves the dirty buffer while switching between file tabs", async () => {

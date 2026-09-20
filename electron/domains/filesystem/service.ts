@@ -1,13 +1,15 @@
 import {
   chmod,
   lstat,
+  open,
   readFile as fsReadFile,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
-  writeFile as fsWriteFile,
 } from "node:fs/promises";
+import { constants as fsConstants, type Stats } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import ignore, { type Ignore } from "ignore";
@@ -50,6 +52,96 @@ function decodeTextFile(bytes: Buffer): string {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw new CommandError("UNSUPPORTED_FILE", "file is not valid UTF-8");
+  }
+}
+
+function assertSupportedTextFile(metadata: Stats): void {
+  if (!metadata.isFile()) {
+    throw new CommandError("UNSUPPORTED_FILE", "path is not a regular file");
+  }
+  assertTextByteLimit(metadata.size);
+}
+
+function assertTextByteLimit(value: number | Uint8Array): void {
+  const size = typeof value === "number" ? value : value.byteLength;
+  if (size > MAX_TEXT_BYTES) {
+    throw new CommandError("FILE_TOO_LARGE", "file exceeds 5 MiB text limit");
+  }
+}
+
+function noFollowFlags(flags: number): number {
+  return process.platform === "win32" ? flags : flags | fsConstants.O_NOFOLLOW;
+}
+
+async function openNoFollow(filePath: string, flags: number, mode?: number) {
+  return open(filePath, noFollowFlags(flags), mode);
+}
+
+async function assertUnchangedTarget(
+  root: string,
+  relativePath: string,
+  expectedPath: string,
+  expected: Stats,
+  expectedVersion: string,
+): Promise<void> {
+  const resolved = await resolveProjectPath(root, relativePath, true);
+  const current = await lstat(resolved.path);
+  if (
+    resolved.path !== expectedPath ||
+    !current.isFile() ||
+    current.dev !== expected.dev ||
+    current.ino !== expected.ino
+  ) {
+    throw new CommandError(
+      "FILE_CONFLICT",
+      "file changed on disk; reload it before saving",
+    );
+  }
+  const handle = await openNoFollow(resolved.path, fsConstants.O_RDONLY);
+  try {
+    const bytes = await readBounded(handle);
+    if (fileVersion(bytes) !== expectedVersion) {
+      throw new CommandError(
+        "FILE_CONFLICT",
+        "file changed on disk; reload it before saving",
+      );
+    }
+  } finally {
+    await handle.close();
+  }
+  const parent = await realpath(path.dirname(resolved.path));
+  if (parent !== path.dirname(resolved.path)) {
+    throw new CommandError("OUTSIDE_PROJECT", "file parent changed on disk");
+  }
+}
+
+async function readBounded(
+  handle: Awaited<ReturnType<typeof open>>,
+): Promise<Buffer> {
+  const bytes = Buffer.allocUnsafe(MAX_TEXT_BYTES + 1);
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const result = await handle.read(
+      bytes,
+      offset,
+      bytes.byteLength - offset,
+      offset,
+    );
+    if (result.bytesRead === 0) break;
+    offset += result.bytesRead;
+  }
+  const value = bytes.subarray(0, offset);
+  assertTextByteLimit(value);
+  return value;
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, fsConstants.O_RDONLY);
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
 }
 
@@ -193,28 +285,21 @@ export class FilesystemService {
         relativePath,
         true,
       );
-      const metadata = await stat(filePath);
-      if (!metadata.isFile()) {
-        throw new CommandError(
-          "UNSUPPORTED_FILE",
-          "path is not a regular file",
-        );
+      const handle = await openNoFollow(filePath, fsConstants.O_RDONLY);
+      try {
+        const metadata = await handle.stat();
+        assertSupportedTextFile(metadata);
+        const bytes = await readBounded(handle);
+        const content = decodeTextFile(bytes);
+        return {
+          relativePath,
+          content,
+          size: metadata.size,
+          version: fileVersion(bytes),
+        };
+      } finally {
+        await handle.close();
       }
-      if (metadata.size > MAX_TEXT_BYTES) {
-        throw new CommandError(
-          "FILE_TOO_LARGE",
-          "file exceeds 5 MiB text limit",
-        );
-      }
-
-      const bytes = await fsReadFile(filePath);
-      const content = decodeTextFile(bytes);
-      return {
-        relativePath,
-        content,
-        size: metadata.size,
-        version: fileVersion(bytes),
-      };
     } catch (error) {
       throw toCommandError(error);
     }
@@ -234,20 +319,14 @@ export class FilesystemService {
         relativePath,
         true,
       );
-      const metadata = await stat(filePath);
-      if (!metadata.isFile()) {
-        throw new CommandError(
-          "UNSUPPORTED_FILE",
-          "path is not a regular file",
-        );
-      }
-
-      const currentBytes = await fsReadFile(filePath);
-      if (currentBytes.byteLength > MAX_TEXT_BYTES) {
-        throw new CommandError(
-          "FILE_TOO_LARGE",
-          "file exceeds 5 MiB text limit",
-        );
+      const targetHandle = await openNoFollow(filePath, fsConstants.O_RDONLY);
+      const metadata = await targetHandle.stat();
+      let currentBytes: Buffer;
+      try {
+        assertSupportedTextFile(metadata);
+        currentBytes = await readBounded(targetHandle);
+      } finally {
+        await targetHandle.close();
       }
       decodeTextFile(currentBytes);
       if (fileVersion(currentBytes) !== expectedVersion) {
@@ -265,14 +344,33 @@ export class FilesystemService {
         );
       }
 
+      const parentPath = path.dirname(filePath);
       temporaryPath = path.join(
-        path.dirname(filePath),
+        parentPath,
         `.${path.basename(filePath)}.spirecode-${randomUUID()}.tmp`,
       );
-      await fsWriteFile(temporaryPath, nextBytes, { flag: "wx" });
+      const temporaryHandle = await openNoFollow(
+        temporaryPath,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+        metadata.mode,
+      );
+      try {
+        await temporaryHandle.writeFile(nextBytes);
+        await temporaryHandle.sync();
+      } finally {
+        await temporaryHandle.close();
+      }
       await chmod(temporaryPath, metadata.mode);
+      await assertUnchangedTarget(
+        root,
+        relativePath,
+        filePath,
+        metadata,
+        expectedVersion,
+      );
       await rename(temporaryPath, filePath);
       temporaryPath = undefined;
+      await syncDirectory(parentPath);
       const savedMetadata = await stat(filePath);
       return {
         relativePath,

@@ -1,5 +1,9 @@
 # Intent: 设置中心与 Extensions 管理
-Author: 用户。 Status: accepted。
+
+> [!IMPORTANT]
+> **Partially superseded.** Settings 入口和用户资源管理目标仍有效，但目录自动发现和旧 catalog 来源不再定义当前行为。现行资源边界见 [`docs/remove-pi-extensions-dependency/`](../remove-pi-extensions-dependency/spec.md)：只反映用户通过标准 Pi settings 显式配置并实际解析到的资源。
+
+Author: 用户。 Status: partially superseded。
 
 ## Problem
 SpireCode 右上角没有统一设置入口，用户也无法查看和开关来自 SpireCode 与 Pi 的 Extensions。

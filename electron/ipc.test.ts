@@ -92,17 +92,6 @@ describe("IPC command argument validation", () => {
   });
 
   it("validates extension settings commands without accepting paths", () => {
-    expect(
-      validateCommandArgs("settings_extension_set_enabled", {
-        worktreeId: "worktree-1",
-        extensionId: "abc123",
-        enabled: false,
-      }),
-    ).toEqual({
-      worktreeId: "worktree-1",
-      extensionId: "abc123",
-      enabled: false,
-    });
     expect(() =>
       validateCommandArgs("settings_extensions_list", {
         worktreeId: "worktree-1",
@@ -113,6 +102,10 @@ describe("IPC command argument validation", () => {
 
   it("validates narrow language settings arguments", () => {
     expect(validateCommandArgs("settings_language_get", {})).toEqual({});
+    expect(validateCommandArgs("settings_agent_readiness", {})).toEqual({});
+    expect(() =>
+      validateCommandArgs("settings_agent_readiness", { apiKey: "secret" }),
+    ).toThrow("Unexpected argument: apiKey");
     expect(
       validateCommandArgs("settings_language_set", { language: "en" }),
     ).toEqual({ language: "en" });
@@ -186,6 +179,7 @@ describe("IPC command argument validation", () => {
 
   it("validates global Memory configuration without accepting secrets", () => {
     expect(validateCommandArgs("settings_memory_models_list", {})).toEqual({});
+    expect(validateCommandArgs("settings_extensions_list", {})).toEqual({});
     expect(validateCommandArgs("settings_memory_config_get", {})).toEqual({});
     const config = {
       phase1Provider: "openai",

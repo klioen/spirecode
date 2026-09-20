@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   act,
   fireEvent,
@@ -195,6 +196,53 @@ describe("ChatComposer", () => {
     expect(screen.queryByText("Review code")).toBeNull();
     fireEvent.keyDown(input, { key: "Tab" });
     expect(input).toHaveValue("/release ");
+  });
+
+  it("keeps narrow composer actions shrinkable and wrappable", () => {
+    const { container } = render(
+      <div data-testid="narrow-chat" style={{ width: 340 }}>
+        <ChatComposer
+          running={false}
+          config={{
+            model: { provider: "provider", id: "model" },
+            models: [
+              {
+                provider: "provider",
+                id: "model",
+                label: "Model with a long label",
+                reasoning: true,
+              },
+            ],
+            thinkingLevel: "medium",
+            availableThinkingLevels: ["off", "medium"],
+            commands: [],
+          }}
+          onSend={vi.fn()}
+          onStop={vi.fn()}
+        />
+      </div>,
+    );
+
+    expect(screen.getByTestId("narrow-chat")).toHaveStyle({ width: "340px" });
+    const actions = container.querySelector<HTMLElement>(
+      ".chat-composer-actions",
+    );
+    const config = container.querySelector<HTMLElement>(
+      ".chat-composer-config",
+    );
+    expect(actions).toContainElement(config);
+    expect(config?.querySelectorAll("select")).toHaveLength(2);
+    expect(actions?.lastElementChild).toHaveClass("chat-composer-submit");
+
+    const css = readFileSync("src/styles/index.css", "utf8");
+    expect(css).toMatch(/\.chat-composer-actions\s*\{[^}]*flex-wrap:\s*wrap;/s);
+    expect(css).toMatch(
+      /\.chat-composer-config\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 [^;]+;/s,
+    );
+    expect(css).toMatch(
+      /\.chat-composer-config select\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s,
+    );
+    expect(css).toMatch(/\.chat-composer-submit\s*\{[^}]*flex:\s*0 0 32px;/s);
   });
 
   it("grows the textarea with content up to its maximum height", () => {

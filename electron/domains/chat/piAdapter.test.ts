@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPiAdapter, type PiSdk } from "./piAdapter.js";
+import {
+  createPiAdapter,
+  preferSpirecodeProviders,
+  type PiSdk,
+} from "./piAdapter.js";
 
 function sessionFixture() {
   let streaming = false;
@@ -82,6 +86,12 @@ function sdkFixture(options: {
   resolvedModel?: unknown;
   configuredAuth?: boolean;
   availableModels?: unknown[];
+  extensionPaths?: string[];
+  servicesRuntime?: {
+    getModel(provider: string, model: string): unknown;
+    hasConfiguredAuth(provider: string): boolean;
+    getAvailable(): Promise<readonly unknown[]>;
+  };
 }) {
   const runtime = {
     getModel: (provider: string, model: string) => {
@@ -137,7 +147,7 @@ function sdkFixture(options: {
       ]);
       return {
         cwd: input.cwd,
-        modelRuntime: runtime,
+        modelRuntime: options.servicesRuntime ?? runtime,
         settingsManager: settings,
       };
     },
@@ -180,7 +190,7 @@ function sdkFixture(options: {
     settingsManager: settings,
     resourceLoaderOptions: {
       noExtensions: true,
-      additionalExtensionPaths: ["/bundle/pi-memory"],
+      additionalExtensionPaths: options.extensionPaths ?? [],
     },
     diagnostics: [],
   });
@@ -207,7 +217,7 @@ describe("piAdapter", () => {
         runtime,
         {
           noExtensions: true,
-          additionalExtensionPaths: ["/bundle/pi-memory"],
+          additionalExtensionPaths: [],
         },
       ],
       ["getModel", "traex", "gpt-5.6-sol"],
@@ -251,15 +261,11 @@ describe("piAdapter", () => {
     );
   });
 
-  it("loads only extensions selected from the resolved resource set", async () => {
-    const { sdk, calls, runtime, loadResources } = sdkFixture({});
-    const adapter = await createPiAdapter(sdk, {
-      loadResources,
-      selectExtensionPaths: async (_cwd, basePaths) => [
-        ...basePaths,
-        "/extensions/enabled.ts",
-      ],
+  it("loads the standard user extension paths resolved from settings", async () => {
+    const { sdk, calls, runtime, loadResources } = sdkFixture({
+      extensionPaths: ["/extensions/enabled.ts"],
     });
+    const adapter = await createPiAdapter(sdk, { loadResources });
 
     await adapter.create("/repo");
 
@@ -269,12 +275,64 @@ describe("piAdapter", () => {
       runtime,
       {
         noExtensions: true,
-        additionalExtensionPaths: [
-          "/bundle/pi-memory",
-          "/extensions/enabled.ts",
-        ],
+        additionalExtensionPaths: ["/extensions/enabled.ts"],
       },
     ]);
+  });
+
+  it("lets a SpireCode settings provider replace the same Pi provider", () => {
+    const registration = (extensionPath: string) => ({
+      name: "shared-provider",
+      config: {},
+      extensionPath,
+    });
+    const result = {
+      extensions: [],
+      errors: [],
+      runtime: {
+        pendingProviderRegistrations: [
+          registration("/pi/provider.ts"),
+          registration("/spire/provider.ts"),
+        ],
+        pendingNativeProviderRegistrations: [],
+      },
+    } as never;
+
+    const merged = preferSpirecodeProviders(
+      result,
+      new Set(["/spire/provider.ts"]),
+    );
+
+    expect(merged.runtime.pendingProviderRegistrations).toEqual([
+      registration("/spire/provider.ts"),
+    ]);
+  });
+
+  it("fails fast when standard resource loading reports extension conflicts", async () => {
+    const { sdk, loadResources } = sdkFixture({});
+    sdk.createAgentSessionServices = async () => ({
+      modelRuntime: {
+        getModel: () => undefined,
+        getAvailable: async () => [],
+        hasConfiguredAuth: () => false,
+      },
+      settingsManager: {
+        getDefaultProvider: () => undefined,
+        getDefaultModel: () => undefined,
+      },
+      diagnostics: [
+        {
+          type: "error",
+          message: "Command review is registered by /user/a.ts and /user/b.ts",
+        },
+      ],
+    });
+
+    await expect(
+      (await createPiAdapter(sdk, { loadResources })).create("/repo"),
+    ).rejects.toThrow(
+      "Unable to load SpireCode extensions: Command review is registered by /user/a.ts and /user/b.ts",
+    );
   });
 
   it("leaves app-owned fallback titles empty without breaking open or delete metadata", async () => {
@@ -443,6 +501,35 @@ describe("piAdapter", () => {
     );
     expect(JSON.stringify(config)).not.toContain("secret.example");
     expect(JSON.stringify(config)).not.toContain("/private/");
+  });
+
+  it("uses the extension-resolved model runtime for listing and switching", async () => {
+    const extensionModel = {
+      provider: "extension-provider",
+      id: "extension-model",
+      name: "Extension Model",
+      reasoning: true,
+    };
+    const servicesRuntime = {
+      getModel: () => extensionModel,
+      hasConfiguredAuth: () => true,
+      getAvailable: async () => [extensionModel],
+    };
+    const { sdk, fixture, loadResources } = sdkFixture({ servicesRuntime });
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    const created = await adapter.create("/repo");
+
+    expect(await created.session.getConfig()).toMatchObject({
+      models: [
+        {
+          provider: "extension-provider",
+          id: "extension-model",
+          label: "Extension Model",
+        },
+      ],
+    });
+    await created.session.setModel("extension-provider", "extension-model");
+    expect(fixture.calls).toContainEqual(["setModel", extensionModel]);
   });
 
   it("uses SDK mutations and returns their authoritative clamped config", async () => {

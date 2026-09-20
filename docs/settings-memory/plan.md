@@ -1,5 +1,8 @@
 # Plan: Settings Memory 文档查看（from docs/settings-memory/spec.md 2026-09-16）
 
+> [!NOTE]
+> 本文保留该功能交付时对 bundled `pi-memory` 上游的历史实施记录。当前 SpireCode 不依赖该仓库；Memory 文档读取仍是本地功能，而后台 memory 执行需要用户通过标准 Pi settings 自行安装并启用兼容资源。
+
 ## Files that change
 
 - `docs/settings-memory/{intent,spec,plan}.md`：记录需求、设计和获批实现计划。

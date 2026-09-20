@@ -74,7 +74,7 @@ describe("ChangesPanel view modes", () => {
       "false",
     );
     expect(
-      screen.getByRole("button", {
+      screen.getByRole("treeitem", {
         name: "src/features/changes/ChangesPanel.tsx M",
       }),
     ).toBeInTheDocument();
@@ -85,19 +85,19 @@ describe("ChangesPanel view modes", () => {
     render(<ChangesPanel worktreeId="w1" />);
     fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
 
-    const src = screen.getByRole("button", { name: "src" });
+    const src = screen.getByRole("treeitem", { name: "src" });
     expect(src).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "features" })).toBeVisible();
+    expect(screen.getByRole("treeitem", { name: "features" })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "ChangesPanel.tsx M" }),
+      screen.getByRole("treeitem", { name: "ChangesPanel.tsx M" }),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "main.tsx M" })).toBeVisible();
+    expect(screen.getByRole("treeitem", { name: "main.tsx M" })).toBeVisible();
 
     expect(src).toHaveStyle({ paddingLeft: "12px" });
-    expect(screen.getByRole("button", { name: "features" })).toHaveStyle({
+    expect(screen.getByRole("treeitem", { name: "features" })).toHaveStyle({
       paddingLeft: "20px",
     });
-    const changedFile = screen.getByRole("button", {
+    const changedFile = screen.getByRole("treeitem", {
       name: "ChangesPanel.tsx M",
     });
     expect(changedFile).toHaveStyle({ paddingLeft: "36px" });
@@ -105,15 +105,64 @@ describe("ChangesPanel view modes", () => {
 
     fireEvent.click(src);
 
-    expect(screen.queryByRole("button", { name: "features" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "main.tsx M" })).toBeNull();
-    expect(screen.getByRole("button", { name: "README.md U" })).toBeVisible();
+    expect(screen.queryByRole("treeitem", { name: "features" })).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: "main.tsx M" })).toBeNull();
+    expect(screen.getByRole("treeitem", { name: "README.md U" })).toBeVisible();
+  });
+
+  it("adds tree semantics and supports the complete keyboard matrix", () => {
+    render(<ChangesPanel worktreeId="w1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
+
+    expect(screen.getByRole("tree")).toBeInTheDocument();
+    const src = screen.getByRole("treeitem", { name: "src" });
+    const features = screen.getByRole("treeitem", { name: "features" });
+    const changedFile = screen.getByRole("treeitem", {
+      name: "ChangesPanel.tsx M",
+    });
+    expect(src).toHaveAttribute("aria-level", "1");
+    expect(features).toHaveAttribute("aria-level", "2");
+    expect(changedFile).toHaveAttribute("aria-level", "4");
+    expect(src).toHaveAttribute("tabindex", "0");
+    expect(features).toHaveAttribute("tabindex", "-1");
+
+    src.focus();
+    fireEvent.keyDown(src, { key: "ArrowDown" });
+    expect(features).toHaveFocus();
+    fireEvent.keyDown(features, { key: "ArrowUp" });
+    expect(src).toHaveFocus();
+    fireEvent.keyDown(src, { key: "End" });
+    expect(screen.getByRole("treeitem", { name: "README.md U" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(src).toHaveFocus();
+    fireEvent.keyDown(src, { key: "ArrowRight" });
+    expect(features).toHaveFocus();
+    fireEvent.keyDown(features, { key: "ArrowLeft" });
+    expect(features).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(features, { key: "ArrowLeft" });
+    expect(src).toHaveFocus();
+    fireEvent.keyDown(src, { key: "ArrowLeft" });
+    expect(src).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(src, { key: "ArrowRight" });
+    expect(src).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(src, { key: " " });
+    expect(src).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(src, { key: "Enter" });
+    expect(src).toHaveAttribute("aria-expanded", "true");
+
+    const file = screen.getByRole("treeitem", { name: "main.tsx M" });
+    fireEvent.keyDown(file, { key: "Enter" });
+    expect(useEditorStore.getState().views.w1.activeTabId).toBe(
+      "diff:w1:unstaged:src/main.tsx",
+    );
   });
 
   it("opens the original path with the group scope from tree mode", () => {
     render(<ChangesPanel worktreeId="w1" />);
     fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
-    fireEvent.click(screen.getByRole("button", { name: "ChangesPanel.tsx M" }));
+    fireEvent.click(
+      screen.getByRole("treeitem", { name: "ChangesPanel.tsx M" }),
+    );
 
     const view = useEditorStore.getState().views.w1;
     expect(view.activeTabId).toBe(

@@ -1,5 +1,8 @@
 # Spec: Windows 和 Linux 打包支持
 
+> [!NOTE]
+> 本文保留跨平台打包交付时的历史设计。文中 Pi extension staging、完整性检查和 artifact 内容已由 [`docs/remove-pi-extensions-dependency/`](../remove-pi-extensions-dependency/spec.md) 取代；当前打包不依赖或携带 `github:klioen/pi-extensions`。
+
 ## Requirements
 
 1. `pnpm bundle` 必须在 `darwin`、`win32`、`linux` 上分别生成该宿主支持的发布产物；未知平台必须明确失败。

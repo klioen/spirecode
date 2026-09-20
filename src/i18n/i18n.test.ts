@@ -32,9 +32,9 @@ describe("i18n", () => {
 
   it("interpolates values and formats with the explicit selected locale", () => {
     initializeLanguage("zh-CN");
-    expect(
-      t("settings.extensions.toggle.enable", { name: "review-tools" }),
-    ).toBe("启用 review-tools");
+    expect(t("settings.agent.ready", { count: 2 })).toBe(
+      "已就绪，有 2 个已认证模型。",
+    );
     expect(formatNumber(10_000)).toBe("10,000");
     expect(formatList(["甲", "乙"])).toBe("甲和乙");
     expect(formatDateTime(new Date("2024-01-02T03:04:00Z"))).toContain("2024");

@@ -2,6 +2,7 @@ import type {
   AgentSession,
   AgentSessionEvent,
   ExtensionUIContext,
+  Extension,
   LoadExtensionsResult,
   Theme,
 } from "@earendil-works/pi-coding-agent";
@@ -11,14 +12,8 @@ import {
   createAgentSessionFromServices,
   createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
-import {
-  applyExtensionPrecedence,
-  assertNoExtensionConflicts,
-  defaultBundleRoot,
-  resolveBundledResources,
-} from "./bundledResources.js";
 import { bootstrapArkApiKeyFromLoginShell } from "./shellEnvironment.js";
-import { loadSpireSettings } from "./spireSettings.js";
+import { loadSpireSettings, resolveSpireResources } from "./spireSettings.js";
 import type {
   ChatSessionConfig,
   ChatSlashCommand,
@@ -104,7 +99,13 @@ interface PiServices {
 
 interface PiResourceLoaderOptions {
   noExtensions: boolean;
+  noSkills?: boolean;
+  noPromptTemplates?: boolean;
+  noThemes?: boolean;
   additionalExtensionPaths: string[];
+  additionalSkillPaths?: string[];
+  additionalPromptTemplatePaths?: string[];
+  additionalThemePaths?: string[];
   extensionsOverride?: (result: LoadExtensionsResult) => LoadExtensionsResult;
 }
 
@@ -186,10 +187,6 @@ export interface PiAdapterOptions {
     resourceLoaderOptions: PiResourceLoaderOptions;
     diagnostics: string[];
   }>;
-  selectExtensionPaths?: (
-    cwd: string,
-    basePaths: string[],
-  ) => Promise<string[]>;
 }
 
 export async function createPiAdapter(
@@ -207,6 +204,7 @@ export async function createPiAdapter(
   const wrap = (
     session: AgentSession,
     sessionManager: PiSessionManager,
+    sessionModelRuntime: PiModelRuntime,
     runtimeCommands: () => unknown[],
     extensionActivity: {
       get(): string | null;
@@ -214,7 +212,7 @@ export async function createPiAdapter(
     },
   ): PiSession => {
     const getConfig = async (): Promise<ChatSessionConfig> => {
-      const models = (await modelRuntime.getAvailable())
+      const models = (await sessionModelRuntime.getAvailable())
         .filter(isPiModel)
         .map((model) => ({
           provider: model.provider,
@@ -292,7 +290,7 @@ export async function createPiAdapter(
       getEntries: async () => sessionManager.getBranch(),
       getConfig,
       async setModel(provider, modelId) {
-        const model = (await modelRuntime.getAvailable()).find(
+        const model = (await sessionModelRuntime.getAvailable()).find(
           (candidate) =>
             isPiModel(candidate) &&
             candidate.provider === provider &&
@@ -330,18 +328,11 @@ export async function createPiAdapter(
     metadata: Partial<PiSessionInfo> = {},
   ): Promise<PiSessionRecord> => {
     const resources = await loadResources(cwd);
-    const basePaths = resources.resourceLoaderOptions.additionalExtensionPaths;
-    const selectedPaths = options.selectExtensionPaths
-      ? await options.selectExtensionPaths(cwd, basePaths)
-      : basePaths;
     const services = await sdk.createAgentSessionServices({
       cwd,
       modelRuntime,
       settingsManager: resources.settingsManager,
-      resourceLoaderOptions: {
-        ...resources.resourceLoaderOptions,
-        additionalExtensionPaths: selectedPaths,
-      },
+      resourceLoaderOptions: resources.resourceLoaderOptions,
     });
     assertResourcesLoaded(services);
     const hasExistingMessages =
@@ -370,6 +361,7 @@ export async function createPiAdapter(
       session: wrap(
         session,
         sessionManager,
+        services.modelRuntime,
         () => created.extensionsResult?.runtime?.getCommands() ?? [],
         {
           get: () => activity,
@@ -442,29 +434,123 @@ export async function createPiAdapter(
   };
 }
 
-async function loadDefaultResources() {
+async function loadDefaultResources(cwd: string) {
   await bootstrapArkApiKeyFromLoginShell();
   const settings = await loadSpireSettings();
-  const bundled = await resolveBundledResources({
-    bundleRoot: defaultBundleRoot(),
-    packageSources: settings.packageSources,
-    extensionSources: settings.extensionSources,
-  });
-  for (const diagnostic of bundled.diagnostics) {
-    console.warn(`[spirecode:extensions] ${diagnostic}`);
-  }
+  const resources = await resolveSpireResources(cwd);
+  const spirecodePaths = new Set(
+    resources.extensions
+      .filter(({ layer }) => layer === "spirecode")
+      .map(({ path }) => path),
+  );
   return {
     settingsManager: settings.settingsManager,
     resourceLoaderOptions: {
       noExtensions: true,
-      additionalExtensionPaths: bundled.paths,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      additionalExtensionPaths: resources.extensions
+        .filter(({ enabled }) => enabled)
+        .map(({ path }) => path),
+      additionalSkillPaths: resources.skills
+        .filter(({ enabled }) => enabled)
+        .map(({ path }) => path),
+      additionalPromptTemplatePaths: resources.prompts
+        .filter(({ enabled }) => enabled)
+        .map(({ path }) => path),
+      additionalThemePaths: resources.themes
+        .filter(({ enabled }) => enabled)
+        .map(({ path }) => path),
       extensionsOverride: (result: LoadExtensionsResult) =>
         assertNoExtensionConflicts(
-          applyExtensionPrecedence(result, bundled.spirecodeSources),
+          preferSpirecodeProviders(result, spirecodePaths),
         ),
     },
-    diagnostics: bundled.diagnostics,
+    diagnostics: [],
   };
+}
+
+export function preferSpirecodeProviders(
+  result: LoadExtensionsResult,
+  spirecodePaths: ReadonlySet<string>,
+): LoadExtensionsResult {
+  const spirecodeProviderNames = new Set([
+    ...result.runtime.pendingProviderRegistrations
+      .filter(({ extensionPath }) => spirecodePaths.has(extensionPath))
+      .map(({ name }) => name),
+    ...result.runtime.pendingNativeProviderRegistrations
+      .filter(({ extensionPath }) => spirecodePaths.has(extensionPath))
+      .map(({ provider }) => provider.id),
+  ]);
+  result.runtime.pendingProviderRegistrations =
+    result.runtime.pendingProviderRegistrations.filter(
+      ({ extensionPath, name }) =>
+        spirecodePaths.has(extensionPath) || !spirecodeProviderNames.has(name),
+    );
+  result.runtime.pendingNativeProviderRegistrations =
+    result.runtime.pendingNativeProviderRegistrations.filter(
+      ({ extensionPath, provider }) =>
+        spirecodePaths.has(extensionPath) ||
+        !spirecodeProviderNames.has(provider.id),
+    );
+  return result;
+}
+
+function assertNoExtensionConflicts(
+  result: LoadExtensionsResult,
+): LoadExtensionsResult {
+  if (result.errors.length > 0) {
+    throw new Error(
+      `Unable to load SpireCode extensions: ${result.errors
+        .map((error) => `${error.path}: ${error.error}`)
+        .join("; ")}`,
+    );
+  }
+  assertUniqueRegistrations(result.extensions, "tools");
+  assertUniqueRegistrations(result.extensions, "commands");
+  assertUniqueOwners("Provider", [
+    ...result.runtime.pendingProviderRegistrations.map((entry) => ({
+      name: entry.name,
+      path: entry.extensionPath,
+    })),
+    ...result.runtime.pendingNativeProviderRegistrations.map((entry) => ({
+      name: entry.provider.id,
+      path: entry.extensionPath,
+    })),
+  ]);
+  return result;
+}
+
+function assertUniqueRegistrations(
+  extensions: Extension[],
+  kind: "tools" | "commands",
+): void {
+  assertUniqueOwners(
+    kind === "tools" ? "Tool" : "Command",
+    extensions.flatMap((extension) =>
+      [...extension[kind].keys()].map((name) => ({
+        name,
+        path: extension.resolvedPath,
+      })),
+    ),
+  );
+}
+
+function assertUniqueOwners(
+  label: string,
+  registrations: Array<{ name: string; path: string }>,
+): void {
+  const owners = new Map<string, string>();
+  for (const registration of registrations) {
+    const owner = owners.get(registration.name);
+    if (owner) {
+      throw new Error(
+        `${label} ${registration.name} is registered by ${owner} and ${registration.path}`,
+      );
+    }
+    owners.set(registration.name, registration.path);
+  }
 }
 
 function assertResourcesLoaded(services: PiServices): void {

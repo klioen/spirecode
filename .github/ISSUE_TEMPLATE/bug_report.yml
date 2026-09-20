@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible SpireCode defect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a defect. Search existing issues first. For vulnerabilities, stop and follow SECURITY.md instead of filing publicly.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched open and closed issues for duplicates.
+          required: true
+        - label: This report does not disclose a security vulnerability, credential, private repository content, or personal data.
+          required: true
+        - label: I understand that current binaries and CI artifacts are development builds, not formally signed releases.
+          required: true
+  - type: input
+    id: commit
+    attributes:
+      label: SpireCode commit or version
+      description: Use `git rev-parse --short HEAD` for a source checkout.
+      placeholder: abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - macOS arm64
+        - Windows x64
+        - Linux x64
+        - Other or unsupported
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment details
+      description: Include OS version, Node version, pnpm version, installation method, and relevant pi SDK/provider name without account details.
+      placeholder: macOS 15.x arm64; Node 24.x; pnpm 10.x; source build
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exact visible error code or message after redacting sensitive values.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest numbered sequence that reproduces the problem. Do not link a private repository.
+      placeholder: |
+        1. Start SpireCode with ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics or screenshots
+      description: Optional. Remove tokens, prompts, file contents, usernames, absolute paths, and private repository information before posting.
+      render: text
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

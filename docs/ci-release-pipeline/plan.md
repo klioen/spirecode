@@ -1,5 +1,8 @@
 # Plan: CI 质量与打包流水线（from `docs/ci-release-pipeline/spec.md` 2026-09-18）
 
+> [!NOTE]
+> 本文保留首次 CI 交付记录。私有 `pi-extensions` dependency/PAT 风险已由 [`docs/remove-pi-extensions-dependency/`](../remove-pi-extensions-dependency/plan.md) 消除，不再是当前流水线要求。
+
 ## Files that change
 
 - `docs/ci-release-pipeline/{intent,spec,plan}.md`

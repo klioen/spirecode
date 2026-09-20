@@ -1398,8 +1398,6 @@ SpireCode redistributes the pinned dependency tree recorded in `pnpm-lock.yaml`.
 ├───────────────────────────────────────────────────┼─────────────────────────┤
 │ @remixicon/react                                  │ Remix Icon License 1.0  │
 ├───────────────────────────────────────────────────┼─────────────────────────┤
-│ pi-extensions (dev)                               │ Unknown                 │
-├───────────────────────────────────────────────────┼─────────────────────────┤
 │ truncate-utf8-bytes (dev)                         │ WTFPL                   │
 ├───────────────────────────────────────────────────┼─────────────────────────┤
 │ sanitize-filename (dev)                           │ WTFPL OR ISC            │

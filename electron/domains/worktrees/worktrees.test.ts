@@ -149,6 +149,25 @@ describe("WorktreeService", () => {
     });
   });
 
+  it("rejects repository-defined executable filters before checkout", async () => {
+    const value = await fixture();
+    const marker = path.join(value.root, "filter-executed");
+    const filter = path.join(value.root, "filter.mjs");
+    await writeFile(
+      filter,
+      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "executed");\nprocess.stdin.pipe(process.stdout);\n`,
+    );
+    const command = `"${process.execPath.replaceAll("\\", "/")}" "${filter.replaceAll("\\", "/")}"`;
+    await git(value.project.path, ["config", "filter.evil.smudge", command]);
+
+    await expect(
+      value.service.create(value.project.id, "worktree1", "origin/main"),
+    ).rejects.toMatchObject({ code: "GIT_UNSAFE_CONFIG" });
+    await expect(readFile(marker, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("creates, renames, and deletes a managed worktree while preserving its local branch", async () => {
     const value = await fixture();
     const created = await value.service.create(

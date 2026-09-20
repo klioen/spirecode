@@ -2,7 +2,7 @@ import { commands } from "../../bindings";
 
 export const settingsApi = {
   listExtensions: commands.settingsExtensionsList,
-  setExtensionEnabled: commands.settingsExtensionSetEnabled,
   getLanguage: commands.settingsLanguageGet,
+  getAgentReadiness: commands.settingsAgentReadiness,
   setLanguage: commands.settingsLanguageSet,
 };

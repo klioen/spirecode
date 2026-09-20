@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a new capability or behavior change
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem before prescribing an implementation. Substantial accepted work normally requires `docs/<change-slug>/{intent,spec,plan}.md` before code changes.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched open and closed issues for an existing proposal.
+          required: true
+        - label: This request does not disclose a security vulnerability or private information.
+          required: true
+        - label: I have read CONTRIBUTING.md and understand that a request is not a commitment to implement it.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who is affected, what are they trying to do, and why is the current behavior insufficient?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and acceptance criteria rather than only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds and why they are inadequate.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Security, privacy, compatibility, and migration considerations
+      description: Note changes to Renderer/Main authority, filesystem or process access, credentials, network behavior, persisted data, or supported platforms.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

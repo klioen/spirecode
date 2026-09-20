@@ -122,7 +122,19 @@ export function ToolPreview({
         <ul>
           {webResults.slice(0, 8).map((result) => (
             <li key={result.url}>
-              <a href={result.url} target="_blank" rel="noreferrer noopener">
+              <a
+                href={result.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                onClick={(event) => {
+                  if (
+                    !window.confirm(
+                      t("chat.externalLinkConfirm", { url: result.url }),
+                    )
+                  )
+                    event.preventDefault();
+                }}
+              >
                 {result.title}
               </a>
               <span>{new URL(result.url).hostname}</span>

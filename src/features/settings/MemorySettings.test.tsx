@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 describe("MemorySettings", () => {
-  it("disables configuration when pi-memory is disabled", async () => {
+  it("allows preconfiguration when pi-memory is disabled", async () => {
     vi.mocked(settingsApi.listExtensions).mockResolvedValueOnce([
       {
         id: "memory",
@@ -85,15 +85,62 @@ describe("MemorySettings", () => {
     ]);
     render(<MemorySettings worktreeId="w1" />);
     expect(
-      await screen.findByText("Enable pi-memory to configure Memory settings."),
+      await screen.findByText(
+        "Pi Memory is installed but disabled. Configuration is saved, but processing starts only after you enable it in pi settings.",
+      ),
     ).toBeInTheDocument();
     expect(
       await screen.findByRole("combobox", { name: "Phase 1 Model" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Save Memory configuration" }),
+    ).toBeEnabled();
+  });
+  it("shows when pi-memory is not installed", async () => {
+    render(<MemorySettings />);
+
+    expect(
+      await screen.findByText(
+        "Pi Memory extension is not installed. Configuration is saved, but processing will not run until you install and enable pi-memory in pi settings.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows when pi-memory is installed and enabled", async () => {
+    vi.mocked(settingsApi.listExtensions).mockResolvedValueOnce([
+      {
+        id: "memory",
+        name: "pi-memory",
+        kind: "user",
+        source: "package",
+        scope: "global",
+        displayPath: "pi-memory",
+        version: "1.0.0",
+        enabled: true,
+        status: "enabled",
+      },
+    ]);
+    render(<MemorySettings />);
+
+    expect(
+      await screen.findByText("Pi Memory is installed and enabled."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the provider-neutral unconfigured state", async () => {
+    vi.mocked(memoryApi.getConfig).mockResolvedValueOnce(null);
+    render(<MemorySettings />);
+
+    expect(
+      await screen.findByText(
+        "Memory is not configured. Select authenticated models for both phases before enabling it.",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Save Memory configuration" }),
     ).toBeDisabled();
   });
+
   it("loads the summary and switches documents without refresh", async () => {
     render(<MemorySettings />);
     expect(

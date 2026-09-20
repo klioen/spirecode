@@ -2,6 +2,11 @@ import { app, BrowserWindow, dialog, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppState } from "./appState.js";
+import {
+  APPLICATION_ID,
+  resolveUserDataDirectory,
+  userDataOverrideFromArgv,
+} from "./applicationIdentity.js";
 import { registerIpc } from "./ipc.js";
 import { unsavedChangesDialogOptions } from "./nativeDialog.js";
 import {
@@ -11,14 +16,17 @@ import {
 } from "./security/navigation.js";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
-const userDataOverride = process.argv
-  .find((argument) => argument.startsWith("--user-data-dir="))
-  ?.slice("--user-data-dir=".length);
-app.setPath(
-  "userData",
-  userDataOverride ||
-    path.join(app.getPath("appData"), "com.bytedance.spirecode.dev"),
-);
+if (process.platform === "win32") app.setAppUserModelId(APPLICATION_ID);
+const userDataOverride = userDataOverrideFromArgv(process.argv);
+const userDataReady = userDataOverride
+  ? Promise.resolve(app.setPath("userData", userDataOverride))
+  : resolveUserDataDirectory(app.getPath("appData"), process.argv).then(
+      (resolution) => {
+        app.setPath("userData", resolution.path);
+        if (resolution.status === "fallback")
+          console.warn(`User data migration was skipped: ${resolution.reason}`);
+      },
+    );
 let state: AppState | undefined;
 let unregisterIpc: (() => void) | undefined;
 let cleanupStarted = false;
@@ -77,19 +85,26 @@ async function createWindow(): Promise<BrowserWindow> {
 
 void app.whenReady().then(async () => {
   try {
+    await userDataReady;
     await createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0)
         void createWindow().catch((error) => {
           console.error("Failed to create application window", error);
-          void state?.diagnostics.log(
-            `Failed to create application window: ${String(error)}`,
-          );
+          void state?.diagnostics.log({
+            level: "error",
+            code: "WINDOW_CREATE_FAILED",
+            safeContext: { errorType: errorName(error) },
+          });
         });
     });
   } catch (error) {
     console.error("Failed to start SpireCode", error);
-    void state?.diagnostics.log(`Failed to start SpireCode: ${String(error)}`);
+    void state?.diagnostics.log({
+      level: "error",
+      code: "APP_START_FAILED",
+      safeContext: { errorType: errorName(error) },
+    });
     app.quit();
   }
 });
@@ -114,12 +129,18 @@ app.on("before-quit", (event) => {
   void cleanup
     .catch((error) => {
       console.error("Failed to dispose application state", error);
-      void state?.diagnostics.log(
-        `Failed to dispose application state: ${String(error)}`,
-      );
+      void state?.diagnostics.log({
+        level: "error",
+        code: "APP_DISPOSE_FAILED",
+        safeContext: { errorType: errorName(error) },
+      });
     })
     .finally(() => app.quit());
 });
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
 
 function confirmDiscard(
   window: BrowserWindow,

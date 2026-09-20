@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
   RiChatNewLine,
@@ -39,12 +40,12 @@ import {
 } from "./editorStore";
 
 const MonacoEditor = lazy(() =>
-  import("@monaco-editor/react").then((module) => ({
+  import("./monacoEditors").then((module) => ({
     default: module.default,
   })),
 );
 const MonacoDiffEditor = lazy(() =>
-  import("@monaco-editor/react").then((module) => ({
+  import("./monacoEditors").then((module) => ({
     default: module.DiffEditor,
   })),
 );
@@ -305,48 +306,79 @@ function FileView({
     }
   };
 
-  useEffect(() => {
-    const save = async () => {
-      const latest = saveState.current;
-      if (
-        !latest.dirty ||
-        latest.saving ||
-        latest.conflictAction ||
-        latest.saveError
-      )
-        return;
-      setSaving(true);
-      setSaveError(null);
-      try {
-        const saved = await commands.fsWriteFile(
-          tab.worktreeId,
-          tab.relativePath,
-          latest.content,
-          latest.version,
-        );
-        cache.set(tab.id, {
-          generation: resourceGeneration,
-          value: saved,
+  const saveFromShortcut = useRef<() => Promise<void>>(async () => undefined);
+  saveFromShortcut.current = async () => {
+    const latest = saveState.current;
+    if (
+      !latest.dirty ||
+      latest.saving ||
+      latest.conflictAction ||
+      latest.saveError?.code === "FILE_CONFLICT"
+    )
+      return;
+    saveState.current = { ...latest, saving: true, saveError: null };
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await commands.fsWriteFile(
+        tab.worktreeId,
+        tab.relativePath,
+        latest.content,
+        latest.version,
+      );
+      cache.set(tab.id, {
+        generation: resourceGeneration,
+        value: saved,
+      });
+      const contentAfterSave = saveState.current.content;
+      const changedWhileSaving = contentAfterSave !== latest.content;
+      saveState.current = {
+        conflictAction: null,
+        content: contentAfterSave,
+        dirty: changedWhileSaving,
+        saveError: null,
+        saving: true,
+        version: saved.version,
+      };
+      onSaved(saved);
+      setContent(contentAfterSave);
+      setSavedContent(saved.content);
+      setVersion(saved.version);
+      useEditorStore
+        .getState()
+        .setFileDirty(tab.worktreeId, tab.id, changedWhileSaving);
+      if (changedWhileSaving) {
+        fileDrafts.set(tab.id, {
+          content: contentAfterSave,
+          savedContent: saved.content,
+          version: saved.version,
         });
-        onSaved(saved);
-        setContent(saved.content);
-        setSavedContent(saved.content);
-        setVersion(saved.version);
+      } else {
         fileDrafts.delete(tab.id);
-      } catch (error) {
-        setSaveError(commandError(error));
-      } finally {
-        setSaving(false);
       }
-    };
+    } catch (error) {
+      const nextError = commandError(error);
+      saveState.current = { ...saveState.current, saveError: nextError };
+      setSaveError(nextError);
+    } finally {
+      saveState.current = { ...saveState.current, saving: false };
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey && event.key.toLowerCase() === "s")) return;
+      if (!(
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "s"
+      ))
+        return;
       event.preventDefault();
-      void save();
+      void saveFromShortcut.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onSaved, resourceGeneration, tab.id, tab.relativePath, tab.worktreeId]);
+  }, []);
 
   return (
     <div className="editable-file-view">
@@ -604,79 +636,118 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
     () => view?.tabs.find((tab) => tab.id === view.activeTabId),
     [view],
   );
+  const activateTab = (tabId: string) => {
+    useEditorStore.getState().beginNavigation();
+    useEditorStore.getState().activate(worktreeId, tabId);
+  };
+  const onTabKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    tabId: string,
+  ) => {
+    const tabs = view?.tabs ?? [];
+    const currentIndex = tabs.findIndex((tab) => tab.id === tabId);
+    if (currentIndex < 0) return;
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowLeft")
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (event.key === "ArrowRight")
+      nextIndex = (currentIndex + 1) % tabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    activateTab(nextTab.id);
+    const tabElements = event.currentTarget
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLElement>('[role="tab"]');
+    tabElements?.[nextIndex]?.focus();
+  };
+  const tabName = (tab: ResourceTab) =>
+    tab.type === "terminal"
+      ? t("editor.terminalTitle", { number: tab.sequence })
+      : tab.type === "chat"
+        ? tab.title || t("editor.newChat")
+        : tab.relativePath.split("/").slice(-1)[0];
   return (
     <main className="editor-pane">
       <div className="editor-tabs">
-        <div className="editor-tab-list">
-          {(view?.tabs ?? []).map((tab) => (
-            <button
-              className={`editor-tab ${tab.id === view.activeTabId ? "active" : ""}`}
-              key={tab.id}
-              onClick={() => {
-                useEditorStore.getState().beginNavigation();
-                useEditorStore.getState().activate(worktreeId, tab.id);
-              }}
-              onDoubleClick={() =>
-                useEditorStore.getState().keep(worktreeId, tab.id)
-              }
-            >
-              {tab.type === "diff" ? (
-                <RiGitCommitLine size={14} />
-              ) : tab.type === "terminal" ? (
-                <RiTerminalBoxLine size={14} />
-              ) : tab.type === "chat" ? (
-                <RiChatNewLine size={14} />
-              ) : (
-                <RiFileCodeLine size={14} />
-              )}
-              <span className={tab.preview ? "preview-label" : ""}>
-                {tab.type === "terminal"
-                  ? t("editor.terminalTitle", { number: tab.sequence })
-                  : tab.type === "chat"
-                    ? tab.title || t("editor.newChat")
-                    : tab.relativePath.split("/").slice(-1)[0]}
-              </span>
-              {tab.type === "file" && tab.dirty && (
-                <span
-                  className="tab-dirty"
-                  aria-label={t("editor.unsavedChanges")}
-                >
-                  ●
-                </span>
-              )}
-              {tab.type === "terminal" && tab.status !== "running" && (
-                <span className={`tab-status tab-status-${tab.status}`}>
-                  {t(`editor.terminal.${tab.status}`)}
-                </span>
-              )}
-              <span
-                className="tab-close"
-                role="button"
-                aria-label={t("editor.closeTab", {
-                  name:
-                    tab.type === "terminal"
-                      ? t("editor.terminalTitle", { number: tab.sequence })
-                      : tab.type === "chat"
-                        ? tab.title || t("editor.newChat")
-                        : tab.relativePath.split("/").slice(-1)[0],
-                })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (
-                    tab.type === "file" &&
-                    tab.dirty &&
-                    !window.confirm(
-                      t("editor.discardConfirm", { path: tab.relativePath }),
-                    )
-                  )
-                    return;
-                  void closeTab(tab);
-                }}
+        <div className="editor-tab-list" role="tablist">
+          {(view?.tabs ?? []).map((tab) => {
+            const selected = tab.id === view.activeTabId;
+            const name = tabName(tab);
+            return (
+              <div
+                className={`editor-tab ${selected ? "active" : ""}`}
+                key={tab.id}
               >
-                <RiCloseLine size={14} />
-              </span>
-            </button>
-          ))}
+                <button
+                  type="button"
+                  className="editor-tab-activation"
+                  role="tab"
+                  aria-label={name}
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => activateTab(tab.id)}
+                  onDoubleClick={() =>
+                    useEditorStore.getState().keep(worktreeId, tab.id)
+                  }
+                  onKeyDown={(event) => onTabKeyDown(event, tab.id)}
+                >
+                  {tab.type === "diff" ? (
+                    <RiGitCommitLine size={14} />
+                  ) : tab.type === "terminal" ? (
+                    <RiTerminalBoxLine size={14} />
+                  ) : tab.type === "chat" ? (
+                    <RiChatNewLine size={14} />
+                  ) : (
+                    <RiFileCodeLine size={14} />
+                  )}
+                  <span className={tab.preview ? "preview-label" : ""}>
+                    {name}
+                  </span>
+                  {tab.type === "file" && tab.dirty && (
+                    <span
+                      className="tab-dirty"
+                      aria-label={t("editor.unsavedChanges")}
+                    >
+                      ●
+                    </span>
+                  )}
+                  {tab.type === "terminal" && tab.status !== "running" && (
+                    <span className={`tab-status tab-status-${tab.status}`}>
+                      {t(`editor.terminal.${tab.status}`)}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="tab-close"
+                  aria-label={t("editor.closeTab", { name })}
+                  onClick={() => {
+                    const latestTab = useEditorStore
+                      .getState()
+                      .views[worktreeId]?.tabs.find(
+                        (candidate) => candidate.id === tab.id,
+                      );
+                    if (
+                      latestTab?.type === "file" &&
+                      latestTab.dirty &&
+                      !window.confirm(
+                        t("editor.discardConfirm", {
+                          path: latestTab.relativePath,
+                        }),
+                      )
+                    )
+                      return;
+                    void closeTab(latestTab ?? tab);
+                  }}
+                >
+                  <RiCloseLine size={14} />
+                </button>
+              </div>
+            );
+          })}
         </div>
         <div className="editor-resource-actions">
           <button

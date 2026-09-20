@@ -4,7 +4,11 @@ import type { WorktreeSummary } from "../../bindings";
 import { setLanguage } from "../../i18n";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
-import { DeleteWorktreeDialog, NewWorktreeDialog } from "./WorktreeDialog";
+import {
+  DeleteWorktreeDialog,
+  NewWorktreeDialog,
+  RenameWorktreeDialog,
+} from "./WorktreeDialog";
 
 vi.mock("./projectsApi", () => ({
   projectsApi: {
@@ -12,6 +16,7 @@ vi.mock("./projectsApi", () => ({
     createWorktree: vi.fn(),
     inspectDeleteWorktree: vi.fn(),
     deleteWorktree: vi.fn(),
+    renameWorktree: vi.fn(),
   },
 }));
 
@@ -32,6 +37,7 @@ beforeEach(() => {
   vi.mocked(projectsApi.createWorktree).mockReset();
   vi.mocked(projectsApi.inspectDeleteWorktree).mockReset();
   vi.mocked(projectsApi.deleteWorktree).mockReset();
+  vi.mocked(projectsApi.renameWorktree).mockReset();
   useProjectsStore.setState({
     projects: [
       {
@@ -128,6 +134,142 @@ describe("worktree dialogs", () => {
     fireEvent.change(branch, { target: { value: "missing" } });
     expect(screen.getByText("No matching branches")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+  });
+
+  it("supports keyboard navigation and active descendant in branch options", async () => {
+    vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
+      originConfigured: true,
+      branches: [
+        { ref: "origin/main", name: "main" },
+        { ref: "origin/release", name: "release" },
+        { ref: "origin/stable", name: "stable" },
+      ],
+      defaultRef: "origin/main",
+      nextName: "worktree1",
+    });
+
+    render(
+      <NewWorktreeDialog
+        projectId="project-id"
+        projectName="Project"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const branch = await screen.findByRole("combobox", { name: "Base branch" });
+    fireEvent.change(branch, { target: { value: "" } });
+    const mainOption = screen.getByRole("option", { name: "main" });
+    const releaseOption = screen.getByRole("option", { name: "release" });
+    const stableOption = screen.getByRole("option", { name: "stable" });
+    expect(branch).toHaveAttribute("aria-activedescendant", mainOption.id);
+    expect(
+      new Set([mainOption.id, releaseOption.id, stableOption.id]).size,
+    ).toBe(3);
+    expect(
+      screen.getAllByRole("option").every((option) => option.tabIndex === -1),
+    ).toBe(true);
+
+    fireEvent.keyDown(branch, { key: "ArrowDown" });
+    expect(branch).toHaveAttribute("aria-activedescendant", releaseOption.id);
+    fireEvent.keyDown(branch, { key: "End" });
+    expect(branch).toHaveAttribute("aria-activedescendant", stableOption.id);
+    fireEvent.keyDown(branch, { key: "Home" });
+    fireEvent.keyDown(branch, { key: "Enter" });
+    expect(branch).toHaveValue("main");
+    expect(branch).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.change(branch, { target: { value: "sta" } });
+    expect(branch).toHaveAttribute(
+      "aria-activedescendant",
+      screen.getByRole("option", { name: "stable" }).id,
+    );
+    fireEvent.keyDown(branch, { key: "Escape" });
+    expect(branch).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("traps focus, restores the opener, and blocks pending dismissal", async () => {
+    let resolveRename!: (worktree: WorktreeSummary) => void;
+    vi.mocked(projectsApi.renameWorktree).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRename = resolve;
+      }),
+    );
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const close = vi.fn();
+    const { unmount } = render(
+      <RenameWorktreeDialog worktree={managed} onClose={close} />,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    const input = screen.getByRole("textbox", { name: "Worktree name" });
+    const rename = screen.getByRole("button", { name: "Rename" });
+    expect(input).toHaveFocus();
+    rename.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(input).toHaveFocus();
+
+    fireEvent.change(input, { target: { value: "renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    expect(
+      await screen.findByRole("button", { name: "Renaming…" }),
+    ).toBeDisabled();
+    await waitFor(() => expect(dialog).toHaveFocus());
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.mouseDown(dialog.parentElement!);
+    expect(close).not.toHaveBeenCalled();
+
+    resolveRename({ ...managed, name: "renamed" });
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("blocks create dismissal while the mutation is pending", async () => {
+    vi.mocked(projectsApi.listOriginBranches).mockResolvedValue({
+      originConfigured: true,
+      branches: [{ ref: "origin/main", name: "main" }],
+      defaultRef: "origin/main",
+      nextName: "worktree1",
+    });
+    vi.mocked(projectsApi.createWorktree).mockReturnValue(
+      new Promise(() => {}),
+    );
+    const close = vi.fn();
+    render(
+      <NewWorktreeDialog
+        projectId="project-id"
+        projectName="Project"
+        onClose={close}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.mouseDown(dialog.parentElement!);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("blocks delete dismissal while the mutation is pending", async () => {
+    vi.mocked(projectsApi.inspectDeleteWorktree).mockResolvedValue({
+      dirty: false,
+      terminalCount: 0,
+      branch: "feature",
+    });
+    vi.mocked(projectsApi.deleteWorktree).mockReturnValue(
+      new Promise(() => {}),
+    );
+    const close = vi.fn();
+    render(<DeleteWorktreeDialog worktree={managed} onClose={close} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.mouseDown(dialog.parentElement!);
+    expect(close).not.toHaveBeenCalled();
   });
 
   it("shows refresh when origin is not configured", async () => {

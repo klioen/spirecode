@@ -31,8 +31,7 @@ const buildEnv = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
 const root = process.cwd();
 
 await rm("release", { recursive: true, force: true });
-await run(pnpm, ["prepare:pi-extensions"]);
-await run(pnpm, ["check:pi-extensions"]);
+await run(pnpm, ["legal:prepare"]);
 await run(pnpm, ["build"]);
 const stagedClipboard = await stageClipboardPackage(
   root,
@@ -68,10 +67,6 @@ async function packageMac() {
     ],
     buildEnv,
   );
-  await run(process.execPath, [
-    "scripts/check-pi-extensions.mjs",
-    "release/mac-arm64/SpireCode.app/Contents/Resources/pi-extensions",
-  ]);
   await run("./scripts/sign-electron-app.sh", []);
   await run(
     pnpm,

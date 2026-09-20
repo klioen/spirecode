@@ -31,12 +31,14 @@ export class GitService {
         "--numstat",
         "-z",
         "--no-ext-diff",
+        "--no-textconv",
       ]);
       const unstaged = await safeGitText(root, [
         "diff",
         "--numstat",
         "-z",
         "--no-ext-diff",
+        "--no-textconv",
       ]);
       applyNumstat(result.changes, staged);
       applyNumstat(result.changes, unstaged);
@@ -71,6 +73,7 @@ export class GitService {
             "diff",
             "--cached",
             "--no-ext-diff",
+            "--no-textconv",
             "--",
             relativePath,
           ]),
@@ -85,6 +88,7 @@ export class GitService {
           patch: await safeGitText(root, [
             "diff",
             "--no-ext-diff",
+            "--no-textconv",
             "--",
             relativePath,
           ]),

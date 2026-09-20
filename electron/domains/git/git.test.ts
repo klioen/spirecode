@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { execFile } from "node:child_process";
 import {
+  chmod,
   mkdtemp,
   mkdir,
+  readFile,
   rm,
   symlink,
   unlink,
@@ -138,17 +140,46 @@ describe("Git porcelain parsers", () => {
 });
 
 describe("safe Git runner", () => {
+  it.runIf(process.platform !== "win32")(
+    "does not execute repository textconv commands",
+    async () => {
+      const root = await temporaryRepository();
+      const marker = path.join(root, "textconv-executed");
+      const script = path.join(root, "textconv.sh");
+      await writeFile(script, `#!/bin/sh\ntouch '${marker}'\ncat "$1"\n`);
+      await chmod(script, 0o755);
+      await writeFile(
+        path.join(root, ".gitattributes"),
+        "tracked.txt diff=evil\n",
+      );
+      await git(root, ["config", "diff.evil.textconv", script]);
+      await writeFile(path.join(root, "tracked.txt"), "changed\n");
+      const service = new GitService(() => root);
+
+      await service.diffFile("worktree-1", "tracked.txt", "unstaged");
+
+      await expect(readFile(marker, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
   it("applies the non-interactive security configuration", async () => {
     const root = await temporaryRepository();
 
-    await expect(
-      Promise.all([
+    const [hooksPath, credentialHelper, extProtocol, externalDiff] =
+      await Promise.all([
         safeGitText(root, ["config", "--get", "core.hooksPath"]),
         safeGitText(root, ["config", "--get", "credential.helper"]),
         safeGitText(root, ["config", "--get", "protocol.ext.allow"]),
         safeGitText(root, ["config", "--get", "diff.external"]),
-      ]),
-    ).resolves.toEqual(["/dev/null\n", "\n", "never\n", "\n"]);
+      ]);
+
+    expect(path.isAbsolute(hooksPath.trim())).toBe(true);
+    expect(hooksPath.trim()).not.toBe("/dev/null");
+    expect(credentialHelper).toBe("\n");
+    expect(extProtocol).toBe("never\n");
+    expect(externalDiff).toBe("\n");
   });
 
   it("enforces deadlines, output limits, and fatal UTF-8 decoding", async () => {

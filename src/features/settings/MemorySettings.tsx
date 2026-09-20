@@ -145,7 +145,9 @@ export function MemorySettings({
   );
   const [configLoading, setConfigLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [memoryDisabled, setMemoryDisabled] = useState(false);
+  const [memoryStatus, setMemoryStatus] = useState<
+    "checking" | "not-installed" | "disabled" | "enabled" | "unknown"
+  >("checking");
   const [extensionWarning, setExtensionWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [configError, setConfigError] = useState<ConfigError | null>(null);
@@ -178,24 +180,24 @@ export function MemorySettings({
 
   useEffect(() => {
     let disposed = false;
-    if (worktreeId) {
-      void settingsApi.listExtensions(worktreeId).then(
-        (extensions) => {
-          if (disposed) return;
-          const memory = extensions.find(
-            (extension) => extension.name === "pi-memory",
-          );
-          setMemoryDisabled(memory?.enabled === false);
-          setExtensionWarning(null);
-        },
-        (failure) => {
-          if (!disposed) setExtensionWarning(commandError(failure).message);
-        },
-      );
-    } else {
-      setMemoryDisabled(false);
-      setExtensionWarning(null);
-    }
+    void settingsApi.listExtensions(worktreeId ?? undefined).then(
+      (extensions) => {
+        if (disposed) return;
+        const memory = extensions.find(
+          (extension) => extension.name === "pi-memory",
+        );
+        setMemoryStatus(
+          !memory ? "not-installed" : memory.enabled ? "enabled" : "disabled",
+        );
+        setExtensionWarning(null);
+      },
+      (failure) => {
+        if (!disposed) {
+          setMemoryStatus("unknown");
+          setExtensionWarning(commandError(failure).message);
+        }
+      },
+    );
     void Promise.allSettled([
       memoryApi.getConfig(),
       memoryApi.listModels(worktreeId ?? ""),
@@ -203,11 +205,17 @@ export function MemorySettings({
       if (disposed) return;
       if (configResult.status === "fulfilled") {
         const config = configResult.value;
-        setPhase1Model(modelValue(config.phase1Provider, config.phase1ModelId));
-        setPhase1ReasoningEffort(config.phase1ReasoningEffort);
-        setPhase2Model(modelValue(config.phase2Provider, config.phase2ModelId));
-        setPhase2ReasoningEffort(config.phase2ReasoningEffort);
-        setPersistedConfig(config);
+        if (config) {
+          setPhase1Model(
+            modelValue(config.phase1Provider, config.phase1ModelId),
+          );
+          setPhase1ReasoningEffort(config.phase1ReasoningEffort);
+          setPhase2Model(
+            modelValue(config.phase2Provider, config.phase2ModelId),
+          );
+          setPhase2ReasoningEffort(config.phase2ReasoningEffort);
+          setPersistedConfig(config);
+        }
       } else
         setConfigError({
           kind: "host",
@@ -229,7 +237,6 @@ export function MemorySettings({
   const canSave =
     !configLoading &&
     !saving &&
-    !memoryDisabled &&
     availableValues.has(phase1Model) &&
     availableValues.has(phase2Model);
 
@@ -300,7 +307,7 @@ export function MemorySettings({
               label={t("memory.phase1.model")}
               value={phase1Model}
               models={models}
-              disabled={configLoading || saving || memoryDisabled}
+              disabled={configLoading || saving}
               onChange={(value) => {
                 setPhase1Model(value);
                 setSaved(false);
@@ -311,7 +318,7 @@ export function MemorySettings({
               <select
                 aria-label={t("memory.phase1.reasoning.aria")}
                 value={phase1ReasoningEffort}
-                disabled={configLoading || saving || memoryDisabled}
+                disabled={configLoading || saving}
                 onChange={(event) => {
                   setPhase1ReasoningEffort(
                     event.target.value as MemoryReasoningEffort,
@@ -332,7 +339,7 @@ export function MemorySettings({
               label={t("memory.phase2.model")}
               value={phase2Model}
               models={models}
-              disabled={configLoading || saving || memoryDisabled}
+              disabled={configLoading || saving}
               onChange={(value) => {
                 setPhase2Model(value);
                 setSaved(false);
@@ -343,7 +350,7 @@ export function MemorySettings({
               <select
                 aria-label={t("memory.phase2.reasoning.aria")}
                 value={phase2ReasoningEffort}
-                disabled={configLoading || saving || memoryDisabled}
+                disabled={configLoading || saving}
                 onChange={(event) => {
                   setPhase2ReasoningEffort(
                     event.target.value as MemoryReasoningEffort,
@@ -361,8 +368,17 @@ export function MemorySettings({
           </div>
         </div>
         <small>{t("memory.restartAfterSaving")}</small>
-        {memoryDisabled && (
+        {memoryStatus === "not-installed" && (
+          <div className="settings-empty">{t("memory.notInstalled")}</div>
+        )}
+        {memoryStatus === "disabled" && (
           <div className="settings-empty">{t("memory.disabled")}</div>
+        )}
+        {memoryStatus === "enabled" && (
+          <div className="memory-config-saved">{t("memory.enabled")}</div>
+        )}
+        {!configLoading && !persistedConfig && (
+          <div className="settings-empty">{t("memory.unconfigured")}</div>
         )}
         {extensionWarning && (
           <div className="settings-description">

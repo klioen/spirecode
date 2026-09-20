@@ -2,9 +2,11 @@ import { homedir } from "node:os";
 import {
   ModelRuntime,
   createAgentSessionServices,
+  type LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
 import { CommandError } from "../../core/errors.js";
 import type { ChatModelOption } from "../chat/types.js";
+import { preferSpirecodeProviders } from "../chat/piAdapter.js";
 import { loadSpireSettings } from "../chat/spireSettings.js";
 import { bootstrapArkApiKeyFromLoginShell } from "../chat/shellEnvironment.js";
 
@@ -15,9 +17,13 @@ interface ModelRef {
 
 interface CatalogRuntime {
   getAvailable(): Promise<readonly unknown[]>;
+  hasConfiguredAuth(providerId: string): boolean;
 }
 
-type RuntimeFactory = (extensionPaths?: string[]) => Promise<CatalogRuntime>;
+type RuntimeFactory = (
+  extensionPaths?: string[],
+  spirecodePaths?: ReadonlySet<string>,
+) => Promise<CatalogRuntime>;
 
 export class ModelCatalogService {
   private runtime?: CatalogRuntime;
@@ -27,11 +33,15 @@ export class ModelCatalogService {
     private readonly initialize: RuntimeFactory = createCatalogRuntime,
   ) {}
 
-  async list(extensionPaths: string[] = []): Promise<ChatModelOption[]> {
-    const runtime = await this.getRuntime(extensionPaths);
+  async list(
+    extensionPaths: string[] = [],
+    spirecodePaths: ReadonlySet<string> = new Set(),
+  ): Promise<ChatModelOption[]> {
+    const runtime = await this.getRuntime(extensionPaths, spirecodePaths);
     try {
       return (await runtime.getAvailable())
         .filter(isModel)
+        .filter((model) => runtime.hasConfiguredAuth(model.provider))
         .map((model) => ({
           provider: model.provider,
           id: model.id,
@@ -48,9 +58,15 @@ export class ModelCatalogService {
     }
   }
 
-  async assertAvailable(models: ModelRef[]): Promise<void> {
+  async assertAvailable(
+    models: ModelRef[],
+    extensionPaths: string[] = [],
+    spirecodePaths: ReadonlySet<string> = new Set(),
+  ): Promise<void> {
     const available = new Set(
-      (await this.list()).map(({ provider, id }) => `${provider}\0${id}`),
+      (await this.list(extensionPaths, spirecodePaths)).map(
+        ({ provider, id }) => `${provider}\0${id}`,
+      ),
     );
     for (const model of models) {
       if (!available.has(`${model.provider}\0${model.id}`))
@@ -63,9 +79,10 @@ export class ModelCatalogService {
 
   private async getRuntime(
     extensionPaths: string[] = [],
+    spirecodePaths: ReadonlySet<string> = new Set(),
   ): Promise<CatalogRuntime> {
     if (extensionPaths.length === 0 && this.runtime) return this.runtime;
-    this.initializing ??= this.initialize(extensionPaths);
+    this.initializing ??= this.initialize(extensionPaths, spirecodePaths);
     try {
       this.runtime = await this.initializing;
       return this.runtime;
@@ -82,6 +99,7 @@ export class ModelCatalogService {
 
 async function createCatalogRuntime(
   extensionPaths: string[] = [],
+  spirecodePaths: ReadonlySet<string> = new Set(),
 ): Promise<CatalogRuntime> {
   await bootstrapArkApiKeyFromLoginShell();
   const modelRuntime = await ModelRuntime.create();
@@ -94,7 +112,12 @@ async function createCatalogRuntime(
     settingsManager: settings.settingsManager,
     resourceLoaderOptions: {
       noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
       additionalExtensionPaths: extensionPaths,
+      extensionsOverride: (result: LoadExtensionsResult) =>
+        preferSpirecodeProviders(result, spirecodePaths),
     },
   });
   if ((services.diagnostics ?? []).some((entry) => entry.type === "error"))

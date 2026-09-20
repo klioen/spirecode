@@ -15,7 +15,11 @@ import { EditorPane } from "../editor/EditorPane";
 import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
-import { SettingsDialog } from "../settings/SettingsDialog";
+import { settingsApi } from "../settings/settingsApi";
+import {
+  SettingsDialog,
+  type SettingsSection,
+} from "../settings/SettingsDialog";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { BreadcrumbSwitcher } from "./BreadcrumbSwitcher";
 import { PanelResizeHandle } from "./PanelResizeHandle";
@@ -45,6 +49,26 @@ export function Workbench() {
   const { t } = useTranslation();
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("extensions");
+  useEffect(() => {
+    let disposed = false;
+    void settingsApi.getAgentReadiness().then(
+      (readiness) => {
+        if (
+          !disposed &&
+          (!readiness.defaultModelAvailable || !readiness.resourcesHealthy)
+        ) {
+          setSettingsSection("agent");
+          setSettingsOpen(true);
+        }
+      },
+      () => undefined,
+    );
+    return () => {
+      disposed = true;
+    };
+  }, []);
   useEffect(() => {
     const updateViewport = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", updateViewport);
@@ -149,7 +173,10 @@ export function Workbench() {
           <button
             title={t("workbench.settings")}
             aria-label={t("workbench.settings")}
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              setSettingsSection("extensions");
+              setSettingsOpen(true);
+            }}
           >
             <RiSettings3Line size={17} />
           </button>
@@ -220,6 +247,7 @@ export function Workbench() {
       {settingsOpen && (
         <SettingsDialog
           worktreeId={activeWorktreeId}
+          initialSection={settingsSection}
           onClose={() => setSettingsOpen(false)}
         />
       )}

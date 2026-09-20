@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { isCommand, type CommandName } from "./contracts.js";
 import { KeyedQueue } from "./core/asyncQueue.js";
@@ -307,26 +308,22 @@ async function invoke(
       return undefined;
     }
     case "settings_extensions_list": {
-      const worktreeId = text(args, "worktreeId");
-      return state.settings.list(await state.projects.root(worktreeId));
-    }
-    case "settings_extension_set_enabled": {
-      const worktreeId = text(args, "worktreeId");
-      return state.settings.setEnabled(
-        await state.projects.root(worktreeId),
-        text(args, "extensionId"),
-        boolean(args, "enabled"),
+      const worktreeId = text(args, "worktreeId", true);
+      return state.settings.list(
+        worktreeId ? await state.projects.root(worktreeId) : homedir(),
       );
     }
     case "settings_language_get":
       return state.settings.language();
+    case "settings_agent_readiness":
+      return state.agentReadiness();
     case "settings_language_set":
       return state.settings.setLanguage(appLanguage(args));
     case "settings_memory_read":
       return state.memory.read(memoryDocument(args));
     case "settings_memory_models_list": {
       const worktreeId = text(args, "worktreeId", true);
-      return worktreeId ? state.listModels(worktreeId) : state.models.list();
+      return state.listModels(worktreeId);
     }
     case "settings_memory_config_get":
       return state.settings.memoryConfig();
@@ -351,7 +348,7 @@ async function invoke(
           "phase2ReasoningEffort",
         ),
       };
-      await state.models.assertAvailable([
+      await state.assertModelsAvailable([
         { provider: config.phase1Provider, id: config.phase1ModelId },
         { provider: config.phase2Provider, id: config.phase2ModelId },
       ]);
@@ -404,9 +401,9 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
   chat_session_delete: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
-  settings_extension_set_enabled: ["worktreeId", "extensionId", "enabled"],
   settings_language_get: [],
   settings_language_set: ["language"],
+  settings_agent_readiness: [],
   settings_memory_read: ["document"],
   settings_memory_models_list: ["worktreeId"],
   settings_memory_config_get: [],
@@ -471,7 +468,8 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
 
   for (const key of allowed) {
     if (
-      command === "settings_memory_models_list" &&
+      (command === "settings_memory_models_list" ||
+        command === "settings_extensions_list") &&
       key === "worktreeId" &&
       !(key in args)
     )

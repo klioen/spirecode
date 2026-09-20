@@ -15,18 +15,23 @@ import {
   type AppLanguage,
   type TranslationKey,
 } from "../../i18n";
-import { commands, type ExtensionSetting } from "../../bindings";
+import {
+  commands,
+  type AgentReadiness,
+  type ExtensionSetting,
+} from "../../bindings";
 import { commandError } from "../../lib/errors";
+import { useDialogFocus } from "../../lib/useDialogFocus";
 import { useThemeStore } from "../theme/themeStore";
 import { useSettingsStore } from "./settingsStore";
 import { MemorySettings } from "./MemorySettings";
 import { settingsApi } from "./settingsApi";
 
-type Section =
+export type SettingsSection =
   "general" | "agent" | "memory" | "extensions" | "editor" | "terminal";
 
 const sections: Array<{
-  id: Section;
+  id: SettingsSection;
   label: TranslationKey;
   icon: ReactNode;
 }> = [
@@ -65,21 +70,32 @@ const sections: Array<{
 export function SettingsDialog({
   worktreeId,
   onClose,
+  initialSection = "extensions",
 }: {
   worktreeId: string | null;
   onClose: () => void;
+  initialSection?: SettingsSection;
 }) {
-  const [section, setSection] = useState<Section>("extensions");
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const { t } = useTranslation();
+  const { dialogRef, trapFocus } = useDialogFocus<HTMLElement>();
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
       <section
+        ref={dialogRef}
         className="settings-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.key === "Escape" && onClose()}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          trapFocus(event);
+          if (event.key === "Escape") onClose();
+        }}
       >
         <header className="settings-header">
           <h2 id="settings-title">{t("settings.title")}</h2>
@@ -199,16 +215,65 @@ function GeneralSettings() {
 
 function AgentSettings() {
   const [copied, setCopied] = useState(false);
+  const [readiness, setReadiness] = useState<AgentReadiness | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { t } = useTranslation();
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setReadiness(await settingsApi.getAgentReadiness());
+    } catch (failure) {
+      setError(commandError(failure).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void refresh();
+  }, []);
   const copy = async () => {
     await navigator.clipboard.writeText("~/.pi/agent");
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
+  const ready =
+    readiness?.resourcesHealthy &&
+    readiness.defaultModelAvailable &&
+    readiness.authenticatedModelCount > 0;
   return (
     <section>
       <h3>{t("settings.section.agent")}</h3>
       <p className="settings-description">{t("settings.agent.description")}</p>
+      <div className="setting-row">
+        <div>
+          <b>{t("settings.agent.status")}</b>
+          <small>
+            {loading
+              ? t("settings.agent.checking")
+              : ready
+                ? t("settings.agent.ready", {
+                    count: readiness.authenticatedModelCount,
+                  })
+                : t("settings.agent.setupRequired")}
+          </small>
+        </div>
+        <button type="button" disabled={loading} onClick={() => void refresh()}>
+          {t("settings.agent.refresh")}
+        </button>
+      </div>
+      {!loading && !ready && (
+        <div className="settings-empty">
+          {t("settings.agent.setupInstructions")}
+        </div>
+      )}
+      {readiness && !readiness.resourcesHealthy && (
+        <div className="dialog-error">
+          {t("settings.agent.resourcesFailed")}
+        </div>
+      )}
+      {error && <div className="dialog-error">{error}</div>}
       <div className="setting-row">
         <div>
           <b>{t("settings.agent.configuration")}</b>
@@ -323,18 +388,13 @@ function TerminalSettings() {
 function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
   const { t } = useTranslation();
   const [extensions, setExtensions] = useState<ExtensionSetting[]>([]);
-  const [loading, setLoading] = useState(Boolean(worktreeId));
-  const [changing, setChanging] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
-    if (!worktreeId) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
-    settingsApi.listExtensions(worktreeId).then(
+    settingsApi.listExtensions(worktreeId ?? undefined).then(
       (items) => {
         if (!disposed) {
           setExtensions(items);
@@ -354,27 +414,6 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
     };
   }, [worktreeId]);
 
-  const toggle = async (extension: ExtensionSetting) => {
-    if (!worktreeId) return;
-    setChanging(extension.id);
-    setError(null);
-    try {
-      setExtensions(
-        await settingsApi.setExtensionEnabled(
-          worktreeId,
-          extension.id,
-          !extension.enabled,
-        ),
-      );
-    } catch (failure) {
-      setError(commandError(failure).message);
-    } finally {
-      setChanging(null);
-    }
-  };
-
-  const builtins = extensions.filter(({ kind }) => kind === "builtin");
-  const users = extensions.filter(({ kind }) => kind === "user");
   const extensionList = (items: ExtensionSetting[]) => (
     <div className="extension-list">
       {items.map((extension) => (
@@ -383,31 +422,15 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
             <div className="extension-title">
               <b>{extension.name}</b>
               {extension.version && <span>v{extension.version}</span>}
-              <span>
-                {extension.kind === "builtin"
-                  ? t("settings.extensions.builtin")
-                  : extension.source}
-              </span>
+              <span>{extension.source}</span>
             </div>
-            {extension.kind === "user" && (
-              <code title={extension.displayPath}>{extension.displayPath}</code>
-            )}
+            <code title={extension.displayPath}>{extension.displayPath}</code>
+            <small>
+              {extension.enabled
+                ? t("settings.extensions.status.enabled")
+                : t("settings.extensions.status.disabled")}
+            </small>
           </div>
-          <label className="switch">
-            <input
-              type="checkbox"
-              aria-label={t(
-                extension.enabled
-                  ? "settings.extensions.toggle.disable"
-                  : "settings.extensions.toggle.enable",
-                { name: extension.name },
-              )}
-              checked={extension.enabled}
-              disabled={changing === extension.id}
-              onChange={() => void toggle(extension)}
-            />
-            <span />
-          </label>
         </article>
       ))}
     </div>
@@ -419,27 +442,17 @@ function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
       <p className="settings-description">
         {t("settings.extensions.description")}
       </p>
-      {!worktreeId && (
-        <div className="settings-empty">
-          {t("settings.extensions.projectRequired")}
-        </div>
-      )}
       {loading && (
         <div className="settings-empty">{t("settings.extensions.loading")}</div>
       )}
       {error && <div className="dialog-error">{error}</div>}
-      {!loading && worktreeId && (
+      {!loading && (
         <div className="extension-sections">
-          <section className="extension-section">
-            <h4>{t("settings.extensions.system")}</h4>
-            <p>{t("settings.extensions.system.description")}</p>
-            {extensionList(builtins)}
-          </section>
           <section className="extension-section">
             <h4>{t("settings.extensions.user")}</h4>
             <p>{t("settings.extensions.user.description")}</p>
-            {users.length > 0 ? (
-              extensionList(users)
+            {extensions.length > 0 ? (
+              extensionList(extensions)
             ) : (
               <div className="settings-empty">
                 {t("settings.extensions.user.empty")}

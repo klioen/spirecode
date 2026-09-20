@@ -1,5 +1,8 @@
 # Plan: Extensions 按系统内置与用户自定义分组（from `docs/extension-catalog-sections/spec.md` 2026-09-18）
 
+> [!IMPORTANT]
+> **Superseded historical plan.** 下文保留原 built-in catalog 交付记录；该方案已由 [`docs/remove-pi-extensions-dependency/plan.md`](../remove-pi-extensions-dependency/plan.md) 取代。
+
 ## Files that change
 
 - `docs/extension-catalog-sections/{intent,spec,plan}.md`：记录本次独立目标、边界、设计与实施证明。

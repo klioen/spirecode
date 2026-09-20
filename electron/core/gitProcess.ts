@@ -1,15 +1,23 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { CommandError, toCommandError } from "./errors.js";
 
 const MAX_OUTPUT = 20 * 1024 * 1024;
 const TIMEOUT_MS = 15_000;
+const EMPTY_HOOKS_DIRECTORY = mkdtempSync(
+  path.join(os.tmpdir(), "spirecode-empty-git-hooks-"),
+);
 const SAFE_CONFIG = [
   "-c",
-  "core.hooksPath=/dev/null",
+  `core.hooksPath=${EMPTY_HOOKS_DIRECTORY}`,
   "-c",
   "credential.helper=",
   "-c",
   "protocol.ext.allow=never",
+  "-c",
+  "core.fsmonitor=false",
 ];
 
 export interface ProcessOutput {
@@ -108,6 +116,26 @@ export async function runGit(
       terminate(new CommandError("GIT_TIMED_OUT", "Git command timed out"));
     }, timeoutMs);
   });
+}
+
+export async function assertNoRepositoryGitCommands(
+  cwd: string,
+): Promise<void> {
+  const output = await gitText(cwd, [
+    "config",
+    "--local",
+    "--name-only",
+    "--list",
+  ]);
+  const executableFilters = output
+    .split(/\r?\n/u)
+    .filter((key) => /^filter\..*\.(?:clean|smudge|process)$/i.test(key));
+  if (executableFilters.length > 0) {
+    throw new CommandError(
+      "GIT_UNSAFE_CONFIG",
+      "repository defines executable Git filters; remove them before creating a worktree",
+    );
+  }
 }
 
 export async function gitText(

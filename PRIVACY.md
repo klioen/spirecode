@@ -2,26 +2,32 @@
 
 Last updated: 2026-09-18
 
-SpireCode is a local macOS desktop application for working with Git projects
-and local pi Agent sessions.
+SpireCode is a local desktop application for macOS, Windows, and Linux for
+working with Git projects and local pi Agent sessions.
 
 ## Local data
 
 SpireCode stores application state, project metadata, worktree metadata,
-editor tab metadata, settings, and bounded diagnostic logs in the macOS
-Application Support directory for the app. File contents, Git diffs, Chat
-transcripts, and Terminal output are read or rendered locally as needed.
+editor tab metadata, settings, and bounded diagnostic logs in the operating
+system's application-data directory for the app (Application Support on macOS,
+AppData on Windows, and the platform Electron data directory on Linux). File
+contents, Git diffs, Chat transcripts, and Terminal output are read or rendered
+locally as needed.
 
 Editor tab persistence stores only resource metadata such as relative paths,
 diff scopes, Chat session IDs, titles, and active tab IDs. It does not store
 file contents or unsaved drafts.
 
-## Agent and extensions
+## Agent and user-installed resources
 
-pi Agent tools and installed extensions run with the permissions of the
-current macOS user. They may read or modify local files, run commands, or
-access services according to their configuration. The worktree directory is
-not an operating-system security sandbox.
+SpireCode does not bundle packages or extensions from
+`github:klioen/pi-extensions`. Resources that users install and declare through
+standard Pi settings—including packages, extensions, skills, prompts, and
+themes—are resolved by the pi Agent SDK. Agent tools and executable resources
+run with the permissions of the current operating-system user. They may read or
+modify local files, run commands, start subprocesses, or access network services
+according to their configuration. The worktree directory is not an
+operating-system security sandbox.
 
 ## Network
 

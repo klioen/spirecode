@@ -3,7 +3,6 @@ import {
   mkdtemp,
   mkdir,
   readFile,
-  realpath,
   rm,
   symlink,
   writeFile,
@@ -65,19 +64,21 @@ async function fixture() {
 }
 
 describe("SettingsService", () => {
-  it("persists English on first launch", async () => {
+  it("persists provider-neutral v6 defaults on first launch", async () => {
     const { agentDir, statePath } = await fixture();
 
     const service = await SettingsService.load(statePath, agentDir);
 
     await expect(service.language()).resolves.toBe("en");
+    await expect(service.memoryConfig()).resolves.toBeNull();
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 5,
+      version: 7,
       language: "en",
+      memoryConfig: null,
     });
   });
 
-  it("migrates v4 state to English without changing other settings", async () => {
+  it("migrates v4 state without changing Memory or synthesizing built-ins", async () => {
     const { agentDir, statePath } = await fixture();
     await mkdir(path.dirname(statePath), { recursive: true });
     const previous = {
@@ -97,11 +98,24 @@ describe("SettingsService", () => {
     const service = await SettingsService.load(statePath, agentDir);
 
     await expect(service.language()).resolves.toBe("en");
-    expect(JSON.parse(await readFile(statePath, "utf8"))).toEqual({
-      ...previous,
-      version: 5,
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      version: 7,
       language: "en",
+      memoryConfig: previous.memoryConfig,
     });
+    const catalog = await service.list(
+      path.join(path.dirname(agentDir), "project"),
+    );
+    expect(catalog.map(({ name }) => name)).not.toEqual(
+      expect.arrayContaining([
+        "pi-web-access",
+        "pi-subagents",
+        "pi-memory",
+        "pi-goal",
+        "pi-plan",
+        "pi-todo",
+      ]),
+    );
   });
 
   it("repairs invalid persisted language and persists language updates", async () => {
@@ -117,7 +131,7 @@ describe("SettingsService", () => {
     await expect(service.setLanguage("zh-CN")).resolves.toBe("zh-CN");
     await expect(service.language()).resolves.toBe("zh-CN");
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 5,
+      version: 7,
       language: "zh-CN",
     });
     await expect(service.setLanguage("fr" as "en")).rejects.toThrow(
@@ -137,18 +151,11 @@ describe("SettingsService", () => {
     await expect(blockedService.language()).resolves.toBe("en");
   });
 
-  it("loads, persists, and migrates the global Memory configuration", async () => {
+  it("persists and reloads the global Memory configuration", async () => {
     const { agentDir, statePath } = await fixture();
     const service = await SettingsService.load(statePath, agentDir);
 
-    await expect(service.memoryConfig()).resolves.toEqual({
-      phase1Provider: "traex",
-      phase1ModelId: "DeepSeek-V4-Flash",
-      phase1ReasoningEffort: "low",
-      phase2Provider: "traex",
-      phase2ModelId: "DeepSeek-V4-Flash",
-      phase2ReasoningEffort: "medium",
-    });
+    await expect(service.memoryConfig()).resolves.toBeNull();
     await expect(
       service.setMemoryConfig(
         "openai",
@@ -167,7 +174,7 @@ describe("SettingsService", () => {
       phase2ReasoningEffort: "max",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 5,
+      version: 7,
       memoryConfig: {
         phase1Provider: "openai",
         phase1ModelId: "gpt-5.6",
@@ -263,25 +270,27 @@ describe("SettingsService", () => {
     ).rejects.toThrow("reasoningEffort is invalid");
   });
 
-  it("lists six built-ins and only user-configured Pi extensions", async () => {
+  it("surfaces resource resolution failures instead of reporting an empty catalog", async () => {
+    const { cwd, agentDir, statePath } = await fixture();
+    await writeFile(
+      path.join(agentDir, "settings.json"),
+      JSON.stringify({ packages: [{ autoload: false }] }),
+    );
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.list(cwd)).rejects.toThrow(
+      "packages must contain strings or package declarations",
+    );
+  });
+
+  it("lists only user-configured Pi extensions", async () => {
     const { cwd, agentDir, statePath } = await fixture();
     const service = await SettingsService.load(statePath, agentDir);
 
     const catalog = await service.list(cwd);
-    const builtins = catalog.filter(({ kind }) => kind === "builtin");
     const users = catalog.filter(({ kind }) => kind === "user");
 
-    expect(builtins.map(({ name }) => name).sort()).toEqual([
-      "pi-goal",
-      "pi-memory",
-      "pi-plan",
-      "pi-subagents",
-      "pi-todo",
-      "pi-web-access",
-    ]);
-    expect(
-      builtins.every(({ displayPath }) => !path.isAbsolute(displayPath)),
-    ).toBe(true);
+    expect(catalog).toHaveLength(users.length);
     expect(users).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -312,144 +321,6 @@ describe("SettingsService", () => {
     );
     expect(catalog.map(({ name }) => name)).not.toEqual(
       expect.arrayContaining(["review", "project"]),
-    );
-  });
-
-  it("persists overrides and rejects unknown extension ids", async () => {
-    const { cwd, agentDir, statePath } = await fixture();
-    const service = await SettingsService.load(statePath, agentDir);
-    const extension = (await service.list(cwd)).find(
-      ({ name }) => name === "pi-goal",
-    )!;
-
-    const updated = await service.setEnabled(cwd, extension.id, false);
-    expect(updated.find(({ id }) => id === extension.id)?.enabled).toBe(false);
-    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 5,
-      overrides: { [extension.id]: false },
-    });
-
-    const reloaded = await SettingsService.load(statePath, agentDir);
-    expect(
-      (await reloaded.list(cwd)).find(({ id }) => id === extension.id)?.enabled,
-    ).toBe(false);
-    await expect(service.setEnabled(cwd, "unknown", true)).rejects.toThrow(
-      "extension not found",
-    );
-  });
-
-  it("disables one bundled extension without removing the others", async () => {
-    const { root, cwd, agentDir, statePath } = await fixture();
-    const service = await SettingsService.load(statePath, agentDir);
-    const bundleRoot = path.join(root, "bundled");
-    const bundledPaths: string[] = [];
-    for (const name of ["pi-goal", "pi-plan"]) {
-      const packageRoot = path.join(bundleRoot, name);
-      await mkdir(packageRoot, { recursive: true });
-      await writeFile(
-        path.join(packageRoot, "package.json"),
-        JSON.stringify({ name, version: "1.0.0" }),
-      );
-      bundledPaths.push(packageRoot);
-    }
-    const goal = (await service.list(cwd)).find(
-      ({ name, kind }) => name === "pi-goal" && kind === "builtin",
-    )!;
-
-    await service.setEnabled(cwd, goal.id, false);
-
-    const selected = await service.enabledPaths(cwd, bundledPaths);
-    expect(selected).not.toContain(await realpath(bundledPaths[0]));
-    expect(selected).toContain(await realpath(bundledPaths[1]));
-  });
-
-  it("loads standalone Pi extensions without reintroducing replaced packages", async () => {
-    const { root, cwd, agentDir, statePath } = await fixture();
-    const service = await SettingsService.load(statePath, agentDir);
-    const omittedPackage = await realpath(path.join(root, "package"));
-    const bundled = path.join(root, "bundled", "fixture-package");
-    await mkdir(bundled, { recursive: true });
-    await writeFile(
-      path.join(bundled, "package.json"),
-      JSON.stringify({ name: "fixture-package", version: "1.0.0" }),
-    );
-
-    const selected = await service.enabledPaths(cwd, [bundled]);
-    const canonical = await Promise.all(
-      selected.map((entry) => realpath(entry)),
-    );
-
-    expect(canonical).toContain(await realpath(bundled));
-    expect(canonical).not.toContain(
-      await realpath(path.join(cwd, ".spirecode", "extensions", "review.ts")),
-    );
-    expect(canonical).not.toContain(
-      await realpath(path.join(cwd, ".pi", "extensions", "project.ts")),
-    );
-    expect(canonical).toContain(
-      await realpath(path.join(agentDir, "extensions", "global.ts")),
-    );
-    expect(canonical).not.toContain(omittedPackage);
-  });
-
-  it("toggles standalone Pi extensions independently", async () => {
-    const { cwd, agentDir, statePath } = await fixture();
-    await writeFile(
-      path.join(agentDir, "extensions", "second.ts"),
-      "export default () => {}",
-    );
-    const service = await SettingsService.load(statePath, agentDir);
-    const global = (await service.list(cwd)).find(
-      ({ name, source }) => name === "global" && source === "pi",
-    )!;
-
-    const updated = await service.setEnabled(cwd, global.id, false);
-
-    expect(updated.find(({ id }) => id === global.id)?.enabled).toBe(false);
-    expect(updated.find(({ name }) => name === "second")).toBeUndefined();
-  });
-
-  it("disables every extension entry belonging to one package load root", async () => {
-    const { root, cwd, agentDir, statePath } = await fixture();
-    const service = await SettingsService.load(statePath, agentDir);
-    const packageRoot = await realpath(path.join(root, "package"));
-    const packageEntry = (await service.list(cwd)).find(
-      ({ source }) => source === "package",
-    )!;
-
-    await service.setEnabled(cwd, packageEntry.id, false);
-
-    expect(
-      (await service.list(cwd))
-        .filter(({ source }) => source === "package")
-        .every(({ enabled }) => !enabled),
-    ).toBe(true);
-    expect(await service.enabledPaths(cwd, [packageRoot])).not.toContain(
-      packageRoot,
-    );
-  });
-
-  it("preserves unresolved remote package sources for the Pi loader", async () => {
-    const { cwd, agentDir, statePath } = await fixture();
-    const service = await SettingsService.load(statePath, agentDir);
-
-    await expect(
-      service.enabledPaths(cwd, ["npm:example-extension"]),
-    ).resolves.toContain("npm:example-extension");
-  });
-
-  it("canonicalizes symlink load roots before applying disabled state", async () => {
-    const { root, cwd, agentDir, statePath } = await fixture();
-    const service = await SettingsService.load(statePath, agentDir);
-    const global = (await service.list(cwd)).find(
-      ({ name, source }) => name === "global" && source === "pi",
-    )!;
-    await service.setEnabled(cwd, global.id, false);
-    const alias = path.join(root, "global-alias.ts");
-    await symlink(path.join(agentDir, "extensions", "global.ts"), alias);
-
-    expect(await service.enabledPaths(cwd, [alias])).not.toContain(
-      await realpath(alias),
     );
   });
 

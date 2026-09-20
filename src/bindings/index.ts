@@ -1,5 +1,6 @@
 import "./host";
 import type {
+  AgentReadiness,
   AppLanguage,
   ChatAccepted,
   ChatEvent,
@@ -70,26 +71,20 @@ export const commands = {
   projectCatalog: () => command<ProjectCatalog>("project_catalog"),
 
   settingsLanguageGet: () => command<AppLanguage>("settings_language_get"),
+  settingsAgentReadiness: () =>
+    command<AgentReadiness>("settings_agent_readiness"),
   settingsLanguageSet: (language: AppLanguage) =>
     command<AppLanguage>("settings_language_set", { language }),
-  settingsExtensionsList: (worktreeId: string) =>
-    command<ExtensionSetting[]>("settings_extensions_list", { worktreeId }),
-  settingsExtensionSetEnabled: (
-    worktreeId: string,
-    extensionId: string,
-    enabled: boolean,
-  ) =>
-    command<ExtensionSetting[]>("settings_extension_set_enabled", {
-      worktreeId,
-      extensionId,
-      enabled,
+  settingsExtensionsList: (worktreeId?: string) =>
+    command<ExtensionSetting[]>("settings_extensions_list", {
+      ...(worktreeId ? { worktreeId } : {}),
     }),
   settingsMemoryRead: (document: MemoryDocumentId) =>
     command<MemoryDocument>("settings_memory_read", { document }),
   settingsMemoryModelsList: (worktreeId: string) =>
     command<ChatModelOption[]>("settings_memory_models_list", { worktreeId }),
   settingsMemoryConfigGet: () =>
-    command<MemoryConfig>("settings_memory_config_get"),
+    command<MemoryConfig | null>("settings_memory_config_get"),
   settingsMemoryConfigSet: (config: MemoryConfig) =>
     command<MemoryConfig>("settings_memory_config_set", {
       phase1Provider: config.phase1Provider,

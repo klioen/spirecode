@@ -1,5 +1,9 @@
 # Intent: SpireCode 默认携带 Pi extensions
-Author: user。 Status: accepted。
+
+> [!IMPORTANT]
+> **Superseded.** 本文记录当时采用 bundled Pi resources 的历史动机，不再描述当前产品方向。替代方案见 [`docs/remove-pi-extensions-dependency/`](../remove-pi-extensions-dependency/intent.md)：SpireCode 不再依赖或分发 `github:klioen/pi-extensions`，附加能力改由用户通过标准 Pi 配置安装。
+
+Author: user。 Status: superseded。
 
 ## Problem
 

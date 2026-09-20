@@ -1,5 +1,9 @@
 # Spec: SpireCode bundled Pi resources
-Status: accepted。 Implements: `docs/bundled-pi-extensions/intent.md`。
+
+> [!IMPORTANT]
+> **Superseded.** 本文保留已实现过的 bundled 架构及其约束，不能作为当前行为说明。现行规范是 [`docs/remove-pi-extensions-dependency/spec.md`](../remove-pi-extensions-dependency/spec.md)：不再携带该仓库资源，只解析用户显式配置的标准 Pi resources。
+
+Status: superseded。 Historical implementation of: `docs/bundled-pi-extensions/intent.md`。
 
 ## Requirements
 
