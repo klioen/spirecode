@@ -19,7 +19,7 @@ pty="$(find "$app/Contents/Resources/app.asar.unpacked" -name pty.node -print -q
 [[ -n "$pty" ]]
 file "$pty" | grep -q 'arm64'
 
-asar="$root/node_modules/@electron/asar/bin/asar.js"
+asar="$root/node_modules/@electron/asar/bin/asar.mjs"
 [[ -f "$asar" ]]
 listing="$(node "$asar" list "$app/Contents/Resources/app.asar")"
 grep -q '^/dist/index.html$' <<<"$listing"
