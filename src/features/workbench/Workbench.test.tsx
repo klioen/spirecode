@@ -5,6 +5,7 @@ import { useChangesStore } from "../changes/changesStore";
 import { refreshChanges } from "../changes/changesRefresh";
 import { useProjectsStore } from "../projects/projectsStore";
 import { Workbench } from "./Workbench";
+import { settingsApi } from "../settings/settingsApi";
 import { resetWorkbenchStore } from "./workbenchStore";
 
 vi.mock("../projects/ProjectRail", () => ({
@@ -39,9 +40,19 @@ vi.mock("./BreadcrumbSwitcher", () => ({
     </div>
   ),
 }));
+vi.mock("../settings/settingsApi", () => ({
+  settingsApi: { getAgentReadiness: vi.fn() },
+}));
 vi.mock("../settings/SettingsDialog", () => ({
-  SettingsDialog: ({ onClose }: { onClose: () => void }) => (
+  SettingsDialog: ({
+    onClose,
+    initialSection,
+  }: {
+    onClose: () => void;
+    initialSection?: string;
+  }) => (
     <div role="dialog" aria-label="Settings dialog">
+      <span>{initialSection}</span>
       <button onClick={onClose}>Close mocked settings</button>
     </div>
   ),
@@ -52,6 +63,13 @@ beforeEach(() => {
   localStorage.clear();
   resetWorkbenchStore();
   vi.mocked(refreshChanges).mockClear();
+  vi.mocked(settingsApi.getAgentReadiness).mockResolvedValue({
+    piAgentDirectoryExists: true,
+    authenticatedModelCount: 1,
+    availableProviders: [{ id: "openai", authenticated: true }],
+    defaultModelAvailable: true,
+    resourcesHealthy: true,
+  });
   useChangesStore.setState({ byWorktree: {} });
   useProjectsStore.setState({
     projects: [
@@ -193,6 +211,21 @@ describe("Workbench panel handles", () => {
     expect(
       screen.getByRole("separator", { name: "Resize projects panel" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens Agent setup automatically when no authenticated model is available", async () => {
+    vi.mocked(settingsApi.getAgentReadiness).mockResolvedValueOnce({
+      piAgentDirectoryExists: false,
+      authenticatedModelCount: 0,
+      availableProviders: [],
+      defaultModelAvailable: false,
+      resourcesHealthy: true,
+    });
+    render(<Workbench />);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Settings dialog" }),
+    ).toHaveTextContent("agent");
   });
 
   it("opens settings from the top-right action", () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsDialog } from "./SettingsDialog";
 import { memoryApi } from "./memoryApi";
@@ -29,9 +29,9 @@ vi.mock("./memoryApi", () => ({
 vi.mock("./settingsApi", () => ({
   settingsApi: {
     listExtensions: vi.fn(),
-    setExtensionEnabled: vi.fn(),
     getLanguage: vi.fn(),
     setLanguage: vi.fn(),
+    getAgentReadiness: vi.fn(),
   },
 }));
 
@@ -56,6 +56,13 @@ beforeEach(() => {
   vi.mocked(settingsApi.setLanguage).mockImplementation(
     async (language) => language,
   );
+  vi.mocked(settingsApi.getAgentReadiness).mockResolvedValue({
+    piAgentDirectoryExists: true,
+    authenticatedModelCount: 1,
+    availableProviders: [{ id: "openai", authenticated: true }],
+    defaultModelAvailable: true,
+    resourcesHealthy: true,
+  });
   vi.mocked(memoryApi.listModels).mockResolvedValue([
     {
       provider: "traex",
@@ -80,54 +87,57 @@ beforeEach(() => {
     updatedAt: 1,
   });
   vi.mocked(settingsApi.listExtensions).mockResolvedValue([extension]);
-  vi.mocked(settingsApi.setExtensionEnabled).mockResolvedValue([
-    { ...extension, enabled: false, status: "disabled" },
-  ]);
 });
 
 describe("SettingsDialog", () => {
-  it("groups built-in and user extensions and persists a toggle", async () => {
-    vi.mocked(settingsApi.listExtensions).mockResolvedValue([
-      {
-        ...extension,
-        id: "builtin-1",
-        name: "pi-plan",
-        kind: "builtin",
-        source: "spirecode",
-        scope: "global",
-        displayPath: "pi-plan",
-      },
-      extension,
-    ]);
+  it("shows only resolved user resources as a read-only list", async () => {
     render(<SettingsDialog worktreeId="w1" onClose={() => undefined} />);
 
-    expect(await screen.findByText("System built-in")).toBeInTheDocument();
-    expect(screen.getByText("User extensions")).toBeInTheDocument();
-    expect(screen.getByText("pi-plan")).toBeInTheDocument();
-    expect(screen.getByText("review-tools")).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Disable review-tools" }),
-    );
-
-    await waitFor(() =>
-      expect(settingsApi.setExtensionEnabled).toHaveBeenCalledWith(
-        "w1",
-        "extension-1",
-        false,
-      ),
-    );
     expect(
-      await screen.findByRole("checkbox", { name: "Enable review-tools" }),
-    ).not.toBeChecked();
+      await screen.findByText("Configured user resources"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("System built-in")).not.toBeInTheDocument();
+    expect(screen.getByText("review-tools")).toBeInTheDocument();
+    expect(screen.getByText("pi")).toBeInTheDocument();
+    expect(screen.getByText("Enabled in pi settings")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("shows a project requirement without calling Main", () => {
+  it("shows global user resources without an open project", async () => {
     render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
 
     expect(
-      screen.getByText("Open a project to manage extensions."),
+      await screen.findByText("Configured user resources"),
     ).toBeInTheDocument();
-    expect(settingsApi.listExtensions).not.toHaveBeenCalled();
+    expect(settingsApi.listExtensions).toHaveBeenCalledWith(undefined);
+  });
+
+  it("shows Agent setup state and refreshes readiness", async () => {
+    vi.mocked(settingsApi.getAgentReadiness)
+      .mockResolvedValueOnce({
+        piAgentDirectoryExists: false,
+        authenticatedModelCount: 0,
+        availableProviders: [],
+        defaultModelAvailable: false,
+        resourcesHealthy: true,
+      })
+      .mockResolvedValueOnce({
+        piAgentDirectoryExists: true,
+        authenticatedModelCount: 1,
+        availableProviders: [{ id: "openai", authenticated: true }],
+        defaultModelAvailable: true,
+        resourcesHealthy: true,
+      });
+    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+    expect(
+      await screen.findByText("Setup is required before starting Chat."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Recheck" }));
+    expect(
+      await screen.findByText("Ready with 1 authenticated model(s)."),
+    ).toBeInTheDocument();
   });
 
   it("opens global memory without requiring a worktree", async () => {
@@ -204,11 +214,49 @@ describe("SettingsDialog", () => {
     expect(document.documentElement.lang).toBe("en");
   });
 
-  it("closes from the close button", () => {
+  it("traps focus and restores it to the opener when closed", () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const { unmount } = render(
+      <SettingsDialog worktreeId={null} onClose={() => undefined} />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const closeButton = screen.getByRole("button", { name: "Close settings" });
+    const terminalButton = screen.getByRole("button", { name: "Terminal" });
+    expect(closeButton).toHaveFocus();
+
+    terminalButton.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(closeButton).toHaveFocus();
+
+    closeButton.focus();
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(terminalButton).toHaveFocus();
+
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("closes from the close button, Escape, and backdrop", () => {
     const close = vi.fn();
-    render(<SettingsDialog worktreeId={null} onClose={close} />);
+    const { rerender } = render(
+      <SettingsDialog worktreeId={null} onClose={close} />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
     expect(close).toHaveBeenCalledOnce();
+
+    close.mockClear();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(close).toHaveBeenCalledOnce();
+
+    close.mockClear();
+    const dialog = screen.getByRole("dialog");
+    fireEvent.mouseDown(dialog.parentElement!);
+    expect(close).toHaveBeenCalledOnce();
+    rerender(<></>);
   });
 });

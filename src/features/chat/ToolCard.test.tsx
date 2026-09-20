@@ -100,6 +100,7 @@ it("uses a diff preview only when edit output contains a diff", () => {
 });
 
 it("uses a web results preview only for structured search results", () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const { container } = render(
     <ToolCard
       tool={{
@@ -116,10 +117,11 @@ it("uses a web results preview only for structured search results", () => {
   );
 
   expect(container.querySelector('[data-tool-preview="web"]')).not.toBeNull();
-  expect(screen.getByRole("link", { name: "Weather" })).toHaveAttribute(
-    "href",
-    "https://example.com/weather",
-  );
+  const link = screen.getByRole("link", { name: "Weather" });
+  expect(link).toHaveAttribute("href", "https://example.com/weather");
+  fireEvent.click(link);
+  expect(confirm).toHaveBeenCalledOnce();
+  confirm.mockRestore();
 });
 
 it("selects output when no input is available", () => {

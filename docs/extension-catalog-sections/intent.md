@@ -1,5 +1,9 @@
 # Intent: Extensions 按系统内置与用户自定义分组
-Author: 用户。 Status: accepted。
+
+> [!IMPORTANT]
+> **Superseded.** 本文记录曾经区分 bundled 与 user extensions 的历史需求。现行方向见 [`docs/remove-pi-extensions-dependency/`](../remove-pi-extensions-dependency/intent.md)：移除 bundled catalog，Extensions 只反映用户通过标准 Pi settings 配置并实际解析到的资源。
+
+Author: 用户。 Status: superseded。
 
 ## Problem
 Settings 的 Extensions 当前把 SpireCode、Pi、package 以及 global/project scope 混在同一个列表中，用户无法快速区分应用自带能力和自己在 Pi settings 中配置的扩展；当前 bundle 还包含不再需要的 `pi-failover`。

@@ -7,6 +7,7 @@ import type {
 } from "../../bindings";
 import { formatNumber, useTranslation, type TranslationKey } from "../../i18n";
 import { commandError } from "../../lib/errors";
+import { useDialogFocus } from "../../lib/useDialogFocus";
 import { useChangesStore } from "../changes/changesStore";
 import { useEditorStore } from "../editor/editorStore";
 import { useFileTreeStore } from "../files/fileTreeStore";
@@ -16,6 +17,9 @@ import {
   validateWorktreeName,
   type WorktreeNameValidation,
 } from "./worktreeValidation";
+
+const branchOptionId = (ref: string) =>
+  `base-branch-option-${encodeURIComponent(ref).replace(/%/g, "_")}`;
 
 const validationKeys: Record<WorktreeNameValidation, TranslationKey> = {
   required: "worktree.validation.required",
@@ -27,20 +31,33 @@ function DialogFrame({
   title,
   children,
   onClose,
+  dismissible = true,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  dismissible?: boolean;
 }) {
+  const { dialogRef, trapFocus } = useDialogFocus<HTMLElement>(!dismissible);
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (dismissible && event.target === event.currentTarget) onClose();
+      }}
+    >
       <section
+        ref={dialogRef}
         className="worktree-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="worktree-dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.key === "Escape" && onClose()}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          trapFocus(event);
+          if (dismissible && event.key === "Escape") onClose();
+        }}
       >
         <h2 id="worktree-dialog-title">{title}</h2>
         {children}
@@ -72,6 +89,7 @@ export function NewWorktreeDialog({
   const [baseRef, setBaseRef] = useState("");
   const [branchQuery, setBranchQuery] = useState("");
   const [branchOptionsOpen, setBranchOptionsOpen] = useState(false);
+  const [activeBranchRef, setActiveBranchRef] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -88,6 +106,7 @@ export function NewWorktreeDialog({
         setBranchQuery(
           result.branches.find((branch) => branch.ref === next)?.name ?? "",
         );
+        setActiveBranchRef(next || result.branches[0]?.ref || null);
         return next;
       });
       setName((current) => current || result.nextName);
@@ -111,17 +130,39 @@ export function NewWorktreeDialog({
     setBranchQuery(query);
     setBranchOptionsOpen(true);
     const normalized = query.trim().toLocaleLowerCase();
+    const matches = (catalog?.branches ?? []).filter(
+      (branch) =>
+        branch.name.toLocaleLowerCase().includes(normalized) ||
+        branch.ref.toLocaleLowerCase().includes(normalized),
+    );
     const exact = catalog?.branches.find(
       (branch) =>
         branch.name.toLocaleLowerCase() === normalized ||
         branch.ref.toLocaleLowerCase() === normalized,
     );
     setBaseRef(exact?.ref ?? "");
+    setActiveBranchRef(matches[0]?.ref ?? null);
   };
   const selectBranch = (ref: string, name: string) => {
     setBaseRef(ref);
+    setActiveBranchRef(ref);
     setBranchQuery(name);
     setBranchOptionsOpen(false);
+  };
+  const moveActiveBranch = (
+    position: "previous" | "next" | "first" | "last",
+  ) => {
+    if (filteredBranches.length === 0) return;
+    const currentIndex = filteredBranches.findIndex(
+      (branch) => branch.ref === activeBranchRef,
+    );
+    let nextIndex = currentIndex < 0 ? 0 : currentIndex;
+    if (position === "first") nextIndex = 0;
+    if (position === "last") nextIndex = filteredBranches.length - 1;
+    if (position === "previous") nextIndex = Math.max(0, nextIndex - 1);
+    if (position === "next")
+      nextIndex = Math.min(filteredBranches.length - 1, nextIndex + 1);
+    setActiveBranchRef(filteredBranches[nextIndex].ref);
   };
   const create = async () => {
     store.setCreatingProject(projectId);
@@ -145,6 +186,7 @@ export function NewWorktreeDialog({
     <DialogFrame
       title={t("worktree.new.title", { name: projectName })}
       onClose={onClose}
+      dismissible={!creating}
     >
       <label>
         {t("worktree.baseBranch")}
@@ -156,11 +198,42 @@ export function NewWorktreeDialog({
               aria-autocomplete="list"
               aria-controls="base-branch-options"
               aria-expanded={branchOptionsOpen}
+              aria-activedescendant={
+                branchOptionsOpen && activeBranchRef
+                  ? branchOptionId(activeBranchRef)
+                  : undefined
+              }
               value={branchQuery}
               onChange={(event) => updateBranchQuery(event.target.value)}
               onFocus={() => setBranchOptionsOpen(true)}
               onKeyDown={(event) => {
-                if (event.key === "Escape") setBranchOptionsOpen(false);
+                if (
+                  ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
+                ) {
+                  event.preventDefault();
+                  setBranchOptionsOpen(true);
+                  moveActiveBranch(
+                    event.key === "ArrowDown"
+                      ? "next"
+                      : event.key === "ArrowUp"
+                        ? "previous"
+                        : event.key === "Home"
+                          ? "first"
+                          : "last",
+                  );
+                } else if (event.key === "Enter" && branchOptionsOpen) {
+                  const active = filteredBranches.find(
+                    (branch) => branch.ref === activeBranchRef,
+                  );
+                  if (active) {
+                    event.preventDefault();
+                    selectBranch(active.ref, active.name);
+                  }
+                } else if (event.key === "Escape" && branchOptionsOpen) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setBranchOptionsOpen(false);
+                }
               }}
               autoComplete="off"
               disabled={!catalog || creating}
@@ -175,10 +248,12 @@ export function NewWorktreeDialog({
                 {filteredBranches.length > 0 ? (
                   filteredBranches.map((branch) => (
                     <button
+                      id={branchOptionId(branch.ref)}
                       key={branch.ref}
                       type="button"
                       role="option"
-                      aria-selected={branch.ref === baseRef}
+                      aria-selected={branch.ref === activeBranchRef}
+                      tabIndex={-1}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => selectBranch(branch.ref, branch.name)}
                     >
@@ -272,6 +347,7 @@ export function RenameWorktreeDialog({
     <DialogFrame
       title={t("worktree.rename.title", { name: worktree.name })}
       onClose={onClose}
+      dismissible={!saving}
     >
       <label>
         {t("worktree.name")}
@@ -350,6 +426,7 @@ export function DeleteWorktreeDialog({
     <DialogFrame
       title={t("worktree.delete.title", { name: worktree.name })}
       onClose={onClose}
+      dismissible={!deleting}
     >
       {!inspection && !error && <p>{t("worktree.inspecting")}</p>}
       {inspection && (

@@ -1,11 +1,26 @@
 import { appendFile, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { shell } from "electron";
+import os from "node:os";
 import path from "node:path";
 
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
 const MAX_DIAGNOSTICS_LOG_BYTES = 64 * 1024;
-const SENSITIVE =
-  /(api[_ -]?key|access[_ -]?token|secret|password|credential)\s*[:=]\s*[^\s,]+/gi;
+const SENSITIVE_ASSIGNMENT =
+  /(["']?(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password|credential)["']?\s*[:=]\s*["']?)[^\s,"']+/gi;
+const BEARER = /(authorization\s*:\s*bearer\s+)[^\s,]+/gi;
+const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
+const URL_CREDENTIALS = /(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi;
+const PRIVATE_KEY =
+  /-----BEGIN [^-\r\n]*PRIVATE KEY-----[\s\S]*?-----END [^-\r\n]*PRIVATE KEY-----/g;
+const WINDOWS_USER_PATH = /\b[A-Za-z]:\\Users\\[^\\\s]+(?:\\[^\s,;:]*)*/gi;
+
+export interface DiagnosticEvent {
+  level: "info" | "warn" | "error";
+  code: string;
+  safeContext?: Readonly<{
+    errorType?: string;
+  }>;
+}
 
 export class DiagnosticsService {
   readonly logsDirectory: string;
@@ -17,7 +32,7 @@ export class DiagnosticsService {
     this.logsDirectory = path.join(dataDirectory, "logs");
     this.logPath = path.join(this.logsDirectory, "spirecode.log");
   }
-  async log(message: string): Promise<void> {
+  async log(event: DiagnosticEvent): Promise<void> {
     try {
       await mkdir(this.logsDirectory, { recursive: true });
       try {
@@ -26,9 +41,21 @@ export class DiagnosticsService {
       } catch {
         /* first log */
       }
+      const errorType = event.safeContext?.errorType;
+      const safeContext =
+        typeof errorType === "string" &&
+        /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(errorType)
+          ? { errorType }
+          : undefined;
+      const entry = {
+        timestamp: new Date().toISOString(),
+        level: event.level,
+        code: event.code,
+        ...(safeContext ? { safeContext } : {}),
+      };
       await appendFile(
         this.logPath,
-        `${new Date().toISOString()} ${sanitize(message)}\n`,
+        `${sanitize(JSON.stringify(entry))}\n`,
         "utf8",
       );
     } catch {
@@ -62,7 +89,15 @@ export class DiagnosticsService {
     ].join("\n");
   }
 }
-export const sanitize = (value: string): string =>
-  value
-    .replace(SENSITIVE, "$1=[REDACTED]")
-    .replace(/\b(?:sk|key|token)_[A-Za-z0-9_-]+\b/g, "[REDACTED]");
+export const sanitize = (value: string): string => {
+  const home = os.homedir();
+  return value
+    .replace(PRIVATE_KEY, "[REDACTED PRIVATE KEY]")
+    .replace(BEARER, "$1[REDACTED]")
+    .replace(JWT, "[REDACTED JWT]")
+    .replace(URL_CREDENTIALS, "$1[REDACTED]@")
+    .replace(SENSITIVE_ASSIGNMENT, "$1[REDACTED]")
+    .replace(/\b(?:sk|key|token)_[A-Za-z0-9_-]+\b/g, "[REDACTED]")
+    .replaceAll(home, "<home>")
+    .replace(WINDOWS_USER_PATH, "<home>");
+};

@@ -2,24 +2,20 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
-import {
-  DefaultPackageManager,
-  SettingsManager,
-  type ResolvedResource,
-} from "@earendil-works/pi-coding-agent";
+import { type ResolvedResource } from "@earendil-works/pi-coding-agent";
 import { AsyncQueue } from "../../core/asyncQueue.js";
 import { CommandError } from "../../core/errors.js";
-import { BUNDLED_EXTENSION_NAMES } from "../chat/bundledResources.js";
 import { loadOrDefault, saveAtomic } from "../persistence/index.js";
+import { resolveSpireExtensions } from "../chat/spireSettings.js";
 
-export type ExtensionSource = "spirecode" | "pi" | "package";
+export type ExtensionSource = "pi" | "package";
 export type ExtensionScope = "global" | "project";
 export type AppLanguage = "en" | "zh-CN";
 
 export interface ExtensionSetting {
   id: string;
   name: string;
-  kind: "builtin" | "user";
+  kind: "user";
   source: ExtensionSource;
   scope: ExtensionScope;
   displayPath: string;
@@ -40,20 +36,10 @@ export interface MemoryConfig {
 }
 
 interface SettingsState {
-  version: 5;
+  version: 7;
   language: AppLanguage;
-  overrides: Record<string, boolean>;
-  memoryConfig: MemoryConfig;
+  memoryConfig: MemoryConfig | null;
 }
-
-const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
-  phase1Provider: "traex",
-  phase1ModelId: "DeepSeek-V4-Flash",
-  phase1ReasoningEffort: "low",
-  phase2Provider: "traex",
-  phase2ModelId: "DeepSeek-V4-Flash",
-  phase2ReasoningEffort: "medium",
-};
 
 const MEMORY_REASONING_EFFORTS = new Set<MemoryReasoningEffort>([
   "off",
@@ -70,7 +56,7 @@ interface Candidate {
   loadRoot?: string;
   packageName?: string;
   packageVersion?: string;
-  kind: "builtin" | "user";
+  kind: "user";
   source: ExtensionSource;
   scope: ExtensionScope;
   defaultEnabled: boolean;
@@ -89,10 +75,9 @@ export class SettingsService {
     agentDir = path.join(homedir(), ".pi", "agent"),
   ): Promise<SettingsService> {
     const loaded = await loadOrDefault<unknown>(statePath, () => ({
-      version: 5,
+      version: 7,
       language: "en",
-      overrides: {},
-      memoryConfig: DEFAULT_MEMORY_CONFIG,
+      memoryConfig: null,
     }));
     const state = sanitizeState(loaded);
     await saveAtomic(statePath, state);
@@ -119,11 +104,13 @@ export class SettingsService {
   }
 
   list(cwd: string): Promise<ExtensionSetting[]> {
-    return this.queue.run(async () => this.catalog(cwd));
+    return this.queue.run(async () => this.catalog(cwd, true));
   }
 
-  memoryConfig(): Promise<MemoryConfig> {
-    return this.queue.run(async () => ({ ...this.state.memoryConfig }));
+  memoryConfig(): Promise<MemoryConfig | null> {
+    return this.queue.run(async () =>
+      this.state.memoryConfig ? { ...this.state.memoryConfig } : null,
+    );
   }
 
   setMemoryConfig(
@@ -150,100 +137,20 @@ export class SettingsService {
     });
   }
 
-  setEnabled(
+  private async catalog(
     cwd: string,
-    requestedId: string,
-    enabled: boolean,
+    strict = false,
   ): Promise<ExtensionSetting[]> {
-    return this.queue.run(async () => {
-      const candidates = await this.candidates(cwd, true);
-      const extension = candidates.find(
-        (candidate) => extensionId(candidate) === requestedId,
-      );
-      if (!extension)
-        throw new CommandError("NOT_FOUND", "extension not found");
-      const packageRoot =
-        extension.source === "package" ? extension.loadRoot : undefined;
-      for (const candidate of candidates) {
-        if (
-          extensionId(candidate) === requestedId ||
-          (packageRoot &&
-            candidate.source === "package" &&
-            candidate.loadRoot === packageRoot)
-        )
-          this.state.overrides[extensionId(candidate)] = enabled;
-      }
-      await saveAtomic(this.statePath, this.state);
-      return this.catalog(cwd);
-    });
-  }
-
-  async enabledPaths(cwd: string, basePaths: string[] = []): Promise<string[]> {
-    const candidates = await this.candidates(cwd, true);
-    const selections = candidates.map((candidate) => ({
-      candidate,
-      enabled:
-        this.state.overrides[extensionId(candidate)] ??
-        candidate.defaultEnabled,
-    }));
-    const canonicalBasePaths = await Promise.all(
-      basePaths.map((value) => canonicalPath(value)),
-    );
-    const basePackageNames = new Set(
-      (
-        await Promise.all(
-          canonicalBasePaths.map((value) => packageNameAt(value)),
-        )
-      ).filter((value): value is string => Boolean(value)),
-    );
-    const basePathPackageNames = new Map(
-      await Promise.all(
-        canonicalBasePaths.map(
-          async (value) => [value, await packageNameAt(value)] as const,
-        ),
-      ),
-    );
-    const retained = canonicalBasePaths.filter((basePath) => {
-      const represented = selections.filter(({ candidate }) =>
-        isRepresentedBy(
-          candidate,
-          basePath,
-          basePathPackageNames.get(basePath),
-        ),
-      );
-      if (represented.length === 0) return true;
-      return represented.some(({ enabled }) => enabled);
-    });
-    const additions = selections
-      .filter(
-        ({ candidate, enabled }) =>
-          enabled &&
-          candidate.kind === "user" &&
-          !(
-            candidate.source === "package" &&
-            candidate.packageName &&
-            basePackageNames.has(candidate.packageName)
-          ),
-      )
-      .map(({ candidate }) =>
-        candidate.source === "package" && candidate.loadRoot
-          ? candidate.loadRoot
-          : candidate.path,
-      );
-    return [...new Set([...retained, ...additions])];
-  }
-
-  private async catalog(cwd: string): Promise<ExtensionSetting[]> {
-    const candidates = await this.candidates(cwd, false);
+    const candidates = await this.candidates(cwd, strict);
     return candidates
       .map((candidate) => {
         const id = extensionId(candidate);
-        const enabled = this.state.overrides[id] ?? candidate.defaultEnabled;
+        const enabled = candidate.defaultEnabled;
         return {
           id,
           name:
-            candidate.kind === "builtin" || candidate.source === "package"
-              ? candidate.packageName!
+            candidate.source === "package"
+              ? (candidate.packageName ?? extensionName(candidate.path))
               : extensionName(candidate.path),
           ...(candidate.packageVersion
             ? { version: candidate.packageVersion }
@@ -251,10 +158,7 @@ export class SettingsService {
           kind: candidate.kind,
           source: candidate.source,
           scope: candidate.scope,
-          displayPath:
-            candidate.kind === "builtin"
-              ? candidate.packageName!
-              : abbreviateHome(candidate.path),
+          displayPath: abbreviateHome(candidate.path),
           enabled,
           status: enabled ? "enabled" : "disabled",
         } satisfies ExtensionSetting;
@@ -267,36 +171,14 @@ export class SettingsService {
   }
 
   private async candidates(cwd: string, strict: boolean): Promise<Candidate[]> {
-    const candidates: Candidate[] = BUNDLED_EXTENSION_NAMES.map((name) => ({
-      path: `builtin:${name}`,
-      packageName: name,
-      kind: "builtin",
-      source: "spirecode",
-      scope: "global",
-      defaultEnabled: true,
-    }));
+    const candidates: Candidate[] = [];
 
-    const fileSettings = SettingsManager.create(cwd, this.agentDir);
-    const settingsManager = SettingsManager.inMemory(
-      fileSettings.getGlobalSettings(),
-      { projectTrusted: true },
-    );
-    const manager = new DefaultPackageManager({
-      cwd,
-      agentDir: this.agentDir,
-      settingsManager,
-    });
     try {
-      const resolved = await manager.resolve(async () => "skip");
-      for (const resource of resolved.extensions) {
+      for (const resource of await resolveSpireExtensions(cwd, {
+        piSettingsPath: path.join(this.agentDir, "settings.json"),
+      })) {
         const candidate = await fromPiResource(resource);
-        if (
-          candidate &&
-          !BUNDLED_EXTENSION_NAMES.some(
-            (name) => name === candidate.packageName,
-          )
-        )
-          candidates.push(candidate);
+        if (candidate) candidates.push(candidate);
       }
     } catch (error) {
       if (strict) throw error;
@@ -344,14 +226,6 @@ async function fromPiResource(
   };
 }
 
-async function canonicalPath(value: string): Promise<string> {
-  if (path.win32.isAbsolute(value) || path.posix.isAbsolute(value)) {
-    return realpath(value);
-  }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return value;
-  return realpath(value);
-}
-
 async function packageMetadataAt(
   value: string,
 ): Promise<{ packageName?: string; packageVersion?: string }> {
@@ -370,29 +244,6 @@ async function packageMetadataAt(
   } catch {
     return {};
   }
-}
-
-async function packageNameAt(value: string): Promise<string | undefined> {
-  return (await packageMetadataAt(value)).packageName;
-}
-
-function isRepresentedBy(
-  candidate: Candidate,
-  basePath: string,
-  basePackageName: string | undefined,
-): boolean {
-  if (candidate.kind === "builtin")
-    return candidate.packageName === basePackageName;
-  if (candidate.source === "package") return candidate.loadRoot === basePath;
-  return candidate.path === basePath || isWithin(basePath, candidate.path);
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  );
 }
 
 function extensionId(candidate: Candidate): string {
@@ -447,13 +298,7 @@ function sanitizeState(value: unknown): SettingsState {
     value && typeof value === "object"
       ? (value as Record<string, unknown>)
       : ({} as Record<string, unknown>);
-  const overrides: Record<string, boolean> = {};
-  if (typeof record.overrides === "object" && record.overrides) {
-    for (const [key, enabled] of Object.entries(record.overrides))
-      if (/^[a-f0-9]{24}$/.test(key) && typeof enabled === "boolean")
-        overrides[key] = enabled;
-  }
-  let memoryConfig = DEFAULT_MEMORY_CONFIG;
+  let memoryConfig: MemoryConfig | null = null;
   if (record.memoryConfig && typeof record.memoryConfig === "object") {
     const candidate = record.memoryConfig as Record<string, unknown>;
     try {
@@ -478,14 +323,13 @@ function sanitizeState(value: unknown): SettingsState {
             MemoryReasoningEffort | undefined) ?? "medium",
       });
     } catch {
-      memoryConfig = DEFAULT_MEMORY_CONFIG;
+      memoryConfig = null;
     }
   }
   const language: AppLanguage = record.language === "zh-CN" ? "zh-CN" : "en";
   return {
-    version: 5,
+    version: 7,
     language,
-    overrides,
-    memoryConfig: { ...memoryConfig },
+    memoryConfig: memoryConfig ? { ...memoryConfig } : null,
   };
 }

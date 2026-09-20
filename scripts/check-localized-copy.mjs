@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
 const requestedSources = process.argv.slice(2);
@@ -15,6 +15,7 @@ const discoveredSources = requestedSources.length
 const productionSources = discoveredSources.filter(
   (file) =>
     file &&
+    existsSync(file) &&
     !file.includes(".test.") &&
     !file.startsWith("src/i18n/") &&
     !file.startsWith("src/bindings/generated") &&

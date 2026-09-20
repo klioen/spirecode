@@ -193,12 +193,20 @@ export interface ChatAccepted {
 
 export type AppLanguage = "en" | "zh-CN";
 
+export interface AgentReadiness {
+  piAgentDirectoryExists: boolean;
+  authenticatedModelCount: number;
+  availableProviders: Array<{ id: string; authenticated: boolean }>;
+  defaultModelAvailable: boolean;
+  resourcesHealthy: boolean;
+}
+
 export interface ExtensionSetting {
   id: string;
   name: string;
   version?: string;
-  kind: "builtin" | "user";
-  source: "spirecode" | "pi" | "package";
+  kind: "user";
+  source: "pi" | "package";
   scope: "global" | "project";
   displayPath: string;
   enabled: boolean;

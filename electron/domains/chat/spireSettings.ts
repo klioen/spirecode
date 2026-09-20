@@ -1,7 +1,12 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { SettingsManager } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultPackageManager,
+  SettingsManager,
+  type PackageSource,
+  type ResolvedResource,
+} from "@earendil-works/pi-coding-agent";
 
 export type SettingsLayer = "pi" | "spirecode";
 
@@ -9,6 +14,17 @@ export interface SettingsResourceSource {
   source: string;
   settingsPath: string;
   layer: SettingsLayer;
+}
+
+export interface LayeredExtensionResource extends ResolvedResource {
+  layer: SettingsLayer;
+}
+
+export interface SpireResolvedResources {
+  extensions: LayeredExtensionResource[];
+  skills: ResolvedResource[];
+  prompts: ResolvedResource[];
+  themes: ResolvedResource[];
 }
 
 export interface SpireSettingsResult {
@@ -22,49 +38,172 @@ export interface SpireSettingsPaths {
   spireSettingsPath?: string;
 }
 
+interface LoadedSettings {
+  piSettingsPath: string;
+  spireSettingsPath: string;
+  piSettings: Record<string, unknown>;
+  spireSettings: Record<string, unknown>;
+}
+
 export async function loadSpireSettings(
   paths: SpireSettingsPaths = {},
 ): Promise<SpireSettingsResult> {
+  const loaded = await loadSettingsFiles(paths);
+  const packageSources = [
+    ...resourceSources(
+      loaded.piSettings,
+      "packages",
+      loaded.piSettingsPath,
+      "pi",
+    ),
+    ...resourceSources(
+      loaded.spireSettings,
+      "packages",
+      loaded.spireSettingsPath,
+      "spirecode",
+    ),
+  ];
+  const extensionSources = [
+    ...resourceSources(
+      loaded.piSettings,
+      "extensions",
+      loaded.piSettingsPath,
+      "pi",
+    ),
+    ...resourceSources(
+      loaded.spireSettings,
+      "extensions",
+      loaded.spireSettingsPath,
+      "spirecode",
+    ),
+  ];
+  const merged = deepMerge(loaded.piSettings, loaded.spireSettings);
+  merged.packages = [
+    ...packageDeclarations(loaded.piSettings, loaded.piSettingsPath),
+    ...packageDeclarations(loaded.spireSettings, loaded.spireSettingsPath),
+  ];
+  merged.extensions = [
+    ...extensionDeclarations(loaded.piSettings, loaded.piSettingsPath),
+    ...extensionDeclarations(loaded.spireSettings, loaded.spireSettingsPath),
+  ];
+
+  return {
+    settingsManager: SettingsManager.inMemory(
+      merged as Parameters<typeof SettingsManager.inMemory>[0],
+      { projectTrusted: false },
+    ),
+    packageSources,
+    extensionSources,
+  };
+}
+
+export async function resolveSpireResources(
+  cwd: string,
+  paths: SpireSettingsPaths = {},
+): Promise<SpireResolvedResources> {
+  const loaded = await loadSettingsFiles(paths);
+  const [pi, spirecode] = await Promise.all([
+    resolveLayerResources(cwd, loaded.piSettings, loaded.piSettingsPath, "pi"),
+    resolveLayerResources(
+      cwd,
+      loaded.spireSettings,
+      loaded.spireSettingsPath,
+      "spirecode",
+    ),
+  ]);
+  return {
+    extensions: await mergeResources(pi.extensions, spirecode.extensions),
+    skills: await mergeResources(pi.skills, spirecode.skills),
+    prompts: await mergeResources(pi.prompts, spirecode.prompts),
+    themes: await mergeResources(pi.themes, spirecode.themes),
+  };
+}
+
+export async function resolveSpireExtensions(
+  cwd: string,
+  paths: SpireSettingsPaths = {},
+): Promise<LayeredExtensionResource[]> {
+  return (await resolveSpireResources(cwd, paths)).extensions;
+}
+
+export async function resolveSpireExtensionPaths(
+  cwd: string,
+  paths: SpireSettingsPaths = {},
+): Promise<string[]> {
+  return (await resolveSpireExtensions(cwd, paths))
+    .filter((resource) => resource.enabled)
+    .map((resource) => resource.path);
+}
+
+async function resolveLayerResources(
+  cwd: string,
+  settings: Record<string, unknown>,
+  settingsPath: string,
+  layer: SettingsLayer,
+) {
+  const normalized = { ...settings };
+  normalized.packages = packageDeclarations(settings, settingsPath);
+  normalized.extensions = extensionDeclarations(settings, settingsPath);
+  const manager = new DefaultPackageManager({
+    cwd,
+    agentDir: path.dirname(settingsPath),
+    settingsManager: SettingsManager.inMemory(
+      normalized as Parameters<typeof SettingsManager.inMemory>[0],
+      { projectTrusted: false },
+    ),
+  });
+  const resolved = await manager.resolve(async () => "skip");
+  const explicit = (resources: ResolvedResource[]) =>
+    resources.filter(
+      (resource) =>
+        resource.metadata.source !== "auto" &&
+        resource.metadata.scope !== "project",
+    );
+  return {
+    extensions: explicit(resolved.extensions).map((resource) => ({
+      ...resource,
+      layer,
+    })),
+    skills: explicit(resolved.skills),
+    prompts: explicit(resolved.prompts),
+    themes: explicit(resolved.themes),
+  };
+}
+
+async function mergeResources<T extends ResolvedResource>(
+  base: T[],
+  override: T[],
+): Promise<T[]> {
+  const unique = new Map<string, T>();
+  for (const resource of [...base, ...override]) {
+    unique.set(await canonicalResourceKey(resource.path), resource);
+  }
+  return [...unique.values()];
+}
+
+async function loadSettingsFiles(
+  paths: SpireSettingsPaths,
+): Promise<LoadedSettings> {
   const piSettingsPath =
     paths.piSettingsPath ??
     path.join(homedir(), ".pi", "agent", "settings.json");
   const spireSettingsPath =
     paths.spireSettingsPath ??
     path.join(homedir(), ".spirecode", "settings.json");
-  const piSettings = await readSettings(piSettingsPath, "Pi");
-  const spireSettings = await readSettings(spireSettingsPath, "SpireCode");
-  const packageSources = [
-    ...resourceSources(piSettings, "packages", piSettingsPath, "pi"),
-    ...resourceSources(
-      spireSettings,
-      "packages",
-      spireSettingsPath,
-      "spirecode",
-    ),
-  ];
-  const extensionSources = [
-    ...resourceSources(piSettings, "extensions", piSettingsPath, "pi"),
-    ...resourceSources(
-      spireSettings,
-      "extensions",
-      spireSettingsPath,
-      "spirecode",
-    ),
-  ];
-  const merged = deepMerge(piSettings, spireSettings);
-  delete merged.packages;
-  delete merged.extensions;
-
   return {
-    settingsManager: SettingsManager.inMemory(
-      merged as Parameters<typeof SettingsManager.inMemory>[0],
-      {
-        projectTrusted: true,
-      },
-    ),
-    packageSources,
-    extensionSources,
+    piSettingsPath,
+    spireSettingsPath,
+    piSettings: await readSettings(piSettingsPath, "Pi"),
+    spireSettings: await readSettings(spireSettingsPath, "SpireCode"),
   };
+}
+
+async function canonicalResourceKey(resourcePath: string): Promise<string> {
+  try {
+    return await realpath(resourcePath);
+  } catch {
+    return path.resolve(resourcePath);
+  }
 }
 
 async function readSettings(
@@ -92,13 +231,92 @@ function resourceSources(
 ): SettingsResourceSource[] {
   const value = settings[field];
   if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`${settingsPath}: ${field} must be an array`);
+  }
+  if (field === "extensions") {
+    if (value.some((entry) => typeof entry !== "string")) {
+      throw new Error(
+        `${settingsPath}: extensions must be an array of strings`,
+      );
+    }
+    return value.map((source) => ({
+      source: source as string,
+      settingsPath,
+      layer,
+    }));
+  }
+  if (value.some((entry) => !isPackageSource(entry))) {
+    throw new Error(
+      `${settingsPath}: packages must contain strings or package declarations`,
+    );
+  }
+  return value.map((entry) => ({
+    source: typeof entry === "string" ? entry : entry.source,
+    settingsPath,
+    layer,
+  }));
+}
+
+function packageDeclarations(
+  settings: Record<string, unknown>,
+  settingsPath: string,
+): PackageSource[] {
+  const value = settings.packages;
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((entry) => !isPackageSource(entry))) {
+    throw new Error(
+      `${settingsPath}: packages must contain strings or package declarations`,
+    );
+  }
+  return value.map((entry) => {
+    if (typeof entry === "string")
+      return resolveResourceSource(settingsPath, entry);
+    return {
+      ...entry,
+      source: resolveResourceSource(settingsPath, entry.source),
+    };
+  });
+}
+
+function extensionDeclarations(
+  settings: Record<string, unknown>,
+  settingsPath: string,
+): string[] {
+  const value = settings.extensions;
+  if (value === undefined) return [];
   if (
     !Array.isArray(value) ||
     value.some((entry) => typeof entry !== "string")
   ) {
-    throw new Error(`${settingsPath}: ${field} must be an array of strings`);
+    throw new Error(`${settingsPath}: extensions must be an array of strings`);
   }
-  return value.map((source) => ({ source, settingsPath, layer }));
+  return value.map((entry) => resolveResourceSource(settingsPath, entry));
+}
+
+function resolveResourceSource(settingsPath: string, source: string): string {
+  if (source === "~") return homedir();
+  if (source.startsWith("~/")) return path.join(homedir(), source.slice(2));
+  if (
+    source.startsWith(".") ||
+    source.startsWith("/") ||
+    path.win32.isAbsolute(source)
+  )
+    return path.resolve(path.dirname(settingsPath), source);
+  return source;
+}
+
+function isPackageSource(value: unknown): value is PackageSource {
+  if (typeof value === "string") return true;
+  if (!isRecord(value) || typeof value.source !== "string") return false;
+  if (value.autoload !== undefined && typeof value.autoload !== "boolean")
+    return false;
+  return ["extensions", "skills", "prompts", "themes"].every(
+    (field) =>
+      value[field] === undefined ||
+      (Array.isArray(value[field]) &&
+        value[field].every((entry) => typeof entry === "string")),
+  );
 }
 
 function deepMerge(

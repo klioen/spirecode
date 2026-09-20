@@ -39,10 +39,6 @@ interface SessionState extends PiSessionRecord {
 
 export interface ChatServiceOptions {
   adapter?: PiAdapter | Promise<PiAdapter>;
-  selectExtensionPaths?: (
-    cwd: string,
-    basePaths: string[],
-  ) => Promise<string[]>;
   maxBufferedEvents?: number;
   trashItem?: (sessionPath: string) => Promise<void>;
 }
@@ -62,12 +58,7 @@ export class ChatService {
     options: ChatServiceOptions = {},
   ) {
     this.adapterFactory = () =>
-      Promise.resolve(
-        options.adapter ??
-          createPiAdapter(undefined, {
-            selectExtensionPaths: options.selectExtensionPaths,
-          }),
-      );
+      Promise.resolve(options.adapter ?? createPiAdapter());
     this.maxBufferedEvents = options.maxBufferedEvents ?? MAX_BUFFERED_EVENTS;
     this.trashItem = options.trashItem;
   }

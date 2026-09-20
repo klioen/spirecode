@@ -1,4 +1,9 @@
-import { useEffect, useState } from "react";
+import {
+  type FocusEvent,
+  type KeyboardEvent,
+  useEffect,
+  useState,
+} from "react";
 import {
   RiArrowRightSLine,
   RiFileAddLine,
@@ -10,6 +15,7 @@ import {
 } from "@remixicon/react";
 import { type DiffScope, type GitChange } from "../../bindings";
 import { formatNumber, useTranslation } from "../../i18n";
+import { useTreeKeyboard } from "../../lib/useTreeKeyboard";
 import { diffResourceId, useEditorStore } from "../editor/editorStore";
 import { refreshChanges } from "./changesRefresh";
 import { useChangesStore } from "./changesStore";
@@ -98,6 +104,10 @@ function ChangeFileRow({
   activeTabId,
   label,
   depth,
+  parentId,
+  focusedId,
+  onItemFocus,
+  onKeyDown,
 }: {
   worktreeId: string;
   change: GitChange;
@@ -105,10 +115,15 @@ function ChangeFileRow({
   activeTabId: string | null;
   label: string;
   depth?: number;
+  parentId?: string;
+  focusedId: string | null;
+  onItemFocus: (event: FocusEvent<HTMLElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
   const resourceId = diffResourceId(worktreeId, scope, change.path);
   const active = activeTabId === resourceId;
   const status = statusLabel(change);
+  const itemId = `${scope}:${depth === undefined ? "list:" : ""}${change.path}`;
   const open = (keep: boolean) => {
     useEditorStore.getState().beginNavigation();
     useEditorStore.getState().open(
@@ -127,8 +142,15 @@ function ChangeFileRow({
   return (
     <button
       className={`change-row ${depth === undefined ? "" : "change-tree-row"} ${active ? "active" : ""}`}
+      role="treeitem"
+      aria-level={(depth ?? 0) + 1}
       aria-current={active ? "page" : undefined}
       aria-label={`${label} ${status}`}
+      data-tree-id={itemId}
+      data-tree-parent-id={parentId}
+      tabIndex={focusedId === itemId ? 0 : -1}
+      onFocus={onItemFocus}
+      onKeyDown={onKeyDown}
       style={
         depth === undefined
           ? undefined
@@ -157,6 +179,10 @@ function ChangeTree({
   activeTabId,
   collapsed,
   toggleDirectory,
+  focusedId,
+  onItemFocus,
+  onKeyDown,
+  parentId,
   depth = 0,
 }: {
   worktreeId: string;
@@ -165,6 +191,10 @@ function ChangeTree({
   activeTabId: string | null;
   collapsed: Set<string>;
   toggleDirectory: (key: string) => void;
+  focusedId: string | null;
+  onItemFocus: (event: FocusEvent<HTMLElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  parentId?: string;
   depth?: number;
 }) {
   return nodes.map((node) => {
@@ -178,6 +208,10 @@ function ChangeTree({
           activeTabId={activeTabId}
           label={node.name}
           depth={depth}
+          parentId={parentId}
+          focusedId={focusedId}
+          onItemFocus={onItemFocus}
+          onKeyDown={onKeyDown}
         />
       );
     }
@@ -188,9 +222,16 @@ function ChangeTree({
       <div key={key}>
         <button
           className="change-row change-tree-row change-directory-row"
+          role="treeitem"
+          aria-level={depth + 1}
           aria-expanded={isOpen}
           aria-label={node.name}
+          data-tree-id={key}
+          data-tree-parent-id={parentId}
+          tabIndex={focusedId === key ? 0 : -1}
           style={{ paddingLeft: treeRowPaddingLeft(depth) }}
+          onFocus={onItemFocus}
+          onKeyDown={onKeyDown}
           onClick={() => toggleDirectory(key)}
         >
           <RiArrowRightSLine className={isOpen ? "rotated" : ""} size={14} />
@@ -209,6 +250,10 @@ function ChangeTree({
             activeTabId={activeTabId}
             collapsed={collapsed}
             toggleDirectory={toggleDirectory}
+            focusedId={focusedId}
+            onItemFocus={onItemFocus}
+            onKeyDown={onKeyDown}
+            parentId={key}
             depth={depth + 1}
           />
         )}
@@ -226,6 +271,9 @@ function ChangeGroup({
   mode,
   collapsed,
   toggleDirectory,
+  focusedId,
+  onItemFocus,
+  onKeyDown,
 }: {
   worktreeId: string;
   title: string;
@@ -235,6 +283,9 @@ function ChangeGroup({
   mode: "list" | "tree";
   collapsed: Set<string>;
   toggleDirectory: (key: string) => void;
+  focusedId: string | null;
+  onItemFocus: (event: FocusEvent<HTMLElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
   if (!changes.length) return null;
   return (
@@ -252,6 +303,9 @@ function ChangeGroup({
           activeTabId={activeTabId}
           collapsed={collapsed}
           toggleDirectory={toggleDirectory}
+          focusedId={focusedId}
+          onItemFocus={onItemFocus}
+          onKeyDown={onKeyDown}
         />
       ) : (
         changes.map((change) => (
@@ -262,6 +316,9 @@ function ChangeGroup({
             scope={scope}
             activeTabId={activeTabId}
             label={change.path}
+            focusedId={focusedId}
+            onItemFocus={onItemFocus}
+            onKeyDown={onKeyDown}
           />
         ))
       )}
@@ -275,6 +332,7 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
   const mode = useChangesStore((store) => store.mode);
   const setMode = useChangesStore((store) => store.setMode);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const { treeRef, focusedId, onItemFocus, onKeyDown } = useTreeKeyboard();
   const activeTabId = useEditorStore(
     (editor) => editor.views[worktreeId]?.activeTabId ?? null,
   );
@@ -349,7 +407,7 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
         </div>
       )}
       {snapshot && (
-        <>
+        <div ref={treeRef} className="changes-tree" role="tree">
           <ChangeGroup
             worktreeId={worktreeId}
             title={t("changes.staged")}
@@ -359,6 +417,9 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
             mode={mode}
             collapsed={collapsed}
             toggleDirectory={toggleDirectory}
+            focusedId={focusedId}
+            onItemFocus={onItemFocus}
+            onKeyDown={onKeyDown}
           />
           <ChangeGroup
             worktreeId={worktreeId}
@@ -369,6 +430,9 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
             mode={mode}
             collapsed={collapsed}
             toggleDirectory={toggleDirectory}
+            focusedId={focusedId}
+            onItemFocus={onItemFocus}
+            onKeyDown={onKeyDown}
           />
           <ChangeGroup
             worktreeId={worktreeId}
@@ -379,8 +443,11 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
             mode={mode}
             collapsed={collapsed}
             toggleDirectory={toggleDirectory}
+            focusedId={focusedId}
+            onItemFocus={onItemFocus}
+            onKeyDown={onKeyDown}
           />
-        </>
+        </div>
       )}
     </div>
   );

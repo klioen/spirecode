@@ -1,5 +1,8 @@
 # Plan: SpireCode 默认携带并隔离 Pi extensions（from `docs/bundled-pi-extensions/spec.md` 2026-09-15）
 
+> [!IMPORTANT]
+> **Superseded historical plan.** 下文如实记录原 bundled 实施及当时验证结果；其构建、运行时和发布方案已由 [`docs/remove-pi-extensions-dependency/plan.md`](../remove-pi-extensions-dependency/plan.md) 取代。
+
 ## Files that change
 
 - `package.json`、`pnpm-lock.yaml`：锁定 `pi-extensions` commit，增加资源准备命令和 Electron Builder `extraResources`。

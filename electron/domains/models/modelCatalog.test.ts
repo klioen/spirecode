@@ -16,17 +16,14 @@ const available = [
 describe("ModelCatalogService", () => {
   it("returns a strict available-model DTO without creating a session", async () => {
     const getAvailable = vi.fn().mockResolvedValue(available);
-    const initialize = vi.fn().mockResolvedValue({ getAvailable });
+    const initialize = vi.fn().mockResolvedValue({
+      getAvailable,
+      hasConfiguredAuth: (provider: string) => provider === "openai",
+    });
     const service = new ModelCatalogService(initialize);
 
     await expect(service.list()).resolves.toEqual([
       { provider: "openai", id: "gpt-5.6", label: "gpt-5.6", reasoning: true },
-      {
-        provider: "traex",
-        id: "DeepSeek-V4-Flash",
-        label: "DeepSeek V4",
-        reasoning: true,
-      },
     ]);
     expect(initialize).toHaveBeenCalledOnce();
     expect(getAvailable).toHaveBeenCalledOnce();
@@ -36,7 +33,10 @@ describe("ModelCatalogService", () => {
     const initialize = vi
       .fn()
       .mockRejectedValueOnce(new Error("temporary path detail"))
-      .mockResolvedValueOnce({ getAvailable: async () => available });
+      .mockResolvedValueOnce({
+        getAvailable: async () => available,
+        hasConfiguredAuth: () => true,
+      });
     const service = new ModelCatalogService(initialize);
 
     await expect(service.list()).rejects.toMatchObject({
@@ -50,6 +50,7 @@ describe("ModelCatalogService", () => {
   it("validates both selected models against the latest catalog", async () => {
     const service = new ModelCatalogService(async () => ({
       getAvailable: async () => available,
+      hasConfiguredAuth: () => true,
     }));
 
     await expect(

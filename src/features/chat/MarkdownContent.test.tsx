@@ -54,20 +54,23 @@ describe("MarkdownContent", () => {
     expect(writeText).toHaveBeenCalledWith("const ok = true;");
   });
 
-  it("allows safe external links and rejects unsafe protocols", () => {
+  it("confirms safe external links and rejects unsafe protocols", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(
       <MarkdownContent content="[safe](https://example.com) [unsafe](javascript:alert(1))" />,
     );
 
-    expect(screen.getByRole("link", { name: "safe" })).toHaveAttribute(
-      "href",
-      "https://example.com",
-    );
+    const safe = screen.getByRole("link", { name: "safe" });
+    expect(safe).toHaveAttribute("href", "https://example.com");
+    fireEvent.click(safe);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm.mock.calls[0]?.[0]).toContain("https://example.com");
     expect(screen.getByRole("link", { name: "safe" })).toHaveAttribute(
       "rel",
       "noreferrer noopener",
     );
     expect(screen.queryByRole("link", { name: "unsafe" })).toBeNull();
     expect(screen.getByText("unsafe")).toBeInTheDocument();
+    confirm.mockRestore();
   });
 });

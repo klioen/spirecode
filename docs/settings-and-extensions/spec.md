@@ -1,5 +1,9 @@
 # Spec: 设置中心与 Extensions 管理
-Status: accepted。 Implements: `docs/settings-and-extensions/intent.md`。
+
+> [!IMPORTANT]
+> **Partially superseded.** Settings UI 的历史设计保留，但下文 Extension catalog 的自动扫描来源不再是当前规范。现行规范见 [`docs/remove-pi-extensions-dependency/spec.md`](../remove-pi-extensions-dependency/spec.md)：SpireCode 不提供 built-in catalog，只展示标准 Pi settings 中配置并由 SDK 解析到的用户资源。
+
+Status: partially superseded。 Historical implementation of: `docs/settings-and-extensions/intent.md`。
 
 ## 1. 用户体验
 

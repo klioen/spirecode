@@ -16,7 +16,7 @@
 ## Conventions
 - Keep npm dependencies pinned and commit `pnpm-lock.yaml`.
 - Zustand stores hold view metadata, not file bodies, diffs, terminal output, or Chat transcripts.
-- Git uses argument arrays, never shell command strings.
+- Git uses argument arrays, never shell command strings. All product Git calls go through the hardened runner; repository-defined fsmonitor, filters, hooks, external diff, or text conversion must never execute implicitly.
 - Do not enable `nodeIntegration`, disable context isolation/sandbox, or expose raw IPC.
 - Do not pass arbitrary paths from Renderer; resolve IDs to canonical roots in Main and reject traversal/symlink escape.
 - Add repeated pitfalls here, not in source comments.

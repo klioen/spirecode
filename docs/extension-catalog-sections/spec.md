@@ -1,5 +1,9 @@
 # Spec: Extensions 按系统内置与用户自定义分组
-Status: accepted。 Implements: `docs/extension-catalog-sections/intent.md`。
+
+> [!IMPORTANT]
+> **Superseded.** 本文保留旧的 built-in/user catalog 设计，不再定义当前 UI 或资源加载行为。现行规范见 [`docs/remove-pi-extensions-dependency/spec.md`](../remove-pi-extensions-dependency/spec.md)：不构造 built-in 项，只展示实际配置和解析到的用户资源。
+
+Status: superseded。 Historical implementation of: `docs/extension-catalog-sections/intent.md`。
 
 ## 1. 用户体验
 

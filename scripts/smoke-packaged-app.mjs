@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, readdir } from "node:fs/promises";
+import { access, lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { listPackage } from "@electron/asar";
@@ -20,9 +20,15 @@ const asar = path.join(resources, "app.asar");
 await Promise.all([access(executable), access(asar)]);
 
 await run(process.execPath, [
-  path.join(root, "scripts/check-pi-extensions.mjs"),
-  path.join(resources, "pi-extensions"),
+  path.join(root, "scripts/check-legal-resources.mjs"),
+  resources,
 ]);
+const removedBundledResource = ["pi", "extensions"].join("-");
+if (await pathExists(path.join(resources, removedBundledResource))) {
+  throw new Error(
+    `Packaged app must not include ${removedBundledResource} resources`,
+  );
+}
 
 const listing = listPackage(asar);
 for (const required of [
@@ -111,6 +117,16 @@ function clipboardPackageForPlatform() {
   throw new Error(
     `Unsupported clipboard smoke platform: ${process.platform}-${process.arch}`,
   );
+}
+
+async function pathExists(candidate) {
+  try {
+    await lstat(candidate);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 async function findResourcesDirectory(directory) {

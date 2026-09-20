@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { type FocusEvent, type KeyboardEvent, useEffect } from "react";
 import {
   RiArrowRightSLine,
   RiFileCodeLine,
@@ -8,6 +8,7 @@ import {
 import { commands, type FileEntry } from "../../bindings";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
+import { useTreeKeyboard } from "../../lib/useTreeKeyboard";
 import { fileResourceId, useEditorStore } from "../editor/editorStore";
 import { directoryKey, useFileTreeStore } from "./fileTreeStore";
 
@@ -25,10 +26,18 @@ function Directory({
   worktreeId,
   path = "",
   depth = 0,
+  parentId,
+  focusedId,
+  onItemFocus,
+  onKeyDown,
 }: {
   worktreeId: string;
   path?: string;
   depth?: number;
+  parentId?: string;
+  focusedId: string | null;
+  onItemFocus: (event: FocusEvent<HTMLElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
   const { t } = useTranslation();
   const tree = useFileTreeStore();
@@ -91,8 +100,16 @@ function Directory({
           <div key={entry.relativePath}>
             <button
               className={`tree-row ${isActive ? "active" : ""}`}
+              role="treeitem"
+              aria-level={depth + 1}
+              aria-expanded={isDirectory ? isOpen : undefined}
               aria-current={isActive ? "page" : undefined}
+              data-tree-id={entry.relativePath}
+              data-tree-parent-id={parentId}
+              tabIndex={focusedId === entry.relativePath ? 0 : -1}
               style={{ paddingLeft: 12 + depth * 14 }}
+              onFocus={onItemFocus}
+              onKeyDown={onKeyDown}
               onClick={() =>
                 isDirectory
                   ? tree.toggle(worktreeId, entry.relativePath)
@@ -124,6 +141,10 @@ function Directory({
                 worktreeId={worktreeId}
                 path={entry.relativePath}
                 depth={depth + 1}
+                parentId={entry.relativePath}
+                focusedId={focusedId}
+                onItemFocus={onItemFocus}
+                onKeyDown={onKeyDown}
               />
             )}
           </div>
@@ -134,9 +155,15 @@ function Directory({
 }
 
 export function FileTree({ worktreeId }: { worktreeId: string }) {
+  const { treeRef, focusedId, onItemFocus, onKeyDown } = useTreeKeyboard();
   return (
-    <div className="file-tree">
-      <Directory worktreeId={worktreeId} />
+    <div ref={treeRef} className="file-tree" role="tree">
+      <Directory
+        worktreeId={worktreeId}
+        focusedId={focusedId}
+        onItemFocus={onItemFocus}
+        onKeyDown={onKeyDown}
+      />
     </div>
   );
 }

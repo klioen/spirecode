@@ -6,15 +6,14 @@ app="${1:-$root/release/mac-arm64/SpireCode.app}"
 
 [[ -d "$app" ]]
 codesign --verify --deep --strict --verbose=2 "$app"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" == "com.bytedance.spirecode.dev" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" == "io.github.klioen.spirecode" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Contents/Info.plist")" == "SpireCode" ]]
 file "$app/Contents/MacOS/SpireCode" | grep -q 'arm64'
 
-node "$root/scripts/check-pi-extensions.mjs" \
-  "$app/Contents/Resources/pi-extensions"
-memory_worker="$app/Contents/Resources/pi-extensions/pi-memory/worker/worker.cjs"
-[[ -f "$memory_worker" ]]
-[[ ! -L "$memory_worker" ]]
+node "$root/scripts/check-legal-resources.mjs" \
+  "$app/Contents/Resources"
+removed_bundled_resource="pi"-"extensions"
+[[ ! -e "$app/Contents/Resources/$removed_bundled_resource" ]]
 
 pty="$(find "$app/Contents/Resources/app.asar.unpacked" -name pty.node -print -quit)"
 [[ -n "$pty" ]]
@@ -60,6 +59,7 @@ PI_OFFLINE=1 ELECTRON_RUN_AS_NODE=1 "$executable" -e '
 ' "$app/Contents/Resources/app.asar"
 
 user_data="$(mktemp -d)"
+printf 'must remain\n' >"$user_data/explicit-user-data-marker"
 log="$(mktemp)"
 cleanup() {
   if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -77,5 +77,6 @@ if ! kill -0 "$pid" 2>/dev/null; then
   cat "$log"
   exit 1
 fi
+[[ "$(cat "$user_data/explicit-user-data-marker")" == "must remain" ]]
 
 echo "Electron app smoke passed: $app"

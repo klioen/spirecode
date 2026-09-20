@@ -1243,16 +1243,12 @@ body.panel-resizing-vertical * {
   height: 35px;
   min-width: 110px;
   max-width: 190px;
-  padding: 0 8px;
-  border: 0;
   border-right: 1px solid var(--border-default);
   background: var(--header-bg);
   color: var(--text-subtle);
   display: flex;
   align-items: center;
-  gap: 6px;
   font-size: 11px;
-  cursor: pointer;
 }
 .editor-tab:hover {
   background: var(--control-hover);
@@ -1264,7 +1260,21 @@ body.panel-resizing-vertical * {
   border-top: 2px solid var(--accent);
   box-shadow: inset 0 -1px 0 var(--elevated-bg);
 }
-.editor-tab > span:nth-child(2) {
+.editor-tab-activation {
+  min-width: 0;
+  flex: 1;
+  align-self: stretch;
+  padding: 0 0 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.editor-tab-activation > span:nth-child(2) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1324,13 +1334,21 @@ body.panel-resizing-vertical * {
   min-height: 0;
 }
 .tab-close {
-  margin-left: auto;
+  width: 28px;
+  align-self: stretch;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   display: grid;
   place-items: center;
   opacity: 0;
+  cursor: pointer;
 }
 .editor-tab:hover .tab-close,
-.editor-tab.active .tab-close {
+.editor-tab.active .tab-close,
+.tab-close:focus-visible {
   opacity: 1;
 }
 .editor-content {
@@ -2022,6 +2040,7 @@ details[open] > summary > .chat-disclosure-icon {
 .chat-composer-actions {
   min-height: 34px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -2031,12 +2050,16 @@ details[open] > summary > .chat-disclosure-icon {
   min-width: 0;
   margin-right: auto;
   display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
 .chat-composer-config select {
-  max-width: 190px;
+  min-width: 0;
+  max-width: 100%;
   height: 28px;
+  flex: 0 1 auto;
   padding: 0 22px 0 8px;
   border: 0;
   border-radius: 8px;
@@ -2124,6 +2147,7 @@ details[open] > summary > .chat-disclosure-icon {
 .chat-composer-submit {
   width: 32px;
   height: 32px;
+  flex: 0 0 32px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -2659,6 +2683,11 @@ details[open] > summary > .chat-disclosure-icon {
 .tree-row.active svg,
 .change-row.active svg {
   color: var(--accent);
+}
+.tree-row:focus-visible,
+.change-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 .tree-row svg {
   color: var(--accent);

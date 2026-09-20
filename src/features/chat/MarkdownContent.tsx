@@ -10,7 +10,11 @@ import ReactMarkdown, {
   defaultUrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useTranslation, type TranslationKey } from "../../i18n";
+import {
+  useTranslation,
+  type TranslationKey,
+  type TranslationValues,
+} from "../../i18n";
 
 export interface MarkdownContentProps {
   content: string;
@@ -69,12 +73,23 @@ function textOf(
   return String(children ?? "").replace(/\n$/, "");
 }
 
-function markdownComponents(t: (key: TranslationKey) => string): Components {
+function markdownComponents(
+  t: (key: TranslationKey, values?: TranslationValues) => string,
+): Components {
   return {
     a({ href, children, ...props }) {
       if (!href) return <span>{children}</span>;
       return (
-        <a {...props} href={href} target="_blank" rel="noreferrer noopener">
+        <a
+          {...props}
+          href={href}
+          target="_blank"
+          rel="noreferrer noopener"
+          onClick={(event) => {
+            if (!window.confirm(t("chat.externalLinkConfirm", { url: href })))
+              event.preventDefault();
+          }}
+        >
           {children}
         </a>
       );

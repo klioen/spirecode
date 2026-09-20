@@ -1,5 +1,8 @@
 # Plan: 设置中心与 Extensions 管理（from docs/settings-and-extensions/spec.md 2026-09-15）
 
+> [!IMPORTANT]
+> **Partially superseded historical plan.** Settings UI 的交付记录仍保留；catalog 发现和加载方案已由 [`docs/remove-pi-extensions-dependency/plan.md`](../remove-pi-extensions-dependency/plan.md) 取代。
+
 ## Files that change
 
 - `docs/settings-and-extensions/{intent,spec,plan}.md`：记录已批准需求、设计与实现计划。

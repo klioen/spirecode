@@ -1,0 +1,60 @@
+name: Support request
+description: Ask for help with setup or expected behavior
+title: "[Support]: "
+labels:
+  - support
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read README.md and SUPPORT.md first. Provider account, billing, quota, and model-policy questions belong with pi or the selected provider. Report vulnerabilities privately according to SECURITY.md.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and read the troubleshooting guidance.
+          required: true
+        - label: This request contains no credentials, private prompts, repository contents, personal data, or security vulnerability details.
+          required: true
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Source installation
+        - Development startup
+        - pi integration or authentication handoff
+        - Projects or worktrees
+        - Files or Git changes
+        - Terminal
+        - Chat
+        - Extensions or settings
+        - Development packaging
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS and architecture, tested commit, Node and pnpm versions, and source or development-artifact installation.
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: Include redacted messages and documentation already consulted.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

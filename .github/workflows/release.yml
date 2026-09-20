@@ -1,0 +1,189 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build official ${{ matrix.platform }} artifact
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS arm64
+            os: macos-14
+            artifact_name: spirecode-macos-arm64
+            artifact_path: release/*.dmg
+            signing_environment: release-signing
+          - platform: Windows x64
+            os: windows-latest
+            artifact_name: spirecode-windows-x64
+            artifact_path: release/*.exe
+            signing_environment: release-signing
+          - platform: Linux x64
+            os: ubuntu-latest
+            artifact_name: spirecode-linux-x64
+            artifact_path: |
+              release/*.AppImage
+              release/*.deb
+            signing_environment: release-build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    environment: ${{ matrix.signing_environment }}
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      # SHA pins were resolved from each action's upstream v4 tag on 2026-04-01.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.29.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Validate exact semantic tag and package version
+        run: node scripts/release/preflight.mjs
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot xvfb
+
+      - name: Install dependencies from frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Check repository secrets
+        run: pnpm secrets:check
+
+      - name: Check production dependency licenses
+        run: pnpm licenses:check
+
+      - name: Enforce production dependency audit
+        run: pnpm audit --prod --audit-level moderate
+
+      - name: Build, sign, notarize, and verify macOS artifact
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm release:build
+
+      - name: Build, sign, and verify Windows artifact
+        if: runner.os == 'Windows'
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: pnpm release:build
+
+      - name: Build Linux artifact
+        if: runner.os == 'Linux'
+        run: pnpm release:build
+
+      - name: Upload platform artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    name: Create draft GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    outputs:
+      release_url: ${{ steps.release.outputs.url }}
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.29.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Validate exact semantic tag and package version
+        run: node scripts/release/preflight.mjs
+
+      - name: Install dependencies for lockfile-derived SBOM
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: spirecode-*
+          path: release
+          merge-multiple: true
+
+      - name: Generate checksums and CycloneDX SBOM
+        run: pnpm release:metadata
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+
+      - name: Create immutable draft release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+          gh release create "$RELEASE_TAG" \
+            release/*.dmg release/*.exe release/*.AppImage release/*.deb \
+            release/SHA256SUMS.txt release/sbom.cdx.json \
+            --draft --verify-tag --generate-notes --title "SpireCode ${RELEASE_TAG}"
+          url="$(gh release view "$RELEASE_TAG" --json url --jq .url)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish protected GitHub Release
+    needs: draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: release-publish
+      url: ${{ needs.draft.outputs.release_url }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Publish reviewed draft
+        run: gh release edit "$RELEASE_TAG" --draft=false

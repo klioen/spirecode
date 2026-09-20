@@ -10,7 +10,11 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { CommandError, toCommandError } from "../../core/errors.js";
-import { gitText, runGit } from "../../core/gitProcess.js";
+import {
+  assertNoRepositoryGitCommands,
+  gitText,
+  runGit,
+} from "../../core/gitProcess.js";
 import { saveAtomic } from "../persistence/index.js";
 import type { ProjectSummary, WorktreeSummary } from "../projects/index.js";
 
@@ -117,6 +121,7 @@ export class WorktreeService {
         );
       }
       const fullRef = `refs/remotes/${baseRef}`;
+      await assertNoRepositoryGitCommands(project.path);
       await runGit(project.path, [
         "worktree",
         "add",

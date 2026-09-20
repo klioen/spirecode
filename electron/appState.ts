@@ -1,4 +1,6 @@
 import { dialog, shell, type BrowserWindow } from "electron";
+import { access } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { ChatService } from "./domains/chat/index.js";
 import { FilesystemService } from "./domains/filesystem/service.js";
@@ -19,11 +21,7 @@ import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
 import { WindowCloseGuard } from "./windowCloseGuard.js";
 import { DiagnosticsService } from "./domains/diagnostics/service.js";
-import { loadSpireSettings } from "./domains/chat/spireSettings.js";
-import {
-  defaultBundleRoot,
-  resolveBundledResources,
-} from "./domains/chat/bundledResources.js";
+import { resolveSpireResources } from "./domains/chat/spireSettings.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -58,8 +56,6 @@ export class AppState {
       this.send("terminal://event", { subscriptionId, payload });
     });
     this.chat = new ChatService(root, {
-      selectExtensionPaths: (cwd, basePaths) =>
-        this.settings.enabledPaths(cwd, basePaths),
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
@@ -90,19 +86,70 @@ export class AppState {
     return state;
   }
 
-  async listModels(worktreeId: string) {
-    const root = await this.projects.root(worktreeId);
-    const resources = await loadSpireSettings();
-    const bundled = await resolveBundledResources({
-      bundleRoot: defaultBundleRoot(),
-      packageSources: resources.packageSources,
-      extensionSources: resources.extensionSources,
-    });
-    const extensionPaths = await this.settings.enabledPaths(
-      root,
-      bundled.paths,
+  async agentReadiness() {
+    const agentDirectory = path.join(homedir(), ".pi", "agent");
+    let piAgentDirectoryExists = true;
+    try {
+      await access(agentDirectory);
+    } catch {
+      piAgentDirectoryExists = false;
+    }
+    let models: Awaited<ReturnType<ModelCatalogService["list"]>> = [];
+    let resourcesHealthy = true;
+    let extensionPaths: string[] = [];
+    let spirecodePaths = new Set<string>();
+    try {
+      ({ extensionPaths, spirecodePaths } =
+        await this.modelResourceSelection(homedir()));
+    } catch {
+      resourcesHealthy = false;
+    }
+    if (resourcesHealthy) {
+      try {
+        models = await this.models.list(extensionPaths, spirecodePaths);
+      } catch {
+        // The setup UI reports zero available models without provider errors.
+      }
+    }
+    const providers = [...new Set(models.map(({ provider }) => provider))];
+    return {
+      piAgentDirectoryExists,
+      authenticatedModelCount: models.length,
+      availableProviders: providers.map((id) => ({ id, authenticated: true })),
+      defaultModelAvailable: models.length > 0,
+      resourcesHealthy,
+    };
+  }
+
+  async listModels(worktreeId?: string) {
+    const cwd = worktreeId ? await this.projects.root(worktreeId) : homedir();
+    const resources = await this.modelResourceSelection(cwd);
+    return this.models.list(resources.extensionPaths, resources.spirecodePaths);
+  }
+
+  async assertModelsAvailable(
+    models: Array<{ provider: string; id: string }>,
+  ): Promise<void> {
+    const resources = await this.modelResourceSelection(homedir());
+    await this.models.assertAvailable(
+      models,
+      resources.extensionPaths,
+      resources.spirecodePaths,
     );
-    return this.models.list(extensionPaths);
+  }
+
+  private async modelResourceSelection(cwd: string) {
+    const resources = await resolveSpireResources(cwd);
+    return {
+      extensionPaths: resources.extensions
+        .filter(({ enabled }) => enabled)
+        .map(({ path }) => path),
+      spirecodePaths: new Set(
+        resources.extensions
+          .filter(({ layer }) => layer === "spirecode")
+          .map(({ path }) => path),
+      ),
+    };
   }
 
   async openProject(selectedPath: string) {
@@ -238,7 +285,14 @@ export class AppState {
   }
 }
 
-export function applyMemoryConfig(config: MemoryConfig): void {
+export function applyMemoryConfig(config: MemoryConfig | null): void {
+  if (!config) {
+    delete process.env.PI_MEMORY_EXTRACT_MODEL;
+    delete process.env.PI_MEMORY_PHASE2_MODEL;
+    delete process.env.PI_MEMORY_EXTRACT_THINKING;
+    delete process.env.PI_MEMORY_PHASE2_THINKING;
+    return;
+  }
   process.env.PI_MEMORY_EXTRACT_MODEL = `${config.phase1Provider}/${config.phase1ModelId}`;
   process.env.PI_MEMORY_PHASE2_MODEL = `${config.phase2Provider}/${config.phase2ModelId}`;
   process.env.PI_MEMORY_EXTRACT_THINKING = config.phase1ReasoningEffort;

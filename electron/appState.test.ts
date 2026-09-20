@@ -22,6 +22,20 @@ afterEach(() => {
 });
 
 describe("applyMemoryConfig", () => {
+  it("clears Memory overrides for an unconfigured clean install", () => {
+    process.env.PI_MEMORY_EXTRACT_MODEL = "old/model";
+    process.env.PI_MEMORY_PHASE2_MODEL = "old/model";
+    process.env.PI_MEMORY_EXTRACT_THINKING = "high";
+    process.env.PI_MEMORY_PHASE2_THINKING = "high";
+
+    applyMemoryConfig(null);
+
+    expect(process.env.PI_MEMORY_EXTRACT_MODEL).toBeUndefined();
+    expect(process.env.PI_MEMORY_PHASE2_MODEL).toBeUndefined();
+    expect(process.env.PI_MEMORY_EXTRACT_THINKING).toBeUndefined();
+    expect(process.env.PI_MEMORY_PHASE2_THINKING).toBeUndefined();
+  });
+
   it("sets the Phase 1 model and reasoning before extensions load", () => {
     applyMemoryConfig({
       phase1Provider: "openai",

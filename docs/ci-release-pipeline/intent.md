@@ -1,4 +1,8 @@
 # Intent: CI 质量与打包流水线
+
+> [!NOTE]
+> 本文保留首次 CI 交付时的历史约束。私有 `pi-extensions` 安装方案已由 [`docs/remove-pi-extensions-dependency/`](../remove-pi-extensions-dependency/intent.md) 取代；当前 CI 不需要该仓库或相应 PAT。
+
 Author: product owner。 Status: accepted。
 
 ## Problem
