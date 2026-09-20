@@ -33,6 +33,10 @@ export async function stageClipboardPackage(root, platform, arch) {
   const packageName = clipboardPackageForTarget(platform, arch);
   const packageSuffix = packageName.slice("@mariozechner/".length);
   const virtualStore = await realpath(path.join(root, "node_modules", ".pnpm"));
+
+  // Look up the package from the pnpm virtual store hoisted path first.
+  // On pnpm 10+ with --frozen-lockfile the hoisted path may not exist,
+  // so fall back to the direct node_modules symlink.
   const virtualLink = path.join(
     virtualStore,
     "node_modules",
@@ -43,9 +47,8 @@ export async function stageClipboardPackage(root, platform, arch) {
   try {
     source = await realpath(virtualLink);
   } catch {
-    throw new Error(
-      `Installed clipboard package is missing for ${platform}-${arch}: ${packageName}`,
-    );
+    const direct = path.join(root, "node_modules", packageName);
+    source = await realpath(direct);
   }
   assertContained(virtualStore, source);
 
