@@ -15,10 +15,14 @@ const allowed = new Set([
 // cannot resolve "pnpm" to "pnpm.cmd" via PATH.
 const pnpm = process.env.npm_execpath ?? "pnpm";
 const report = JSON.parse(
-  execFileSync(process.execPath, [pnpm, "licenses", "list", "--prod", "--json"], {
-    encoding: "utf8",
-    maxBuffer: 100 * 1024 * 1024,
-  }),
+  execFileSync(
+    process.execPath,
+    [pnpm, "licenses", "list", "--prod", "--json"],
+    {
+      encoding: "utf8",
+      maxBuffer: 100 * 1024 * 1024,
+    },
+  ),
 );
 const rejected = Object.keys(report).filter((license) => {
   const normalized =
