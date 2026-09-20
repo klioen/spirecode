@@ -17,6 +17,20 @@ Screenshots and signed release downloads will be added when the public release g
 | Windows  | x64, current GitHub-hosted runner | x64 NSIS `.exe`                 | Not Authenticode-signed          |
 | Linux    | x64, current Ubuntu runner        | x64 AppImage and Debian package | Unsigned development packages    |
 
+### macOS：绕过 Gatekeeper
+
+从 GitHub Actions 下载的 `.dmg` 或 `.app` 未经 Apple Developer 签名和公证，
+macOS Gatekeeper 会提示「无法验证开发者」。
+
+**首次打开方式（任选其一）：**
+
+1. **右键 → 打开**，在弹出的对话框中选择「打开」（仅首次需要）
+2. 或在终端中运行：
+   ```bash
+   xattr -d com.apple.quarantine /Applications/SpireCode.app
+   ```
+   如果解压后不在 `Applications`，请替换为实际路径。
+
 Other architectures and package repositories such as Homebrew, winget, and apt are not currently supported release channels.
 
 ## What it includes
