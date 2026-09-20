@@ -106,7 +106,6 @@ export async function migrateApplicationUserData(
         cp(source, destination, {
           recursive: true,
           force: false,
-          errorOnExist: true,
           preserveTimestamps: true,
         }));
     await copyDirectory(legacyDirectory, temporaryDirectory);
