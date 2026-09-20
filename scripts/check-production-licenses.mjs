@@ -10,8 +10,12 @@ const allowed = new Set([
   "MPL-2.0 OR Apache-2.0",
   "Remix Icon License 1.0",
 ]);
+
+// Use npm_execpath to locate the pnpm executable; execFileSync on Windows
+// cannot resolve "pnpm" to "pnpm.cmd" via PATH.
+const pnpm = process.env.npm_execpath ?? "pnpm";
 const report = JSON.parse(
-  execFileSync("pnpm", ["licenses", "list", "--prod", "--json"], {
+  execFileSync(process.execPath, [pnpm, "licenses", "list", "--prod", "--json"], {
     encoding: "utf8",
     maxBuffer: 100 * 1024 * 1024,
   }),

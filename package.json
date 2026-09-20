@@ -98,7 +98,8 @@
     "productName": "SpireCode",
     "asar": true,
     "asarUnpack": [
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/**/*",
+      "node_modules/@mariozechner/clipboard*/**/*"
     ],
     "files": [
       "dist/**/*",
