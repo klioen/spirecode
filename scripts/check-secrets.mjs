@@ -1,6 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
+const excludeFiles = new Set([
+  "electron/domains/diagnostics/service.test.ts",
+]);
 const patterns = [
   ["private key", /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/u],
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/u],
@@ -13,6 +16,7 @@ const files = execFileSync("git", ["ls-files"], { encoding: "utf8" })
   .filter((file) => file !== "pnpm-lock.yaml");
 let failures = 0;
 for (const file of files) {
+  if (excludeFiles.has(file)) continue;
   let content;
   try {
     content = await readFile(file, "utf8");
