@@ -156,7 +156,7 @@ describe("application identity", () => {
 
       const result = await migrateApplicationUserData(root, operations);
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         path: legacy,
         status: "fallback",
         reason: "copy-failed",
@@ -177,7 +177,7 @@ describe("application identity", () => {
       await writeFile(outside, "private");
       await symlink(outside, path.join(legacy, "linked.txt"));
 
-      await expect(migrateApplicationUserData(root)).resolves.toEqual({
+      await expect(migrateApplicationUserData(root)).resolves.toMatchObject({
         path: legacy,
         status: "fallback",
         reason: "copy-failed",

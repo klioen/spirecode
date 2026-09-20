@@ -13,6 +13,8 @@ import {
 import path from "node:path";
 import { createHash } from "node:crypto";
 
+
+
 export const APPLICATION_ID = "io.github.klioen.spirecode";
 export const LEGACY_APPLICATION_ID = "com.bytedance.spirecode.dev";
 export const MIGRATION_MARKER = ".spirecode-user-data-migration.json";
@@ -25,6 +27,7 @@ export type UserDataResolution =
       path: string;
       status: "fallback";
       reason: "invalid-legacy-data" | "copy-failed";
+      detail?: string;
     };
 
 interface MigrationOperations {
@@ -136,15 +139,18 @@ export async function migrateApplicationUserData(
       }
       throw error;
     }
-  } catch {
+  } catch (error) {
     if (temporaryDirectory)
       await rm(temporaryDirectory, { recursive: true, force: true }).catch(
         () => undefined,
       );
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[migration] copy-failed:", detail);
     return {
       path: legacyDirectory,
       status: "fallback",
       reason: "copy-failed",
+      detail: detail.slice(0, 200),
     };
   }
 }
