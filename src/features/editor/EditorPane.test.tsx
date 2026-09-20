@@ -235,7 +235,7 @@ describe("EditorPane resources", () => {
     render(<EditorPane worktreeId="p1" />);
     const editor = await screen.findByRole("textbox", { name: "File editor" });
     fireEvent.change(editor, { target: { value: "first edit" } });
-    fireEvent.keyDown(window, { key: "s", metaKey: true });
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     await waitFor(() => expect(commands.fsWriteFile).toHaveBeenCalledOnce());
     fireEvent.change(editor, { target: { value: "newer edit" } });
     pending.resolve({
