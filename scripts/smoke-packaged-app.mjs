@@ -3,6 +3,7 @@ import { access, lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { listPackage } from "@electron/asar";
+import { portableRelativePath } from "./package-helpers.mjs";
 
 const [appDirectoryArgument, executableArgument] = process.argv.slice(2);
 if (!appDirectoryArgument || !executableArgument) {
@@ -31,18 +32,21 @@ if (await pathExists(path.join(resources, removedBundledResource))) {
 }
 
 const listing = listPackage(asar);
+const normalizedListing = listing.map((entry) => portableRelativePath(entry));
 for (const required of [
   "/dist/index.html",
   "/dist-electron/main.js",
   "/dist-electron/preload.cjs",
   "/node_modules/@earendil-works/pi-coding-agent/",
 ]) {
-  if (!listing.some((entry) => entry.startsWith(required))) {
+  if (!normalizedListing.some((entry) => entry.startsWith(required))) {
     throw new Error(`Packaged app is missing ${required}`);
   }
 }
 if (
-  listing.some((entry) => entry.endsWith(".map") || entry.includes(".test."))
+  normalizedListing.some(
+    (entry) => entry.endsWith(".map") || entry.includes(".test."),
+  )
 ) {
   throw new Error("Source maps or tests were included in app.asar");
 }
@@ -52,9 +56,10 @@ const ptyBinary = await findFile(unpacked, "pty.node");
 if (!ptyBinary)
   throw new Error("Packaged app is missing node-pty native binary");
 const clipboardPackage = clipboardPackageForPlatform();
-const clipboardBinary = await findFile(
+const clipboardBinary = await findFilePrefix(
   unpacked,
-  `clipboard.${process.platform}-${process.arch}.node`,
+  `clipboard.${process.platform}-${process.arch}`,
+  ".node",
 );
 if (!clipboardBinary) {
   throw new Error(`Packaged app is missing ${clipboardPackage} native binary`);
@@ -154,6 +159,29 @@ async function findFile(directory, basename) {
     if (entry.isFile() && entry.name === basename) return candidate;
     if (entry.isDirectory()) {
       const nested = await findFile(candidate, basename);
+      if (nested) return nested;
+    }
+  }
+  return undefined;
+}
+
+async function findFilePrefix(directory, prefix, suffix) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  for (const entry of entries) {
+    const candidate = path.join(directory, entry.name);
+    if (
+      entry.isFile() &&
+      entry.name.startsWith(prefix) &&
+      entry.name.endsWith(suffix)
+    )
+      return candidate;
+    if (entry.isDirectory()) {
+      const nested = await findFilePrefix(candidate, prefix, suffix);
       if (nested) return nested;
     }
   }
