@@ -208,7 +208,9 @@ async function launchGui(command) {
     process.env.RUNNER_TEMP || process.env.TMPDIR || process.env.TEMP || ".",
     `spirecode-smoke-${process.pid}`,
   );
-  const child = spawn(command, [`--user-data-dir=${userData}`], {
+  const childArgs = [`--user-data-dir=${userData}`];
+  if (process.platform === "linux") childArgs.unshift("--no-sandbox");
+  const child = spawn(command, childArgs, {
     stdio: "inherit",
     env: { ...process.env, PI_OFFLINE: "1" },
     windowsHide: true,
