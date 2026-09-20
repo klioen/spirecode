@@ -1,9 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
-const excludeFiles = new Set([
-  "electron/domains/diagnostics/service.test.ts",
-]);
+const excludeFiles = new Set(["electron/domains/diagnostics/service.test.ts"]);
 const patterns = [
   ["private key", /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/u],
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/u],
