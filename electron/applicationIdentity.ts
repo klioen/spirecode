@@ -13,8 +13,6 @@ import {
 import path from "node:path";
 import { createHash } from "node:crypto";
 
-
-
 export const APPLICATION_ID = "io.github.klioen.spirecode";
 export const LEGACY_APPLICATION_ID = "com.bytedance.spirecode.dev";
 export const MIGRATION_MARKER = ".spirecode-user-data-migration.json";
