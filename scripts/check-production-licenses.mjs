@@ -9,6 +9,7 @@ const allowed = new Set([
   "MIT",
   "MPL-2.0 OR Apache-2.0",
   "Remix Icon License 1.0",
+  "Unlicense",
 ]);
 
 // Use npm_execpath to locate the pnpm executable; execFileSync on Windows
