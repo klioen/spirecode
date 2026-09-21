@@ -441,6 +441,12 @@ function FileView({
           onChange={(value) => {
             const nextContent = value ?? "";
             const nextDirty = nextContent !== savedContent;
+            saveState.current = {
+              ...saveState.current,
+              content: nextContent,
+              dirty: nextDirty,
+              saveError: null,
+            };
             setContent(nextContent);
             setSaveError(null);
             useEditorStore
