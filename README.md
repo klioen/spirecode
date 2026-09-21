@@ -33,6 +33,12 @@ macOS Gatekeeper 会提示「无法验证开发者」。
 
 Other architectures and package repositories such as Homebrew, winget, and apt are not currently supported release channels.
 
+The latest successful development packages from `main` are available from the
+[`nightly` prerelease](https://github.com/klioen/spirecode/releases/tag/nightly).
+Release assets use GitHub's download CDN and are generally faster to download
+than GitHub Actions artifacts. Nightly packages are development outputs, not
+formally signed releases.
+
 ## What it includes
 
 - Projects and managed Git worktrees

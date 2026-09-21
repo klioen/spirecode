@@ -58,6 +58,21 @@ test("CI does not expose credential-bearing git URL rewrites", () => {
   assert.match(ciWorkflow, /Bundle and smoke native artifact[\s\S]*run: pnpm bundle/);
 });
 
+test("CI publishes successful main builds as a fixed nightly prerelease", () => {
+  assert.match(
+    ciWorkflow,
+    /publish-nightly:[\s\S]*if: github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'/,
+  );
+  assert.match(ciWorkflow, /publish-nightly:[\s\S]*needs: verify/);
+  assert.match(ciWorkflow, /permissions:[\s\S]*actions: read[\s\S]*contents: write/);
+  assert.match(ciWorkflow, /pattern: spirecode-\*/);
+  assert.match(ciWorkflow, /gh release create nightly/);
+  assert.match(ciWorkflow, /--target "\$GITHUB_SHA"/);
+  assert.match(ciWorkflow, /--prerelease/);
+  for (const extension of ["dmg", "exe", "AppImage", "deb"])
+    assert.match(ciWorkflow, new RegExp(`release/\\*\\.${extension}`));
+});
+
 test("build and release no longer stage or license-gate removed bundled resources", () => {
   const removedResource = ["pi", "extensions"].join("-");
   assert.ok(!workflow.includes(removedResource));
