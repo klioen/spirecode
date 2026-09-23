@@ -47,7 +47,7 @@
     "secrets:check": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@mariozechner/clipboard": "0.3.9",
     "@monaco-editor/react": "4.7.0",
     "@radix-ui/react-context-menu": "2.3.7",
