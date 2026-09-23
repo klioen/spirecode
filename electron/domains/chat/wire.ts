@@ -135,19 +135,7 @@ export function normalizeMessages(messages: unknown): unknown[] {
         ? raw.content
         : [{ type: "text", text: textOf(raw.content) }];
       const failed = raw.stopReason === "error";
-      items.push({
-        type: "message",
-        id: base,
-        role: failed ? "error" : "assistant",
-        content: blocks
-          .filter((block) => isRecord(block) && block.type === "text")
-          .map((block) => String((block as Record<string, unknown>).text ?? ""))
-          .join(""),
-        status: failed ? "error" : "complete",
-        ...(epoch(raw.timestamp) === undefined
-          ? {}
-          : { createdAt: epoch(raw.timestamp) }),
-      });
+      let hasText = false;
       blocks.forEach((block, blockIndex) => {
         if (!isRecord(block)) return;
         if (block.type === "thinking" && typeof block.thinking === "string") {
@@ -156,6 +144,18 @@ export function normalizeMessages(messages: unknown): unknown[] {
             id: `${base}:thinking:${blockIndex}`,
             content: block.thinking,
             status: "complete",
+          });
+        } else if (block.type === "text" && typeof block.text === "string") {
+          hasText = true;
+          items.push({
+            type: "message",
+            id: `${base}:text:${blockIndex}`,
+            role: failed ? "error" : "assistant",
+            content: block.text,
+            status: failed ? "error" : "complete",
+            ...(epoch(raw.timestamp) === undefined
+              ? {}
+              : { createdAt: epoch(raw.timestamp) }),
           });
         } else if (block.type === "toolCall" && typeof block.id === "string") {
           const item = {
@@ -169,6 +169,18 @@ export function normalizeMessages(messages: unknown): unknown[] {
           items.push(item);
         }
       });
+      if (failed && !hasText) {
+        items.push({
+          type: "message",
+          id: `${base}:error`,
+          role: "error",
+          content: stringValue(raw.errorMessage) ?? "Agent run failed",
+          status: "error",
+          ...(epoch(raw.timestamp) === undefined
+            ? {}
+            : { createdAt: epoch(raw.timestamp) }),
+        });
+      }
       return;
     }
     if (raw.role === "toolResult" && typeof raw.toolCallId === "string") {
@@ -235,53 +247,82 @@ function normalizeMessageEvent(
   )
     return [];
   const failed = message.role === "assistant" && message.stopReason === "error";
-  const status = failed
+  const messageStatus = failed
     ? "error"
     : type === "message_end"
       ? "complete"
       : "streaming";
+  const blockEventSuffix = type.slice("message_".length);
   const id = messageId(message);
   const blocks = Array.isArray(message.content)
     ? message.content
     : [{ type: "text", text: textOf(message.content) }];
-  const content = blocks
-    .filter((block) => isRecord(block) && block.type === "text")
-    .map((block) => String((block as Record<string, unknown>).text ?? ""))
-    .join("");
-  const events: Array<Record<string, unknown>> = [
-    {
+
+  if (message.role === "user") {
+    return [
+      {
+        type,
+        message: {
+          id,
+          role: "user",
+          content: textOf(message.content),
+          status: messageStatus,
+          ...(epoch(message.timestamp) === undefined
+            ? {}
+            : { createdAt: epoch(message.timestamp) }),
+        },
+      },
+    ];
+  }
+
+  const events: Array<Record<string, unknown>> = [];
+  let hasText = false;
+  blocks.forEach((block, index) => {
+    if (!isRecord(block)) return;
+    if (block.type === "thinking" && typeof block.thinking === "string") {
+      events.push({
+        type: `thinking_${blockEventSuffix}`,
+        thinking: {
+          id: `${id}:thinking:${index}`,
+          content: block.thinking,
+          status: type === "message_end" ? "complete" : "streaming",
+        },
+      });
+    } else if (block.type === "text" && typeof block.text === "string") {
+      hasText = true;
+      events.push({
+        type,
+        message: {
+          id: `${id}:text:${index}`,
+          role: failed ? "error" : "assistant",
+          content: block.text,
+          status: messageStatus,
+          ...(epoch(message.timestamp) === undefined
+            ? {}
+            : { createdAt: epoch(message.timestamp) }),
+        },
+      });
+    } else if (block.type === "toolCall" && typeof block.id === "string") {
+      events.push({
+        type: "tool_execution_start",
+        toolCallId: block.id,
+        toolName: stringValue(block.name) ?? "unknown",
+        arguments: block.arguments,
+      });
+    }
+  });
+  if (failed && !hasText) {
+    events.push({
       type,
       message: {
-        id,
-        role: failed ? "error" : message.role,
-        content:
-          content ||
-          (failed
-            ? (stringValue(message.errorMessage) ?? "Agent run failed")
-            : ""),
-        status,
+        id: `${id}:error`,
+        role: "error",
+        content: stringValue(message.errorMessage) ?? "Agent run failed",
+        status: "error",
         ...(epoch(message.timestamp) === undefined
           ? {}
           : { createdAt: epoch(message.timestamp) }),
       },
-    },
-  ];
-  if (message.role === "assistant") {
-    blocks.forEach((block, index) => {
-      if (
-        !isRecord(block) ||
-        block.type !== "thinking" ||
-        typeof block.thinking !== "string"
-      )
-        return;
-      events.push({
-        type: `thinking_${type.slice("message_".length)}`,
-        thinking: {
-          id: `${id}:thinking:${index}`,
-          content: block.thinking,
-          status,
-        },
-      });
     });
   }
   return events;

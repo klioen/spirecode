@@ -92,6 +92,68 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("updates streamed assistant blocks without moving their first positions", () => {
+    let state = createInitialChatState("session-1", "worktree-1", "idle");
+    state = reduce(state, 1, {
+      type: "thinking_start",
+      thinking: {
+        id: "assistant-1:thinking:0",
+        content: "",
+        status: "streaming",
+      },
+    });
+    state = reduce(state, 2, {
+      type: "thinking_update",
+      thinking: {
+        id: "assistant-1:thinking:0",
+        content: "inspect",
+        status: "streaming",
+      },
+    });
+    state = reduce(state, 3, {
+      type: "message_update",
+      message: {
+        id: "assistant-1:text:1",
+        role: "assistant",
+        content: "answer",
+        status: "streaming",
+      },
+    });
+    state = reduce(state, 4, {
+      type: "thinking_end",
+      thinking: {
+        id: "assistant-1:thinking:0",
+        content: "inspected",
+        status: "complete",
+      },
+    });
+    state = reduce(state, 5, {
+      type: "message_end",
+      message: {
+        id: "assistant-1:text:1",
+        role: "assistant",
+        content: "final answer",
+        status: "complete",
+      },
+    });
+
+    expect(state.items).toEqual([
+      {
+        type: "thinking",
+        id: "assistant-1:thinking:0",
+        content: "inspected",
+        status: "complete",
+      },
+      {
+        type: "message",
+        id: "assistant-1:text:1",
+        role: "assistant",
+        content: "final answer",
+        status: "complete",
+      },
+    ]);
+  });
+
   it("updates and clears transient extension activity", () => {
     let state = createInitialChatState("session-1", "worktree-1", "streaming");
     state = reduce(state, 1, {
