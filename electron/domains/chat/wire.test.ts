@@ -58,18 +58,18 @@ describe("chat wire normalization", () => {
         createdAt: 1,
       },
       {
-        type: "message",
-        id: "message:assistant:2",
-        role: "assistant",
-        content: "done",
-        status: "complete",
-        createdAt: 2,
-      },
-      {
         type: "thinking",
         id: "message:assistant:2:thinking:0",
         content: "inspect",
         status: "complete",
+      },
+      {
+        type: "message",
+        id: "message:assistant:2:text:1",
+        role: "assistant",
+        content: "done",
+        status: "complete",
+        createdAt: 2,
       },
       {
         type: "tool",
@@ -78,6 +78,99 @@ describe("chat wire normalization", () => {
         arguments: { path: "a.ts" },
         result: "file",
         status: "done",
+      },
+    ]);
+  });
+
+  it("preserves interleaved assistant block order in live events", () => {
+    expect(
+      normalizeEvent({
+        type: "message_update",
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            { type: "thinking", thinking: "inspect" },
+            { type: "text", text: "before" },
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "read",
+              arguments: { path: "a.ts" },
+            },
+            { type: "thinking", thinking: "verify" },
+            { type: "text", text: "after" },
+          ],
+        },
+      }),
+    ).toEqual([
+      {
+        type: "thinking_update",
+        thinking: {
+          id: "message:assistant:2:thinking:0",
+          content: "inspect",
+          status: "streaming",
+        },
+      },
+      {
+        type: "message_update",
+        message: {
+          id: "message:assistant:2:text:1",
+          role: "assistant",
+          content: "before",
+          status: "streaming",
+          createdAt: 2,
+        },
+      },
+      {
+        type: "tool_execution_start",
+        toolCallId: "call-1",
+        toolName: "read",
+        arguments: { path: "a.ts" },
+      },
+      {
+        type: "thinking_update",
+        thinking: {
+          id: "message:assistant:2:thinking:3",
+          content: "verify",
+          status: "streaming",
+        },
+      },
+      {
+        type: "message_update",
+        message: {
+          id: "message:assistant:2:text:4",
+          role: "assistant",
+          content: "after",
+          status: "streaming",
+          createdAt: 2,
+        },
+      },
+    ]);
+  });
+
+  it("preserves a visible error when an assistant failure has no content blocks", () => {
+    expect(
+      normalizeEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          timestamp: 3,
+          content: [],
+          stopReason: "error",
+          errorMessage: "provider failed",
+        },
+      }),
+    ).toEqual([
+      {
+        type: "message_end",
+        message: {
+          id: "message:assistant:3:error",
+          role: "error",
+          content: "provider failed",
+          status: "error",
+          createdAt: 3,
+        },
       },
     ]);
   });
