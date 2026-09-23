@@ -31,6 +31,8 @@ export function watcherBackendForPlatform(
 
 export class WatcherRegistry {
   private readonly sessions = new Map<string, WatchSession>();
+  private readonly generations = new Map<string, number>();
+  private disposed = false;
 
   async ensure(
     worktreeId: string,
@@ -38,7 +40,8 @@ export class WatcherRegistry {
     gitDirectory: string,
     sink: (event: WatchEvent) => void,
   ): Promise<void> {
-    if (this.sessions.has(worktreeId)) return;
+    if (this.disposed || this.sessions.has(worktreeId)) return;
+    const generation = this.generations.get(worktreeId) ?? 0;
     const root = await realpath(rootPath);
     let gitDir = gitDirectory;
     try {
@@ -119,7 +122,11 @@ export class WatcherRegistry {
         `filesystem watcher failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    if (this.sessions.has(worktreeId)) {
+    if (
+      this.disposed ||
+      this.sessions.has(worktreeId) ||
+      (this.generations.get(worktreeId) ?? 0) !== generation
+    ) {
       await stopWatcher();
       return;
     }
@@ -133,6 +140,10 @@ export class WatcherRegistry {
   }
 
   async close(worktreeId: string): Promise<void> {
+    this.generations.set(
+      worktreeId,
+      (this.generations.get(worktreeId) ?? 0) + 1,
+    );
     const session = this.sessions.get(worktreeId);
     if (!session) return;
     this.sessions.delete(worktreeId);
@@ -140,6 +151,7 @@ export class WatcherRegistry {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
     await Promise.all([...this.sessions].map(([id]) => this.close(id)));
   }
 }

@@ -22,6 +22,38 @@ export interface DiagnosticEvent {
   }>;
 }
 
+export type PerformanceDiagnosticEvent =
+  | {
+      code: "PERF_APP_STATE";
+      outcome: "ok" | "error";
+      totalMs: number;
+      counts: { projectCount: number; worktreeCount: number };
+    }
+  | {
+      code: "PERF_WATCHER_BATCH";
+      outcome: "ok" | "partial" | "error";
+      totalMs: number;
+      counts: {
+        scheduled: number;
+        succeeded: number;
+        failed: number;
+        concurrency: number;
+      };
+    }
+  | {
+      code: "PERF_PROJECT_OPEN";
+      outcome: "ok" | "error";
+      totalMs: number;
+      counts: { worktreeCount: number };
+    }
+  | {
+      code: "PERF_CHAT_ATTACH";
+      outcome: "ok" | "error";
+      totalMs: number;
+      cold: boolean;
+      counts: { sourceItemCount: number; returnedItemCount: number };
+    };
+
 export class DiagnosticsService {
   readonly logsDirectory: string;
   private readonly logPath: string;
@@ -33,6 +65,20 @@ export class DiagnosticsService {
     this.logPath = path.join(this.logsDirectory, "spirecode.log");
   }
   async log(event: DiagnosticEvent): Promise<void> {
+    const errorType = event.safeContext?.errorType;
+    const safeContext =
+      typeof errorType === "string" &&
+      /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(errorType)
+        ? { errorType }
+        : undefined;
+    await this.write({
+      timestamp: new Date().toISOString(),
+      level: event.level,
+      code: event.code,
+      ...(safeContext ? { safeContext } : {}),
+    });
+  }
+  private async write(entry: object): Promise<void> {
     try {
       await mkdir(this.logsDirectory, { recursive: true });
       try {
@@ -41,18 +87,6 @@ export class DiagnosticsService {
       } catch {
         /* first log */
       }
-      const errorType = event.safeContext?.errorType;
-      const safeContext =
-        typeof errorType === "string" &&
-        /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(errorType)
-          ? { errorType }
-          : undefined;
-      const entry = {
-        timestamp: new Date().toISOString(),
-        level: event.level,
-        code: event.code,
-        ...(safeContext ? { safeContext } : {}),
-      };
       await appendFile(
         this.logPath,
         `${sanitize(JSON.stringify(entry))}\n`,
@@ -61,6 +95,43 @@ export class DiagnosticsService {
     } catch {
       /* diagnostics must never break the app */
     }
+  }
+  async logPerformance(event: PerformanceDiagnosticEvent): Promise<void> {
+    const duration = boundedInteger(event.totalMs);
+    if (duration === undefined) return;
+    const counts =
+      event.code === "PERF_APP_STATE"
+        ? {
+            projectCount: boundedInteger(event.counts.projectCount) ?? 0,
+            worktreeCount: boundedInteger(event.counts.worktreeCount) ?? 0,
+          }
+        : event.code === "PERF_WATCHER_BATCH"
+          ? {
+              scheduled: boundedInteger(event.counts.scheduled) ?? 0,
+              succeeded: boundedInteger(event.counts.succeeded) ?? 0,
+              failed: boundedInteger(event.counts.failed) ?? 0,
+              concurrency: boundedInteger(event.counts.concurrency) ?? 0,
+            }
+          : event.code === "PERF_PROJECT_OPEN"
+            ? { worktreeCount: boundedInteger(event.counts.worktreeCount) ?? 0 }
+            : {
+                sourceItemCount:
+                  boundedInteger(event.counts.sourceItemCount) ?? 0,
+                returnedItemCount:
+                  boundedInteger(event.counts.returnedItemCount) ?? 0,
+              };
+    await this.write({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      code: event.code,
+      performance: {
+        schemaVersion: 1,
+        outcome: event.outcome,
+        totalMs: duration,
+        ...("cold" in event ? { cold: event.cold === true } : {}),
+        counts,
+      },
+    });
   }
   async revealLogs(): Promise<void> {
     const error = await shell.openPath(this.logsDirectory);
@@ -89,6 +160,12 @@ export class DiagnosticsService {
     ].join("\n");
   }
 }
+function boundedInteger(value: number): number | undefined {
+  if (!Number.isFinite(value) || value < 0 || value > 86_400_000)
+    return undefined;
+  return Math.round(value);
+}
+
 export const sanitize = (value: string): string => {
   const home = os.homedir();
   return value

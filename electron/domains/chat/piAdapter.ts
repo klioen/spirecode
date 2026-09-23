@@ -14,6 +14,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { bootstrapArkApiKeyFromLoginShell } from "./shellEnvironment.js";
 import { loadSpireSettings, resolveSpireResources } from "./spireSettings.js";
+import { realpath, stat } from "node:fs/promises";
+import path from "node:path";
 import type {
   ChatSessionConfig,
   ChatSlashCommand,
@@ -64,6 +66,10 @@ export interface PiAdapter {
     cwd: string,
     sessionId: string,
   ): Promise<{ info: PiSessionInfo; sessionRoot: string } | undefined>;
+  openById(
+    cwd: string,
+    sessionId: string,
+  ): Promise<PiSessionRecord | undefined>;
   open(info: PiSessionInfo, cwd: string): Promise<PiSessionRecord>;
 }
 
@@ -87,6 +93,7 @@ export interface PiSettingsManager {
 
 interface PiSessionManager {
   buildSessionContext(): { messages: unknown[] };
+  getCwd(): string;
   getBranch(): unknown[];
   getSessionDir(): string;
 }
@@ -114,6 +121,7 @@ export interface PiSdk {
   SessionManager: {
     create(cwd: string): PiSessionManager;
     list(cwd: string): Promise<Array<Record<string, unknown>>>;
+    findById(cwd: string, id: string): string | undefined;
     open(
       path: string,
       sessionDir?: string,
@@ -423,6 +431,33 @@ export async function createPiAdapter(
         sessionRoot: sdk.SessionManager.create(cwd).getSessionDir(),
       };
     },
+    async openById(cwd, sessionId) {
+      const discoveredPath = sdk.SessionManager.findById(cwd, sessionId);
+      if (!discoveredPath) return undefined;
+      const [sessionPath, sessionRoot] = await Promise.all([
+        realpath(discoveredPath),
+        realpath(sdk.SessionManager.create(cwd).getSessionDir()),
+      ]);
+      if (
+        !(await stat(sessionPath)).isFile() ||
+        !(await stat(sessionRoot)).isDirectory() ||
+        !isWithin(sessionRoot, sessionPath)
+      )
+        throw new Error("Session path is unavailable");
+      const sessionManager = sdk.SessionManager.open(sessionPath, sessionRoot);
+      const [sessionCwd, requestedCwd] = await Promise.all([
+        realpath(sessionManager.getCwd()),
+        realpath(cwd),
+      ]);
+      if (sessionCwd !== requestedCwd)
+        throw new Error("Session belongs to another worktree");
+      const record = await load(sessionManager, cwd);
+      if (record.sessionId !== sessionId) {
+        await record.session.dispose();
+        throw new Error("Agent SDK opened an unexpected session");
+      }
+      return record;
+    },
     async open(info, cwd) {
       if (!info.path) throw new Error("Session path is unavailable");
       return load(
@@ -640,6 +675,16 @@ function dateValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative))
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

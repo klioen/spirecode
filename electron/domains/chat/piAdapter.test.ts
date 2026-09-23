@@ -1,9 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPiAdapter,
   preferSpirecodeProviders,
   type PiSdk,
 } from "./piAdapter.js";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
 
 function sessionFixture() {
   let streaming = false;
@@ -110,6 +123,7 @@ function sdkFixture(options: {
   };
   const manager = {
     buildSessionContext: () => ({ messages: options.existingMessages ?? [] }),
+    getCwd: () => "/repo",
     getSessionDir: () => "/sessions/current",
     getBranch: () => [
       {
@@ -132,6 +146,7 @@ function sdkFixture(options: {
     SessionManager: {
       create: () => manager,
       list: async () => [],
+      findById: () => undefined,
       open: () => manager,
     },
     createAgentSessionServices: async (input: {
@@ -374,6 +389,28 @@ describe("piAdapter", () => {
       }),
       sessionRoot: manager.getSessionDir(),
     });
+  });
+
+  it("opens an exact contained session id without listing every transcript", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "spirecode-pi-adapter-"));
+    temporaryDirectories.push(root);
+    const sessions = path.join(root, "sessions");
+    const sessionPath = path.join(sessions, "s1.jsonl");
+    await mkdir(sessions);
+    await writeFile(sessionPath, "{}\n");
+    const { sdk, loadResources, manager } = sdkFixture({});
+    manager.getCwd = () => root;
+    manager.getSessionDir = () => sessions;
+    const list = vi.fn(async () => []);
+    sdk.SessionManager.list = list;
+    sdk.SessionManager.findById = vi.fn(() => sessionPath);
+    const adapter = await createPiAdapter(sdk, { loadResources });
+
+    await expect(adapter.openById(root, "s1")).resolves.toMatchObject({
+      sessionId: "s1",
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(sdk.SessionManager.findById).toHaveBeenCalledWith(root, "s1");
   });
 
   it("resolves deletion only from complete raw SDK metadata", async () => {

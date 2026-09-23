@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { isCommand, type CommandName } from "./contracts.js";
-import { KeyedQueue } from "./core/asyncQueue.js";
 import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
@@ -77,7 +76,6 @@ export function registerIpc(
   locationPolicy: RendererLocationPolicy,
 ): () => void {
   const chatSubscriptions = new Map<string, string>();
-  const chatAttachQueues = new KeyedQueue();
   const handler = async (
     event: IpcMainInvokeEvent,
     rawCommand: unknown,
@@ -91,14 +89,7 @@ export function registerIpc(
       validateCommandArgs(rawCommand, args);
       return {
         ok: true,
-        value: await invoke(
-          state,
-          rawCommand,
-          args,
-          event,
-          chatSubscriptions,
-          chatAttachQueues,
-        ),
+        value: await invoke(state, rawCommand, args, event, chatSubscriptions),
       };
     } catch (error) {
       return { ok: false, error: serializeError(error) };
@@ -127,7 +118,6 @@ async function invoke(
   args: Args,
   event: IpcMainInvokeEvent,
   chatSubscriptions: Map<string, string>,
-  chatAttachQueues: KeyedQueue,
 ): Promise<unknown> {
   switch (command) {
     case "project_list":
@@ -240,24 +230,22 @@ async function invoke(
       const sessionId = text(args, "sessionId");
       const subscriptionId = text(args, "subscriptionId");
       chatSubscriptions.set(sessionId, subscriptionId);
-      return chatAttachQueues.run(sessionId, async () => {
-        try {
-          return await state.chat.attach(worktreeId, sessionId, (payload) => {
-            if (
-              chatSubscriptions.get(sessionId) === subscriptionId &&
-              !event.sender.isDestroyed()
-            )
-              event.sender.send("spire:event:chat://event", {
-                subscriptionId,
-                payload,
-              });
-          });
-        } catch (error) {
-          if (chatSubscriptions.get(sessionId) === subscriptionId)
-            chatSubscriptions.delete(sessionId);
-          throw error;
-        }
-      });
+      try {
+        return await state.chat.attach(worktreeId, sessionId, (payload) => {
+          if (
+            chatSubscriptions.get(sessionId) === subscriptionId &&
+            !event.sender.isDestroyed()
+          )
+            event.sender.send("spire:event:chat://event", {
+              subscriptionId,
+              payload,
+            });
+        });
+      } catch (error) {
+        if (chatSubscriptions.get(sessionId) === subscriptionId)
+          chatSubscriptions.delete(sessionId);
+        throw error;
+      }
     }
     case "chat_session_detach": {
       const worktreeId = text(args, "worktreeId");

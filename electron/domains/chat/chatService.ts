@@ -21,7 +21,14 @@ import {
 } from "./types.js";
 
 const MAX_BUFFERED_EVENTS = 512;
+const MAX_SNAPSHOT_ITEMS = 2_000;
 const MAX_PROMPT_BYTES = 64 * 1024;
+
+interface AttachFlight {
+  worktreeId: string;
+  subscriber: ChatEventSubscriber;
+  promise: Promise<ChatSnapshot>;
+}
 
 interface SessionState extends PiSessionRecord {
   worktreeId: string;
@@ -41,6 +48,13 @@ export interface ChatServiceOptions {
   adapter?: PiAdapter | Promise<PiAdapter>;
   maxBufferedEvents?: number;
   trashItem?: (sessionPath: string) => Promise<void>;
+  performance?: (event: {
+    code: "PERF_CHAT_ATTACH";
+    outcome: "ok" | "error";
+    totalMs: number;
+    cold: boolean;
+    counts: { sourceItemCount: number; returnedItemCount: number };
+  }) => void;
 }
 
 export class ChatService {
@@ -50,8 +64,12 @@ export class ChatService {
   private readonly adapterFactory: () => Promise<PiAdapter>;
   private readonly maxBufferedEvents: number;
   private readonly trashItem?: (sessionPath: string) => Promise<void>;
+  private readonly performance?: ChatServiceOptions["performance"];
   private readonly deleting = new Set<string>();
   private readonly lifecycleTails = new Map<string, Promise<void>>();
+  private readonly attachFlights = new Map<string, AttachFlight>();
+  private readonly worktreeGenerations = new Map<string, number>();
+  private disposed = false;
 
   constructor(
     private readonly rootResolver: RootResolver,
@@ -61,6 +79,7 @@ export class ChatService {
       Promise.resolve(options.adapter ?? createPiAdapter());
     this.maxBufferedEvents = options.maxBufferedEvents ?? MAX_BUFFERED_EVENTS;
     this.trashItem = options.trashItem;
+    this.performance = options.performance;
   }
 
   async create(worktreeId: string): Promise<ChatSessionSummary> {
@@ -100,32 +119,79 @@ export class ChatService {
     sessionId: string,
     subscriber: ChatEventSubscriber,
   ): Promise<ChatSnapshot> {
-    return this.runLifecycle(sessionId, () =>
-      this.attachUnlocked(worktreeId, sessionId, subscriber),
-    );
+    const existing = this.attachFlights.get(sessionId);
+    if (existing && existing.worktreeId === worktreeId) {
+      existing.subscriber = subscriber;
+      return existing.promise;
+    }
+    const generation = this.worktreeGenerations.get(worktreeId) ?? 0;
+    const flight = {
+      worktreeId,
+      subscriber,
+      promise: Promise.resolve(undefined as unknown as ChatSnapshot),
+    };
+    flight.promise = this.runLifecycle(sessionId, () =>
+      this.attachUnlocked(worktreeId, sessionId, generation, (event) =>
+        flight.subscriber(event),
+      ),
+    ).finally(() => {
+      if (this.attachFlights.get(sessionId) === flight)
+        this.attachFlights.delete(sessionId);
+    });
+    this.attachFlights.set(sessionId, flight);
+    return flight.promise;
   }
 
   private async attachUnlocked(
     worktreeId: string,
     sessionId: string,
+    generation: number,
     subscriber: ChatEventSubscriber,
   ): Promise<ChatSnapshot> {
+    const startedAt = performance.now();
     const cwd = await this.root(worktreeId);
     let record = this.sessions.get(sessionId);
+    const cold = !record;
     if (record) this.assertOwner(record, worktreeId);
 
     try {
       if (!record) {
         const adapter = await this.adapter();
-        const info = (await adapter.list(cwd)).find(
-          (item) => item.sessionId === sessionId,
-        );
-        if (!info) throw notFound();
+        const opened = await adapter.openById(cwd, sessionId);
+        if (!opened) throw notFound();
+        if (
+          this.disposed ||
+          (this.worktreeGenerations.get(worktreeId) ?? 0) !== generation
+        ) {
+          await opened.session.dispose();
+          throw notFound();
+        }
         this.establishOwnership(sessionId, worktreeId);
-        record = this.register(await adapter.open(info, cwd), worktreeId, cwd);
+        record = this.register(opened, worktreeId, cwd);
       }
-      return await this.attachRecord(record, subscriber);
+      const { snapshot, sourceItemCount } = await this.attachRecord(
+        record,
+        subscriber,
+      );
+      this.performance?.({
+        code: "PERF_CHAT_ATTACH",
+        outcome: "ok",
+        totalMs: performance.now() - startedAt,
+        cold,
+        counts: {
+          sourceItemCount,
+          returnedItemCount: snapshot.items.length,
+        },
+      });
+      return snapshot;
     } catch (error) {
+      this.performance?.({
+        code: "PERF_CHAT_ATTACH",
+        outcome: "error",
+        totalMs: performance.now() - startedAt,
+        cold,
+        counts: { sourceItemCount: 0, returnedItemCount: 0 },
+      });
       if (record) {
         record.subscriber = undefined;
         record.attaching = false;
@@ -371,6 +437,10 @@ export class ChatService {
   }
 
   async closeWorktree(worktreeId: string): Promise<void> {
+    this.worktreeGenerations.set(
+      worktreeId,
+      (this.worktreeGenerations.get(worktreeId) ?? 0) + 1,
+    );
     const records = [...this.sessions.values()].filter(
       (record) => record.worktreeId === worktreeId,
     );
@@ -398,6 +468,12 @@ export class ChatService {
   }
 
   async disposeAll(): Promise<{ disposed: number }> {
+    this.disposed = true;
+    for (const flight of this.attachFlights.values())
+      this.worktreeGenerations.set(
+        flight.worktreeId,
+        (this.worktreeGenerations.get(flight.worktreeId) ?? 0) + 1,
+      );
     const records = [...this.sessions.values()];
     this.sessions.clear();
     this.owners.clear();
@@ -446,7 +522,7 @@ export class ChatService {
   private async attachRecord(
     record: SessionState,
     subscriber: ChatEventSubscriber,
-  ): Promise<ChatSnapshot> {
+  ): Promise<{ snapshot: ChatSnapshot; sourceItemCount: number }> {
     record.subscriber = subscriber;
     record.attaching = true;
     record.needsResnapshot = false;
@@ -463,7 +539,8 @@ export class ChatService {
       record.session.getMessages(),
       record.session.getEntries(),
     ]);
-    const items = normalizeTimeline(messages, entries);
+    const normalizedItems = normalizeTimeline(messages, entries);
+    const items = normalizedItems.slice(-MAX_SNAPSHOT_ITEMS);
     if (record.needsResnapshot) throw resnapshotError();
     const snapshot: ChatSnapshot = {
       sessionId: record.sessionId,
@@ -476,7 +553,7 @@ export class ChatService {
       error: errorAtFence,
     };
     this.flushAfterSnapshot(record, fence);
-    return snapshot;
+    return { snapshot, sourceItemCount: normalizedItems.length };
   }
 
   private flushAfterSnapshot(record: SessionState, fence: number): void {

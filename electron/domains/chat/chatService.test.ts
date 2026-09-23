@@ -148,6 +148,10 @@ async function fixture(): Promise<{
       if (!info) throw new Error("missing");
       return { info, sessionRoot };
     },
+    async openById(cwd, sessionId) {
+      const record = records.get(sessionId);
+      return record?.cwd === cwd ? record : undefined;
+    },
     async open(info, cwd) {
       const record = records.get(info.sessionId);
       if (!record || record.cwd !== cwd) throw new Error("missing");
@@ -471,6 +475,81 @@ describe("ChatService", () => {
         },
       ],
     });
+  });
+
+  it("opens a cold session by exact id without listing all transcripts", async () => {
+    const { root, records, adapter } = await fixture();
+    const session = new FakeSession("cold");
+    records.set("cold", {
+      session,
+      sessionId: "cold",
+      cwd: root,
+      title: "Cold",
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const list = vi.spyOn(adapter, "list");
+    const openById = vi.spyOn(adapter, "openById");
+    const service = new ChatService(() => root, { adapter });
+
+    await expect(
+      service.attach("w1", "cold", () => undefined),
+    ).resolves.toMatchObject({ sessionId: "cold" });
+    expect(openById).toHaveBeenCalledWith(root, "cold");
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("coalesces concurrent attachments and routes buffered events to the latest subscriber", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+    let release: () => void = () => undefined;
+    let started: () => void = () => undefined;
+    const reading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    session.messageStarted = started;
+    session.messageGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstEvents: unknown[] = [];
+    const latestEvents: unknown[] = [];
+    const first = service.attach("w1", "s1", (event) =>
+      firstEvents.push(event),
+    );
+    await reading;
+    const second = service.attach("w1", "s1", (event) =>
+      latestEvents.push(event),
+    );
+    session.emit({ type: "agent_start" });
+    release();
+
+    expect(second).toBe(first);
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(firstEvents).toEqual([]);
+    expect(latestEvents).toEqual([
+      { sessionId: "s1", sequence: 1, event: { type: "agent_start" } },
+    ]);
+  });
+
+  it("bounds snapshots to the newest 2000 projected items", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+    session.messages = Array.from({ length: 2_005 }, (_, index) => ({
+      role: "user",
+      id: `message-${index}`,
+      content: `message ${index}`,
+      timestamp: index,
+    }));
+
+    const snapshot = await service.attach("w1", "s1", () => undefined);
+
+    expect(snapshot.items).toHaveLength(2_000);
+    expect(snapshot.items[0]).toMatchObject({ id: "message-5" });
+    expect(snapshot.items.at(-1)).toMatchObject({ id: "message-2004" });
   });
 
   it("uses a snapshot fence and flushes only events newer than it", async () => {

@@ -28,6 +28,112 @@ export interface SubscriptionEvent<T> {
   payload: T;
 }
 
+interface WatchTarget {
+  id: string;
+  path: string;
+}
+
+export class BackgroundWatcherScheduler {
+  private readonly queued: WatchTarget[] = [];
+  private readonly running = new Map<string, Promise<void>>();
+  private disposed = false;
+  private batchStartedAt: number | undefined;
+  private batchScheduled = 0;
+  private batchSucceeded = 0;
+  private batchFailed = 0;
+
+  constructor(
+    private readonly initialize: (target: WatchTarget) => Promise<void>,
+    private readonly onFailure: (error: unknown) => void,
+    private readonly onBatchComplete: (result: {
+      totalMs: number;
+      scheduled: number;
+      succeeded: number;
+      failed: number;
+      concurrency: number;
+    }) => void = () => undefined,
+    private readonly concurrency = 2,
+  ) {}
+
+  schedule(targets: readonly WatchTarget[], priorityId?: string | null): void {
+    if (this.disposed) return;
+    if (this.running.size === 0 && this.queued.length === 0) {
+      this.batchStartedAt = performance.now();
+      this.batchScheduled = 0;
+      this.batchSucceeded = 0;
+      this.batchFailed = 0;
+    }
+    const ordered = priorityId
+      ? [
+          ...targets.filter(({ id }) => id === priorityId),
+          ...targets.filter(({ id }) => id !== priorityId),
+        ]
+      : [...targets];
+    for (const target of ordered) {
+      if (this.running.has(target.id)) continue;
+      const existing = this.queued.findIndex(({ id }) => id === target.id);
+      const isNew = existing < 0;
+      if (existing >= 0) this.queued.splice(existing, 1);
+      if (target.id === priorityId) this.queued.unshift(target);
+      else this.queued.push(target);
+      if (isNew) this.batchScheduled += 1;
+    }
+    this.pump();
+  }
+
+  cancel(id: string): void {
+    const queued = this.queued.findIndex((target) => target.id === id);
+    if (queued >= 0) this.queued.splice(queued, 1);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.queued.splice(0);
+  }
+
+  private pump(): void {
+    while (
+      !this.disposed &&
+      this.running.size < this.concurrency &&
+      this.queued.length > 0
+    ) {
+      const target = this.queued.shift();
+      if (!target || this.running.has(target.id)) continue;
+      const pending = this.initialize(target)
+        .then(() => {
+          this.batchSucceeded += 1;
+        })
+        .catch((error) => {
+          this.batchFailed += 1;
+          this.onFailure(error);
+        })
+        .finally(() => {
+          this.running.delete(target.id);
+          this.pump();
+          this.finishBatchIfIdle();
+        });
+      this.running.set(target.id, pending);
+    }
+  }
+
+  private finishBatchIfIdle(): void {
+    if (
+      this.batchStartedAt === undefined ||
+      this.running.size > 0 ||
+      this.queued.length > 0
+    )
+      return;
+    this.onBatchComplete({
+      totalMs: performance.now() - this.batchStartedAt,
+      scheduled: this.batchScheduled,
+      succeeded: this.batchSucceeded,
+      failed: this.batchFailed,
+      concurrency: this.concurrency,
+    });
+    this.batchStartedAt = undefined;
+  }
+}
+
 export class AppState {
   readonly filesystem: FilesystemService;
   readonly git: GitService;
@@ -39,6 +145,7 @@ export class AppState {
   readonly watchers = new WatcherRegistry();
   readonly windowCloseGuard = new WindowCloseGuard();
   readonly diagnostics: DiagnosticsService;
+  private readonly watcherScheduler: BackgroundWatcherScheduler;
 
   private constructor(
     readonly projects: ProjectService,
@@ -57,32 +164,69 @@ export class AppState {
     });
     this.chat = new ChatService(root, {
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
+      performance: (event) => void this.diagnostics.logPerformance(event),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
+    this.watcherScheduler = new BackgroundWatcherScheduler(
+      ({ id, path: rootPath }) => this.ensureWatcher(id, rootPath),
+      (error) => {
+        console.warn(
+          `Unable to initialize background worktree watcher (${errorName(error)})`,
+        );
+        void this.diagnostics.log({
+          level: "warn",
+          code: "WATCHER_INITIALIZATION_FAILED",
+          safeContext: { errorType: errorName(error) },
+        });
+      },
+      (result) =>
+        void this.diagnostics.logPerformance({
+          code: "PERF_WATCHER_BATCH",
+          outcome: result.failed === 0 ? "ok" : "partial",
+          totalMs: result.totalMs,
+          counts: {
+            scheduled: result.scheduled,
+            succeeded: result.succeeded,
+            failed: result.failed,
+            concurrency: result.concurrency,
+          },
+        }),
+    );
   }
 
   static async create(
     dataDirectory: string,
     window: BrowserWindow,
   ): Promise<AppState> {
+    const startedAt = performance.now();
     const [projects, settings] = await Promise.all([
       ProjectService.load(path.join(dataDirectory, "state.json")),
       SettingsService.load(path.join(dataDirectory, "extension-settings.json")),
     ]);
     applyMemoryConfig(await settings.memoryConfig());
     const state = new AppState(projects, settings, window, dataDirectory);
-    for (const project of await projects.list()) {
-      for (const worktree of project.worktrees) {
-        try {
-          await state.ensureWatcher(worktree.id, worktree.path);
-        } catch (error) {
-          console.warn(
-            `Unable to watch persisted worktree ${worktree.id}`,
-            error,
-          );
-        }
-      }
-    }
+    const catalog = await projects.catalog();
+    state.watcherScheduler.schedule(
+      catalog.projects.flatMap((project) =>
+        project.worktrees.map((worktree) => ({
+          id: worktree.id,
+          path: worktree.path,
+        })),
+      ),
+      catalog.activeWorktreeId,
+    );
+    void state.diagnostics.logPerformance({
+      code: "PERF_APP_STATE",
+      outcome: "ok",
+      totalMs: performance.now() - startedAt,
+      counts: {
+        projectCount: catalog.projects.length,
+        worktreeCount: catalog.projects.reduce(
+          (count, project) => count + project.worktrees.length,
+          0,
+        ),
+      },
+    });
     return state;
   }
 
@@ -153,10 +297,32 @@ export class AppState {
   }
 
   async openProject(selectedPath: string) {
-    const project = await this.projects.openPath(selectedPath);
-    for (const worktree of project.worktrees)
-      await this.ensureWatcher(worktree.id, worktree.path);
-    return project;
+    const startedAt = performance.now();
+    try {
+      const project = await this.projects.openPath(selectedPath);
+      this.watcherScheduler.schedule(
+        project.worktrees.map((worktree) => ({
+          id: worktree.id,
+          path: worktree.path,
+        })),
+        project.worktrees.find((worktree) => worktree.kind === "main")?.id,
+      );
+      void this.diagnostics.logPerformance({
+        code: "PERF_PROJECT_OPEN",
+        outcome: "ok",
+        totalMs: performance.now() - startedAt,
+        counts: { worktreeCount: project.worktrees.length },
+      });
+      return project;
+    } catch (error) {
+      void this.diagnostics.logPerformance({
+        code: "PERF_PROJECT_OPEN",
+        outcome: "error",
+        totalMs: performance.now() - startedAt,
+        counts: { worktreeCount: 0 },
+      });
+      throw error;
+    }
   }
 
   async openProjectDialog() {
@@ -171,6 +337,7 @@ export class AppState {
     const project = await this.projects.project(projectId);
     let failure: unknown;
     for (const worktree of project.worktrees) {
+      this.watcherScheduler.cancel(worktree.id);
       this.terminals.closeWorktree(worktree.id);
       this.git.closeWorktree(worktree.id);
       for (const cleanup of [
@@ -210,6 +377,7 @@ export class AppState {
 
   async renameWorktree(worktreeId: string, name: string) {
     const original = await this.projects.worktree(worktreeId);
+    this.watcherScheduler.cancel(worktreeId);
     await this.watchers.close(worktreeId);
     try {
       const renamed = await this.worktrees.rename(worktreeId, name);
@@ -233,6 +401,7 @@ export class AppState {
     const inspection = await this.worktrees.inspectDelete(worktreeId);
     if (!force && (inspection.dirty || inspection.terminalCount > 0))
       return this.worktrees.delete(worktreeId, false);
+    this.watcherScheduler.cancel(worktreeId);
     this.terminals.closeWorktree(worktreeId);
     this.git.closeWorktree(worktreeId);
     const cleanup = await Promise.allSettled([
@@ -257,6 +426,7 @@ export class AppState {
 
   async dispose(): Promise<void> {
     this.terminals.dispose();
+    this.watcherScheduler.dispose();
     const cleanup = await Promise.allSettled([
       this.watchers.dispose(),
       withTimeout(this.chat.disposeAll(), 5_000),
@@ -297,6 +467,10 @@ export function applyMemoryConfig(config: MemoryConfig | null): void {
   process.env.PI_MEMORY_PHASE2_MODEL = `${config.phase2Provider}/${config.phase2ModelId}`;
   process.env.PI_MEMORY_EXTRACT_THINKING = config.phase1ReasoningEffort;
   process.env.PI_MEMORY_PHASE2_THINKING = config.phase2ReasoningEffort;
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
 }
 
 function withTimeout<T>(

@@ -49,6 +49,29 @@ describe("diagnostics privacy", () => {
     expect(output).toContain("<home>");
   });
 
+  it("serializes only allowlisted performance fields", async () => {
+    const diagnostics = await service();
+    await diagnostics.logPerformance({
+      code: "PERF_CHAT_ATTACH",
+      outcome: "ok",
+      totalMs: 42.6,
+      cold: true,
+      counts: { sourceItemCount: 2500, returnedItemCount: 2000 },
+      path: "/Volumes/private/repository",
+      prompt: "do-not-copy",
+      sessionId: "secret-session",
+    } as Parameters<DiagnosticsService["logPerformance"]>[0]);
+
+    const report = await diagnostics.copyText();
+
+    expect(report).toContain('"code":"PERF_CHAT_ATTACH"');
+    expect(report).toContain('"totalMs":43');
+    expect(report).toContain('"sourceItemCount":2500');
+    expect(report).not.toContain("/Volumes/private/repository");
+    expect(report).not.toContain("do-not-copy");
+    expect(report).not.toContain("secret-session");
+  });
+
   it("copies only sanitized bounded log events", async () => {
     const diagnostics = await service();
     await diagnostics.log({
