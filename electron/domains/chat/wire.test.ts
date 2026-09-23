@@ -39,6 +39,8 @@ describe("chat wire normalization", () => {
               name: "read",
               arguments: { path: "a.ts" },
             },
+            { type: "thinking", thinking: "verify" },
+            { type: "text", text: "confirmed" },
           ],
           timestamp: 2,
         },
@@ -78,6 +80,20 @@ describe("chat wire normalization", () => {
         arguments: { path: "a.ts" },
         result: "file",
         status: "done",
+      },
+      {
+        type: "thinking",
+        id: "message:assistant:2:thinking:3",
+        content: "verify",
+        status: "complete",
+      },
+      {
+        type: "message",
+        id: "message:assistant:2:text:4",
+        role: "assistant",
+        content: "confirmed",
+        status: "complete",
+        createdAt: 2,
       },
     ]);
   });
