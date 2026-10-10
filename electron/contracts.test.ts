@@ -16,6 +16,8 @@ describe("Electron host allowlists", () => {
         "settings_language_get",
         "settings_language_set",
         "settings_agent_readiness",
+        "settings_skills_list",
+        "settings_skill_set_enabled",
       ]),
     );
     expect(isCommand("chat_session_invoke")).toBe(false);

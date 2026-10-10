@@ -4,6 +4,8 @@ import type {
   ExtensionUIContext,
   Extension,
   LoadExtensionsResult,
+  ResourceDiagnostic,
+  Skill,
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -97,6 +99,11 @@ interface PiServices {
   diagnostics?: Array<{ type: "info" | "warning" | "error"; message: string }>;
 }
 
+interface SkillsResult {
+  skills: Skill[];
+  diagnostics: ResourceDiagnostic[];
+}
+
 interface PiResourceLoaderOptions {
   noExtensions: boolean;
   noSkills?: boolean;
@@ -107,6 +114,7 @@ interface PiResourceLoaderOptions {
   additionalPromptTemplatePaths?: string[];
   additionalThemePaths?: string[];
   extensionsOverride?: (result: LoadExtensionsResult) => LoadExtensionsResult;
+  skillsOverride?: (result: SkillsResult) => SkillsResult;
 }
 
 export interface PiSdk {
@@ -186,6 +194,10 @@ export interface PiAdapterOptions {
     settingsManager: PiSettingsManager;
     resourceLoaderOptions: PiResourceLoaderOptions;
     diagnostics: string[];
+  }>;
+  selectSkills?: (cwd: string) => Promise<{
+    paths: string[];
+    override: (result: SkillsResult) => SkillsResult;
   }>;
 }
 
@@ -328,11 +340,22 @@ export async function createPiAdapter(
     metadata: Partial<PiSessionInfo> = {},
   ): Promise<PiSessionRecord> => {
     const resources = await loadResources(cwd);
+    const selectedSkills = options.selectSkills
+      ? await options.selectSkills(cwd)
+      : undefined;
     const services = await sdk.createAgentSessionServices({
       cwd,
       modelRuntime,
       settingsManager: resources.settingsManager,
-      resourceLoaderOptions: resources.resourceLoaderOptions,
+      resourceLoaderOptions: {
+        ...resources.resourceLoaderOptions,
+        ...(selectedSkills
+          ? {
+              additionalSkillPaths: selectedSkills.paths,
+              skillsOverride: selectedSkills.override,
+            }
+          : {}),
+      },
     });
     assertResourcesLoaded(services);
     const hasExistingMessages =

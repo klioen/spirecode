@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import type {
+  ResourceDiagnostic,
+  Skill,
+} from "@earendil-works/pi-coding-agent";
 import {
   createPiAdapter,
   preferSpirecodeProviders,
@@ -259,6 +263,38 @@ describe("piAdapter", () => {
     ).rejects.toThrow(
       "Configured default model traex/disabled-model is unavailable",
     );
+  });
+
+  it("loads only skills selected for a new session", async () => {
+    const { sdk, calls, runtime, loadResources } = sdkFixture({});
+    const skillsOverride = (result: {
+      skills: Skill[];
+      diagnostics: ResourceDiagnostic[];
+    }) => ({
+      ...result,
+      skills: result.skills.slice(0, 1),
+    });
+    const adapter = await createPiAdapter(sdk, {
+      loadResources,
+      selectSkills: async () => ({
+        paths: ["/skills/enabled/SKILL.md"],
+        override: skillsOverride,
+      }),
+    });
+
+    await adapter.create("/repo");
+
+    expect(calls).toContainEqual([
+      "services",
+      "/repo",
+      runtime,
+      {
+        noExtensions: true,
+        additionalExtensionPaths: [],
+        additionalSkillPaths: ["/skills/enabled/SKILL.md"],
+        skillsOverride,
+      },
+    ]);
   });
 
   it("loads the standard user extension paths resolved from settings", async () => {

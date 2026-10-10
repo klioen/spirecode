@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   createPiAdapter,
   type PiAdapter,
+  type PiAdapterOptions,
   type PiSessionRecord,
 } from "./piAdapter.js";
 import { normalizeEvent, normalizeSummary, normalizeTimeline } from "./wire.js";
@@ -39,6 +40,7 @@ interface SessionState extends PiSessionRecord {
 
 export interface ChatServiceOptions {
   adapter?: PiAdapter | Promise<PiAdapter>;
+  selectSkills?: PiAdapterOptions["selectSkills"];
   maxBufferedEvents?: number;
   trashItem?: (sessionPath: string) => Promise<void>;
 }
@@ -58,7 +60,10 @@ export class ChatService {
     options: ChatServiceOptions = {},
   ) {
     this.adapterFactory = () =>
-      Promise.resolve(options.adapter ?? createPiAdapter());
+      Promise.resolve(
+        options.adapter ??
+          createPiAdapter(undefined, { selectSkills: options.selectSkills }),
+      );
     this.maxBufferedEvents = options.maxBufferedEvents ?? MAX_BUFFERED_EVENTS;
     this.trashItem = options.trashItem;
   }
