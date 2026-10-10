@@ -1,4 +1,5 @@
 import {
+  RiBookOpenLine,
   RiCloseLine,
   RiComputerLine,
   RiExternalLinkLine,
@@ -19,6 +20,7 @@ import {
   commands,
   type AgentReadiness,
   type ExtensionSetting,
+  type SkillSetting,
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { useDialogFocus } from "../../lib/useDialogFocus";
@@ -28,7 +30,13 @@ import { MemorySettings } from "./MemorySettings";
 import { settingsApi } from "./settingsApi";
 
 export type SettingsSection =
-  "general" | "agent" | "memory" | "extensions" | "editor" | "terminal";
+  | "general"
+  | "agent"
+  | "skills"
+  | "memory"
+  | "extensions"
+  | "editor"
+  | "terminal";
 
 const sections: Array<{
   id: SettingsSection;
@@ -44,6 +52,11 @@ const sections: Array<{
     id: "agent",
     label: "settings.section.agent",
     icon: <RiRobot2Line size={16} />,
+  },
+  {
+    id: "skills",
+    label: "settings.section.skills",
+    icon: <RiBookOpenLine size={16} />,
   },
   {
     id: "memory",
@@ -122,6 +135,7 @@ export function SettingsDialog({
           <main className="settings-content">
             {section === "general" && <GeneralSettings />}
             {section === "agent" && <AgentSettings />}
+            {section === "skills" && <SkillsSettings worktreeId={worktreeId} />}
             {section === "memory" && <MemorySettings worktreeId={worktreeId} />}
             {section === "extensions" && (
               <ExtensionsSettings worktreeId={worktreeId} />
@@ -381,6 +395,140 @@ function TerminalSettings() {
           ))}
         </select>
       </div>
+    </section>
+  );
+}
+
+function SkillsSettings({ worktreeId }: { worktreeId: string | null }) {
+  const { t } = useTranslation();
+  const [skills, setSkills] = useState<SkillSetting[]>([]);
+  const [loading, setLoading] = useState(Boolean(worktreeId));
+  const [changing, setChanging] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!worktreeId) {
+      setSkills([]);
+      setLoading(false);
+      return;
+    }
+    setSkills([]);
+    setLoading(true);
+    settingsApi.listSkills(worktreeId).then(
+      (items) => {
+        if (!disposed) {
+          setSkills(items);
+          setError(null);
+          setLoading(false);
+        }
+      },
+      (failure) => {
+        if (!disposed) {
+          setError(commandError(failure).message);
+          setLoading(false);
+        }
+      },
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [worktreeId]);
+
+  const toggle = async (skill: SkillSetting) => {
+    if (!worktreeId) return;
+    setChanging(skill.id);
+    setError(null);
+    try {
+      setSkills(
+        await settingsApi.setSkillEnabled(worktreeId, skill.id, !skill.enabled),
+      );
+    } catch (failure) {
+      setError(commandError(failure).message);
+    } finally {
+      setChanging(null);
+    }
+  };
+
+  const skillList = (items: SkillSetting[]) =>
+    items.length > 0 ? (
+      <div className="extension-list">
+        {items.map((skill) => (
+          <article className="extension-row" key={skill.id}>
+            <div className="extension-details">
+              <div className="extension-title">
+                <b>{skill.name}</b>
+                {skill.disableModelInvocation && (
+                  <span>{t("settings.skills.explicitOnly")}</span>
+                )}
+              </div>
+              <small className="skill-description">{skill.description}</small>
+              <code title={skill.displayPath}>{skill.displayPath}</code>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                aria-label={t(
+                  skill.enabled
+                    ? "settings.skills.toggle.disable"
+                    : "settings.skills.toggle.enable",
+                  { name: skill.name },
+                )}
+                checked={skill.enabled}
+                disabled={changing === skill.id}
+                onChange={() => void toggle(skill)}
+              />
+              <span />
+            </label>
+          </article>
+        ))}
+      </div>
+    ) : (
+      <div className="settings-empty">{t("settings.skills.empty")}</div>
+    );
+
+  return (
+    <section>
+      <h3>{t("settings.section.skills")}</h3>
+      <p className="settings-description">{t("settings.skills.description")}</p>
+      {!worktreeId && (
+        <div className="settings-empty">
+          {t("settings.skills.projectRequired")}
+        </div>
+      )}
+      {loading && (
+        <div className="settings-empty">{t("settings.skills.loading")}</div>
+      )}
+      {error && <div className="dialog-error">{error}</div>}
+      {!loading && worktreeId && (
+        <div className="extension-sections">
+          {(
+            [
+              [
+                "builtin",
+                "settings.skills.system",
+                "settings.skills.system.description",
+              ],
+              [
+                "user",
+                "settings.skills.user",
+                "settings.skills.user.description",
+              ],
+              [
+                "project",
+                "settings.skills.project",
+                "settings.skills.project.description",
+              ],
+            ] as const
+          ).map(([kind, heading, description]) => (
+            <section className="extension-section" key={kind}>
+              <h4>{t(heading)}</h4>
+              <p>{t(description)}</p>
+              {skillList(skills.filter((skill) => skill.kind === kind))}
+            </section>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

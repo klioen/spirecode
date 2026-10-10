@@ -17,7 +17,50 @@ async function extension(directory: string, name: string) {
   return file;
 }
 
+async function skill(directory: string, name: string) {
+  const root = path.join(directory, name);
+  await mkdir(root, { recursive: true });
+  const file = path.join(root, "SKILL.md");
+  await writeFile(
+    file,
+    `---\nname: ${name}\ndescription: ${name} workflow\n---\n\n# ${name}\n`,
+  );
+  return file;
+}
+
 describe("SpireCode resource isolation", () => {
+  it("filters skills without enabling implicit extensions", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "spire-skills-"));
+    const agentDir = path.join(root, ".pi", "agent");
+    const cwd = path.join(root, "project");
+    const userSkill = await skill(path.join(agentDir, "skills"), "user-skill");
+    const projectSkill = await skill(
+      path.join(cwd, ".pi", "skills"),
+      "project-skill",
+    );
+    await extension(path.join(agentDir, "extensions"), "implicit-extension");
+
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager: SettingsManager.create(cwd, agentDir, {
+        projectTrusted: true,
+      }),
+      noExtensions: true,
+      additionalSkillPaths: [userSkill, projectSkill],
+      skillsOverride: (result) => ({
+        ...result,
+        skills: result.skills.filter(({ name }) => name !== "project-skill"),
+      }),
+    });
+    await loader.reload();
+
+    const names = loader.getSkills().skills.map(({ name }) => name);
+    expect(names).toContain("user-skill");
+    expect(names).not.toContain("project-skill");
+    expect(loader.getExtensions().extensions).toEqual([]);
+  });
+
   it("ignores Pi global and project extensions while loading explicit resources", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "spire-isolation-"));
     const agentDir = path.join(root, ".pi", "agent");

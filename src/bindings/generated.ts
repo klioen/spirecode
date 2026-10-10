@@ -213,6 +213,17 @@ export interface ExtensionSetting {
   status: "enabled" | "disabled";
 }
 
+export interface SkillSetting {
+  id: string;
+  name: string;
+  description: string;
+  kind: "builtin" | "user" | "project";
+  displayPath: string;
+  enabled: boolean;
+  status: "enabled" | "disabled";
+  disableModelInvocation: boolean;
+}
+
 export type MemoryDocumentId = "summary" | "handbook";
 export type MemoryReasoningEffort = ChatThinkingLevel;
 

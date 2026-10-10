@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsDialog } from "./SettingsDialog";
 import { memoryApi } from "./memoryApi";
@@ -29,6 +29,8 @@ vi.mock("./memoryApi", () => ({
 vi.mock("./settingsApi", () => ({
   settingsApi: {
     listExtensions: vi.fn(),
+    listSkills: vi.fn(),
+    setSkillEnabled: vi.fn(),
     getLanguage: vi.fn(),
     setLanguage: vi.fn(),
     getAgentReadiness: vi.fn(),
@@ -87,6 +89,8 @@ beforeEach(() => {
     updatedAt: 1,
   });
   vi.mocked(settingsApi.listExtensions).mockResolvedValue([extension]);
+  vi.mocked(settingsApi.listSkills).mockResolvedValue([]);
+  vi.mocked(settingsApi.setSkillEnabled).mockResolvedValue([]);
 });
 
 describe("SettingsDialog", () => {
@@ -110,6 +114,79 @@ describe("SettingsDialog", () => {
       await screen.findByText("Configured user resources"),
     ).toBeInTheDocument();
     expect(settingsApi.listExtensions).toHaveBeenCalledWith(undefined);
+  });
+
+  it("groups skills and persists a single-skill toggle", async () => {
+    const skills = [
+      {
+        id: "builtin-skill",
+        name: "sdlc-build",
+        description: "Implement approved plans.",
+        kind: "builtin" as const,
+        displayPath: "pi-sdlc",
+        enabled: true,
+        status: "enabled" as const,
+        disableModelInvocation: false,
+      },
+      {
+        id: "user-skill",
+        name: "pdf-tools",
+        description: "Extract PDFs.",
+        kind: "user" as const,
+        displayPath: "~/.pi/agent/skills/pdf-tools/SKILL.md",
+        enabled: true,
+        status: "enabled" as const,
+        disableModelInvocation: false,
+      },
+      {
+        id: "project-skill",
+        name: "release",
+        description: "Prepare a release.",
+        kind: "project" as const,
+        displayPath: ".pi/skills/release/SKILL.md",
+        enabled: true,
+        status: "enabled" as const,
+        disableModelInvocation: true,
+      },
+    ];
+    vi.mocked(settingsApi.listSkills).mockResolvedValue(skills);
+    vi.mocked(settingsApi.setSkillEnabled).mockResolvedValue([
+      skills[0],
+      { ...skills[1], enabled: false, status: "disabled" },
+      skills[2],
+    ]);
+    render(<SettingsDialog worktreeId="w1" onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(await screen.findByText("System built-in")).toBeInTheDocument();
+    expect(screen.getByText("User skills")).toBeInTheDocument();
+    expect(screen.getByText("Project skills")).toBeInTheDocument();
+    expect(screen.getByText("Extract PDFs.")).toBeInTheDocument();
+    expect(screen.getByText("Explicit command only")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Disable pdf-tools" }),
+    );
+
+    await waitFor(() =>
+      expect(settingsApi.setSkillEnabled).toHaveBeenCalledWith(
+        "w1",
+        "user-skill",
+        false,
+      ),
+    );
+    expect(
+      await screen.findByRole("checkbox", { name: "Enable pdf-tools" }),
+    ).not.toBeChecked();
+  });
+
+  it("requires a project before loading skills", () => {
+    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(
+      screen.getByText("Open a project to manage skills."),
+    ).toBeInTheDocument();
+    expect(settingsApi.listSkills).not.toHaveBeenCalled();
   });
 
   it("shows Agent setup state and refreshes readiness", async () => {

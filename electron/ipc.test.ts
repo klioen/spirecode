@@ -100,6 +100,26 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: path");
   });
 
+  it("validates skill settings commands without accepting paths", () => {
+    expect(
+      validateCommandArgs("settings_skill_set_enabled", {
+        worktreeId: "worktree-1",
+        skillId: "abc123",
+        enabled: false,
+      }),
+    ).toEqual({
+      worktreeId: "worktree-1",
+      skillId: "abc123",
+      enabled: false,
+    });
+    expect(() =>
+      validateCommandArgs("settings_skills_list", {
+        worktreeId: "worktree-1",
+        path: "/tmp/SKILL.md",
+      }),
+    ).toThrow("Unexpected argument: path");
+  });
+
   it("validates narrow language settings arguments", () => {
     expect(validateCommandArgs("settings_language_get", {})).toEqual({});
     expect(validateCommandArgs("settings_agent_readiness", {})).toEqual({});

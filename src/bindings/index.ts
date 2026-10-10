@@ -21,6 +21,7 @@ import type {
   OriginBranchCatalog,
   ProjectCatalog,
   ProjectSummary,
+  SkillSetting,
   TerminalMessage,
   TerminalSummary,
   WorktreeDeleteInspection,
@@ -78,6 +79,18 @@ export const commands = {
   settingsExtensionsList: (worktreeId?: string) =>
     command<ExtensionSetting[]>("settings_extensions_list", {
       ...(worktreeId ? { worktreeId } : {}),
+    }),
+  settingsSkillsList: (worktreeId: string) =>
+    command<SkillSetting[]>("settings_skills_list", { worktreeId }),
+  settingsSkillSetEnabled: (
+    worktreeId: string,
+    skillId: string,
+    enabled: boolean,
+  ) =>
+    command<SkillSetting[]>("settings_skill_set_enabled", {
+      worktreeId,
+      skillId,
+      enabled,
     }),
   settingsMemoryRead: (document: MemoryDocumentId) =>
     command<MemoryDocument>("settings_memory_read", { document }),

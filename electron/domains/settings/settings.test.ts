@@ -3,6 +3,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -10,7 +11,21 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import { SettingsService } from "./index.js";
+
+async function writeSkill(
+  root: string,
+  name: string,
+  description = `${name} description`,
+) {
+  const directory = path.join(root, name);
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`,
+  );
+}
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "spire-settings-"));
@@ -60,6 +75,10 @@ async function fixture() {
       }),
     ),
   ]);
+  await Promise.all([
+    writeSkill(path.join(agentDir, "skills"), "user-skill"),
+    writeSkill(path.join(cwd, ".pi", "skills"), "project-skill"),
+  ]);
   return { root, cwd, agentDir, statePath };
 }
 
@@ -72,9 +91,10 @@ describe("SettingsService", () => {
     await expect(service.language()).resolves.toBe("en");
     await expect(service.memoryConfig()).resolves.toBeNull();
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 7,
+      version: 8,
       language: "en",
       memoryConfig: null,
+      skillOverrides: {},
     });
   });
 
@@ -99,9 +119,10 @@ describe("SettingsService", () => {
 
     await expect(service.language()).resolves.toBe("en");
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 7,
+      version: 8,
       language: "en",
       memoryConfig: previous.memoryConfig,
+      skillOverrides: {},
     });
     const catalog = await service.list(
       path.join(path.dirname(agentDir), "project"),
@@ -131,7 +152,7 @@ describe("SettingsService", () => {
     await expect(service.setLanguage("zh-CN")).resolves.toBe("zh-CN");
     await expect(service.language()).resolves.toBe("zh-CN");
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 7,
+      version: 8,
       language: "zh-CN",
     });
     await expect(service.setLanguage("fr" as "en")).rejects.toThrow(
@@ -174,7 +195,7 @@ describe("SettingsService", () => {
       phase2ReasoningEffort: "max",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 7,
+      version: 8,
       memoryConfig: {
         phase1Provider: "openai",
         phase1ModelId: "gpt-5.6",
@@ -268,6 +289,94 @@ describe("SettingsService", () => {
         "medium",
       ),
     ).rejects.toThrow("reasoningEffort is invalid");
+  });
+
+  it("lists user and project skills and persists a single-skill override", async () => {
+    const { cwd, agentDir, statePath } = await fixture();
+    const service = await SettingsService.load(statePath, agentDir);
+
+    const catalog = await service.listSkills(cwd);
+    expect(catalog.filter(({ kind }) => kind === "builtin")).toEqual([]);
+    expect(catalog).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "user-skill",
+          description: "user-skill description",
+          kind: "user",
+          displayPath: "external/user-skill/SKILL.md",
+        }),
+        expect.objectContaining({
+          name: "project-skill",
+          kind: "project",
+          displayPath: ".pi/skills/project-skill/SKILL.md",
+        }),
+      ]),
+    );
+
+    const selected = catalog.find(({ name }) => name === "user-skill")!;
+    const updated = await service.setSkillEnabled(cwd, selected.id, false);
+    expect(updated.find(({ id }) => id === selected.id)?.enabled).toBe(false);
+    expect(updated.find(({ name }) => name === "project-skill")?.enabled).toBe(
+      true,
+    );
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      version: 8,
+      skillOverrides: { [selected.id]: false },
+    });
+    await expect(
+      service.setSkillEnabled(cwd, "unknown", false),
+    ).rejects.toThrow("skill not found");
+  });
+
+  it("filters disabled skills from a new resource-loader result", async () => {
+    const { cwd, agentDir, statePath } = await fixture();
+    const service = await SettingsService.load(statePath, agentDir);
+    const selected = (await service.listSkills(cwd)).find(
+      ({ name }) => name === "project-skill",
+    )!;
+    await service.setSkillEnabled(cwd, selected.id, false);
+
+    const selection = await service.skillSelection(cwd);
+    const canonicalCwd = await realpath(cwd);
+    const skills = (await service.listSkills(cwd)).map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      filePath:
+        skill.kind === "project"
+          ? path.join(canonicalCwd, skill.displayPath)
+          : skill.displayPath,
+      baseDir: "",
+      sourceInfo: {
+        path:
+          skill.kind === "project"
+            ? path.join(canonicalCwd, skill.displayPath)
+            : skill.displayPath,
+        source: "test",
+        scope: skill.kind === "project" ? "project" : "user",
+        origin: "top-level",
+      },
+      disableModelInvocation: skill.disableModelInvocation,
+    })) as Skill[];
+    expect(
+      selection
+        .override({ skills, diagnostics: [] })
+        .skills.map(({ name }) => name),
+    ).not.toContain("project-skill");
+  });
+
+  it("rejects project skills whose canonical path escapes the worktree", async () => {
+    const { root, cwd, agentDir, statePath } = await fixture();
+    const outside = path.join(root, "outside-skills");
+    await writeSkill(outside, "escaped-skill");
+    await symlink(
+      path.join(outside, "escaped-skill"),
+      path.join(cwd, ".pi", "skills", "escaped-skill"),
+    );
+    const service = await SettingsService.load(statePath, agentDir);
+
+    expect(
+      (await service.listSkills(cwd)).map(({ name }) => name),
+    ).not.toContain("escaped-skill");
   });
 
   it("surfaces resource resolution failures instead of reporting an empty catalog", async () => {

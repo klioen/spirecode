@@ -56,6 +56,7 @@ export class AppState {
       this.send("terminal://event", { subscriptionId, payload });
     });
     this.chat = new ChatService(root, {
+      selectSkills: (cwd) => this.settings.skillSelection(cwd),
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);

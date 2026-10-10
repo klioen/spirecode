@@ -42,7 +42,7 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     phase2ModelId: 256,
     phase2ReasoningEffort: 16,
     thinkingLevel: 16,
-    extensionId: 128,
+    skillId: 128,
   };
   if (
     (!allowEmpty && !value) ||
@@ -313,6 +313,18 @@ async function invoke(
         worktreeId ? await state.projects.root(worktreeId) : homedir(),
       );
     }
+    case "settings_skills_list": {
+      const worktreeId = text(args, "worktreeId");
+      return state.settings.listSkills(await state.projects.root(worktreeId));
+    }
+    case "settings_skill_set_enabled": {
+      const worktreeId = text(args, "worktreeId");
+      return state.settings.setSkillEnabled(
+        await state.projects.root(worktreeId),
+        text(args, "skillId"),
+        boolean(args, "enabled"),
+      );
+    }
     case "settings_language_get":
       return state.settings.language();
     case "settings_agent_readiness":
@@ -401,6 +413,8 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
   chat_session_delete: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
+  settings_skills_list: ["worktreeId"],
+  settings_skill_set_enabled: ["worktreeId", "skillId", "enabled"],
   settings_language_get: [],
   settings_language_set: ["language"],
   settings_agent_readiness: [],
