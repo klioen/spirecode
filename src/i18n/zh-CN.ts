@@ -141,6 +141,7 @@ export const zhCN = {
   "projects.expand": "展开 {name}",
   "projects.collapse": "折叠 {name}",
   "projects.open": "打开 {name}",
+  "projects.sessionActive": "Pi 会话正在运行",
   "projects.createWorktreeFor": "为 {name} 创建工作树",
   "projects.manage": "管理 {name}",
   "projects.revealFinder": "在访达中显示",

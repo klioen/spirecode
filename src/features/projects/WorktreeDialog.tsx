@@ -8,6 +8,7 @@ import type {
 import { formatNumber, useTranslation, type TranslationKey } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { useDialogFocus } from "../../lib/useDialogFocus";
+import { chatRuntime } from "../chat/chatRuntime";
 import { useChangesStore } from "../changes/changesStore";
 import { useEditorStore } from "../editor/editorStore";
 import { useFileTreeStore } from "../files/fileTreeStore";
@@ -414,6 +415,7 @@ export function DeleteWorktreeDialog({
       useEditorStore.getState().clearWorktree(worktree.id);
       useFileTreeStore.getState().clearWorktree(worktree.id);
       useChangesStore.getState().clearWorktree(worktree.id);
+      chatRuntime.removeWorktree(worktree.id);
       useProjectsStore.getState().removeWorktree(worktree.id);
       onClose();
     } catch (failure) {

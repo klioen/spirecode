@@ -9,6 +9,7 @@ import {
   RiMore2Fill,
 } from "@remixicon/react";
 import type { WorktreeSummary } from "../../bindings";
+import { chatRuntime, useActiveChatWorktrees } from "../chat/chatRuntime";
 import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
@@ -29,6 +30,7 @@ type DialogState =
 export function ProjectRail() {
   const { t } = useTranslation();
   const store = useProjectsStore();
+  const activeChatWorktrees = useActiveChatWorktrees();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
@@ -109,6 +111,9 @@ export function ProjectRail() {
     setProjectActionPending(projectId);
     try {
       await projectsApi.close(projectId);
+      const project = store.projects.find(({ id }) => id === projectId);
+      for (const worktree of project?.worktrees ?? [])
+        chatRuntime.removeWorktree(worktree.id);
       store.removeProject(projectId);
       setMenuProjectId(null);
     } catch (error) {
@@ -147,6 +152,9 @@ export function ProjectRail() {
           const primaryWorkspace =
             project.worktrees.find(({ kind }) => kind === "main") ??
             project.worktrees[0];
+          const projectSessionActive = project.worktrees.some(({ id }) =>
+            activeChatWorktrees.has(id),
+          );
           return (
             <section className="project-group" key={project.id}>
               <div className="project-heading">
@@ -182,6 +190,12 @@ export function ProjectRail() {
                     <RiGitRepositoryLine size={15} />
                   )}
                   <span>{project.name}</span>
+                  {projectSessionActive && (
+                    <span
+                      className="spinner project-session-spinner"
+                      aria-label={t("projects.sessionActive")}
+                    />
+                  )}
                 </button>
                 {!directory && (
                   <button
@@ -279,6 +293,12 @@ export function ProjectRail() {
                         >
                           <RiGitBranchLine size={14} />
                           <span>{worktree.name}</span>
+                          {activeChatWorktrees.has(worktree.id) && (
+                            <span
+                              className="spinner project-session-spinner"
+                              aria-label={t("projects.sessionActive")}
+                            />
+                          )}
                         </button>
                         {managed && (
                           <button

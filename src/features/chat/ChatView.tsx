@@ -55,20 +55,14 @@ function ChatViewContent({
 
   useEffect(() => {
     let active = true;
-    let detach: (() => void) | undefined;
     if (runtime.getSnapshot(sessionId).status === "loading")
       runtime.setStatus(sessionId, "loading");
     setConfig(undefined);
     setConfigError(undefined);
-    void api
-      .attach(worktreeId, sessionId, (event) => runtime.push(event))
-      .then(async (attachment) => {
-        if (!active) {
-          attachment.detach();
-          return;
-        }
-        detach = attachment.detach;
-        runtime.hydrate(attachment.snapshot);
+    void runtime
+      .track(api, worktreeId, sessionId)
+      .then(async () => {
+        if (!active) return;
         try {
           const next = await api.config(worktreeId, sessionId);
           if (active) setConfig(next);
@@ -92,7 +86,6 @@ function ChatViewContent({
       });
     return () => {
       active = false;
-      detach?.();
     };
   }, [api, onError, retryToken, runtime, sessionId, worktreeId]);
 

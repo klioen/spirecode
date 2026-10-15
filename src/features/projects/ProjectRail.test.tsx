@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { chatRuntime } from "../chat/chatRuntime";
 import { ProjectRail } from "./ProjectRail";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
@@ -20,6 +21,9 @@ vi.mock("./projectsApi", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  chatRuntime.remove("active-main");
+  chatRuntime.remove("active-feature");
+  chatRuntime.remove("active-directory");
   useProjectsStore.setState({
     projects: [
       {
@@ -75,6 +79,34 @@ describe("ProjectRail", () => {
   it("renders the shared SpireCode brand mark", () => {
     render(<ProjectRail />);
     expect(screen.getByTestId("spirecode-mark")).toBeInTheDocument();
+  });
+
+  it("shows active Pi session loading on the owning project and worktree only", async () => {
+    chatRuntime.ensure("active-feature", "feature", "streaming");
+    render(<ProjectRail />);
+
+    expect(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    ).toContainElement(screen.getByLabelText("Pi session active"));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    expect(screen.getByRole("button", { name: "feature" })).toContainElement(
+      screen.getAllByLabelText("Pi session active")[1],
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "main" })
+        .querySelector(".project-session-spinner"),
+    ).toBeNull();
+
+    chatRuntime.setStatus("active-feature", "idle");
+    await vi.waitFor(() =>
+      expect(
+        screen.queryByLabelText("Pi session active"),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("collapses projects by default and toggles their worktrees", () => {
@@ -140,8 +172,10 @@ describe("ProjectRail", () => {
       activeWorktreeId: null,
     });
 
+    chatRuntime.ensure("active-directory", "directory-main", "streaming");
     render(<ProjectRail />);
 
+    expect(screen.getByLabelText("Pi session active")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Expand notes" }),
     ).not.toBeInTheDocument();
