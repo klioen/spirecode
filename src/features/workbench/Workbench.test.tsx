@@ -6,7 +6,7 @@ import { refreshChanges } from "../changes/changesRefresh";
 import { useProjectsStore } from "../projects/projectsStore";
 import { Workbench } from "./Workbench";
 import { settingsApi } from "../settings/settingsApi";
-import { resetWorkbenchStore } from "./workbenchStore";
+import { resetWorkbenchStore, useWorkbenchStore } from "./workbenchStore";
 
 vi.mock("../projects/ProjectRail", () => ({
   ProjectRail: () => <aside>Projects</aside>,
@@ -27,16 +27,20 @@ vi.mock("./BreadcrumbSwitcher", () => ({
     activeWorktree,
     branch,
   }: {
-    activeProject: { name: string };
+    activeProject: { name: string; kind: "git" | "directory" };
     activeWorktree: { name: string };
     branch: string;
   }) => (
     <div data-testid="breadcrumb-switcher">
       <button>{activeProject.name}</button>
-      <span>{" > "}</span>
-      <button>{activeWorktree.name}</button>
-      <span>{" > "}</span>
-      <span className="breadcrumb-branch">{branch}</span>
+      {activeProject.kind === "git" && (
+        <>
+          <span>{" > "}</span>
+          <button>{activeWorktree.name}</button>
+          <span>{" > "}</span>
+          <span className="breadcrumb-branch">{branch}</span>
+        </>
+      )}
     </div>
   ),
 }));
@@ -77,6 +81,7 @@ beforeEach(() => {
         id: "p1",
         name: "Project",
         path: "/repo",
+        kind: "git",
         lastOpenedAt: 1,
         worktrees: [
           {
@@ -133,6 +138,83 @@ describe("Workbench panel handles", () => {
     expect(refreshChanges).toHaveBeenCalledWith("w1");
   });
 
+  it("uses Files without mutating the Changes preference for a directory project", () => {
+    useProjectsStore.setState({
+      projects: [
+        {
+          id: "directory",
+          name: "Notes",
+          path: "/notes",
+          kind: "directory",
+          lastOpenedAt: 1,
+          worktrees: [
+            {
+              id: "directory-main",
+              projectId: "directory",
+              name: "Notes",
+              path: "/notes",
+              branch: "",
+              baseRef: "",
+              kind: "main",
+              lastOpenedAt: 1,
+            },
+          ],
+        },
+      ],
+      activeWorktreeId: "directory-main",
+    });
+    useWorkbenchStore.getState().setRightView("changes");
+
+    render(<Workbench />);
+
+    expect(refreshChanges).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "CHANGES" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Files")).toBeInTheDocument();
+    expect(screen.queryByText("Changes")).not.toBeInTheDocument();
+    expect(useWorkbenchStore.getState().rightView).toBe("changes");
+    expect(
+      screen.getByRole("navigation", { name: "Project context" }),
+    ).toHaveTextContent("Notes");
+  });
+
+  it("restores the Changes preference when switching back to a Git project", () => {
+    useWorkbenchStore.getState().setRightView("changes");
+    const directoryProject = {
+      id: "directory",
+      name: "Notes",
+      path: "/notes",
+      kind: "directory" as const,
+      lastOpenedAt: 1,
+      worktrees: [
+        {
+          id: "directory-main",
+          projectId: "directory",
+          name: "Notes",
+          path: "/notes",
+          branch: "",
+          baseRef: "",
+          kind: "main" as const,
+          lastOpenedAt: 1,
+        },
+      ],
+    };
+    const gitProject = useProjectsStore.getState().projects[0];
+    useProjectsStore.setState({
+      projects: [directoryProject, gitProject],
+      activeWorktreeId: "directory-main",
+    });
+    const view = render(<Workbench />);
+    expect(screen.getByText("Files")).toBeInTheDocument();
+
+    act(() => useProjectsStore.getState().selectWorktree("w1"));
+    view.rerender(<Workbench />);
+
+    expect(screen.getByText("Changes")).toBeInTheDocument();
+    expect(refreshChanges).toHaveBeenCalledWith("w1");
+  });
+
   it("shows the SpireCode identity and slogan when no project is active", () => {
     useProjectsStore.setState({ projects: [], activeWorktreeId: null });
 
@@ -162,7 +244,7 @@ describe("Workbench panel handles", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("快速轻量的图形化代码智能体")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "打开项目" }),
+      screen.getByRole("button", { name: "打开目录" }),
     ).toBeInTheDocument();
   });
 

@@ -33,6 +33,7 @@ export interface ProjectSummary {
   id: string;
   name: string;
   path: string;
+  kind: "git" | "directory";
   lastOpenedAt: number;
   worktrees: WorktreeSummary[];
   nextWorktreeSequence?: number;

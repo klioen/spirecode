@@ -371,14 +371,22 @@ export function BreadcrumbSwitcher({
         "breadcrumb.project.trigger",
         "project",
       )}
-      <span className="breadcrumb-separator" aria-hidden="true">
-        {">"}
-      </span>
-      {trigger("worktree", activeWorktree.name, "breadcrumb.worktree.trigger")}
-      <span className="breadcrumb-separator" aria-hidden="true">
-        {">"}
-      </span>
-      <span className="breadcrumb-branch">{branch}</span>
+      {activeProject.kind === "git" && (
+        <>
+          <span className="breadcrumb-separator" aria-hidden="true">
+            {">"}
+          </span>
+          {trigger(
+            "worktree",
+            activeWorktree.name,
+            "breadcrumb.worktree.trigger",
+          )}
+          <span className="breadcrumb-separator" aria-hidden="true">
+            {">"}
+          </span>
+          <span className="breadcrumb-branch">{branch}</span>
+        </>
+      )}
     </div>
   );
 }

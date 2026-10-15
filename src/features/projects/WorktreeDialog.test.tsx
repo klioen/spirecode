@@ -42,6 +42,7 @@ beforeEach(() => {
     projects: [
       {
         id: "project-id",
+        kind: "git",
         name: "Project",
         path: "/repo",
         lastOpenedAt: 1,

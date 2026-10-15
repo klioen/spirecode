@@ -19,12 +19,14 @@ vi.mock("./projectsApi", () => ({
 }));
 
 beforeEach(() => {
+  vi.clearAllMocks();
   useProjectsStore.setState({
     projects: [
       {
         id: "project-1",
         name: "spirecode-client",
         path: "/repo",
+        kind: "git",
         lastOpenedAt: 1,
         worktrees: [
           {
@@ -58,6 +60,18 @@ beforeEach(() => {
 });
 
 describe("ProjectRail", () => {
+  it("opens an existing folder", async () => {
+    vi.mocked(projectsApi.openDialog).mockResolvedValueOnce(null);
+    render(<ProjectRail />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+
+    await vi.waitFor(() => expect(projectsApi.openDialog).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("button", { name: "New project" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the shared SpireCode brand mark", () => {
     render(<ProjectRail />);
     expect(screen.getByTestId("spirecode-mark")).toBeInTheDocument();
@@ -100,7 +114,49 @@ describe("ProjectRail", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("manages a project with reveal, copy path, and close actions", async () => {
+  it("selects a directory project's primary workspace without exposing worktree controls", async () => {
+    useProjectsStore.setState({
+      projects: [
+        {
+          id: "directory-1",
+          name: "notes",
+          path: "/notes",
+          kind: "directory",
+          lastOpenedAt: 1,
+          worktrees: [
+            {
+              id: "directory-main",
+              projectId: "directory-1",
+              name: "notes",
+              path: "/notes",
+              branch: "",
+              baseRef: "",
+              kind: "main",
+              lastOpenedAt: 1,
+            },
+          ],
+        },
+      ],
+      activeWorktreeId: null,
+    });
+
+    render(<ProjectRail />);
+
+    expect(
+      screen.queryByRole("button", { name: "Expand notes" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Create worktree for notes" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open notes" }));
+
+    await vi.waitFor(() =>
+      expect(projectsApi.selectWorktree).toHaveBeenCalledWith("directory-main"),
+    );
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("directory-main");
+  });
+
+  it("manages a project with reveal and close actions", async () => {
     render(<ProjectRail />);
     fireEvent.click(
       screen.getByRole("button", { name: "Manage spirecode-client" }),

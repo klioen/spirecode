@@ -49,10 +49,11 @@ function Directory({
   );
   useEffect(() => {
     const key = directoryKey(worktreeId, path);
-    if (state) return;
+    if (state && state.status !== "idle") return;
+    const previousEntries = state?.entries ?? [];
     tree.setDirectory(worktreeId, key, generation, {
-      status: "loading",
-      entries: [],
+      status: state ? "refreshing" : "loading",
+      entries: previousEntries,
     });
     void commands.fsReadDir(worktreeId, path).then(
       (entries) =>
@@ -63,7 +64,7 @@ function Directory({
       (error) =>
         tree.setDirectory(worktreeId, key, generation, {
           status: "error",
-          entries: [],
+          entries: previousEntries,
           error: commandError(error),
         }),
     );

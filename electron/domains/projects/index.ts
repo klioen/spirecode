@@ -1,4 +1,4 @@
-import { realpath, readFile, rename } from "node:fs/promises";
+import { realpath, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AsyncQueue } from "../../core/asyncQueue.js";
@@ -6,8 +6,9 @@ import { CommandError, toCommandError } from "../../core/errors.js";
 import { gitText } from "../../core/gitProcess.js";
 import { corruptBackupPath, saveAtomic } from "../persistence/index.js";
 
-export const PROJECT_STATE_VERSION = 2;
+export const PROJECT_STATE_VERSION = 3;
 
+export type ProjectKind = "git" | "directory";
 export type WorktreeKind = "main" | "managed" | "external";
 
 export interface WorktreeSummary {
@@ -23,6 +24,7 @@ export interface WorktreeSummary {
 
 export interface ProjectSummary {
   id: string;
+  kind: ProjectKind;
   name: string;
   path: string;
   lastOpenedAt: number;
@@ -37,6 +39,14 @@ export interface ProjectCatalog {
 }
 
 type Catalog = ProjectCatalog;
+
+type ProjectV2 = Omit<ProjectSummary, "kind">;
+
+interface CatalogV2 {
+  version: number;
+  projects: ProjectV2[];
+  activeWorktreeId: string | null;
+}
 
 interface ProjectV1 {
   id: string;
@@ -84,8 +94,12 @@ export class ProjectService {
   }
 
   async openPath(selected: string): Promise<ProjectSummary> {
-    const root = await gitAbsolute(selected, ["rev-parse", "--show-toplevel"]);
-    return this.openRoot(root.trim());
+    const canonical = await canonicalDirectory(selected);
+    const repositoryRoot = await discoverRepositoryRoot(canonical);
+    return this.openRoot(
+      repositoryRoot ?? canonical,
+      repositoryRoot ? "git" : "directory",
+    );
   }
 
   async close(id: string): Promise<ProjectSummary> {
@@ -135,6 +149,35 @@ export class ProjectService {
 
   async worktrees(projectId: string): Promise<WorktreeSummary[]> {
     return structuredClone((await this.project(projectId)).worktrees);
+  }
+
+  async projectKind(projectId: string): Promise<ProjectKind> {
+    return (await this.project(projectId)).kind;
+  }
+
+  async worktreeProjectKind(worktreeId: string): Promise<ProjectKind> {
+    return this.queue.run(async () => {
+      const project = findProjectByWorktree(this.catalogValue, worktreeId);
+      return project.kind;
+    });
+  }
+
+  async assertGitProject(projectId: string): Promise<void> {
+    if ((await this.projectKind(projectId)) !== "git") {
+      throw new CommandError(
+        "NOT_A_GIT_REPOSITORY",
+        "project does not support Git operations",
+      );
+    }
+  }
+
+  async assertGitWorktree(worktreeId: string): Promise<void> {
+    if ((await this.worktreeProjectKind(worktreeId)) !== "git") {
+      throw new CommandError(
+        "NOT_A_GIT_REPOSITORY",
+        "workspace does not support Git operations",
+      );
+    }
   }
 
   async select(worktreeId: string): Promise<WorktreeSummary> {
@@ -197,13 +240,10 @@ export class ProjectService {
     });
   }
 
-  private async openRoot(root: string): Promise<ProjectSummary> {
-    let canonical: string;
-    try {
-      canonical = await realpath(root);
-    } catch (error) {
-      throw toCommandError(error);
-    }
+  private async openRoot(
+    canonical: string,
+    kind: ProjectKind,
+  ): Promise<ProjectSummary> {
     const name = path.basename(canonical) || canonical;
     const openedAt = now();
 
@@ -224,17 +264,25 @@ export class ProjectService {
             "INVALID_ARGUMENT",
             "project has no main worktree",
           );
+        if (existing.kind === "directory" && kind === "git") {
+          const branch = (await currentBranch(canonical)) ?? "HEAD";
+          existing.kind = "git";
+          main.name = branch;
+          main.branch = branch;
+          main.baseRef = branch;
+        }
         main.lastOpenedAt = openedAt;
         candidate.activeWorktreeId = main.id;
         result = structuredClone(existing);
       } else {
-        const branch = (await currentBranch(canonical)) ?? "HEAD";
+        const branch =
+          kind === "git" ? ((await currentBranch(canonical)) ?? "HEAD") : "";
         const projectId = randomUUID();
         const worktreeId = randomUUID();
         const main: WorktreeSummary = {
           id: worktreeId,
           projectId,
-          name: branch,
+          name: kind === "git" ? branch : name,
           path: canonical,
           branch,
           baseRef: branch,
@@ -243,6 +291,7 @@ export class ProjectService {
         };
         const project: ProjectSummary = {
           id: projectId,
+          kind,
           name,
           path: canonical,
           lastOpenedAt: openedAt,
@@ -308,6 +357,9 @@ async function loadCatalog(
   if (version === 1) {
     return { catalog: await migrateV1(parseCatalogV1(record)), migrated: true };
   }
+  if (version === 2) {
+    return { catalog: migrateV2(parseCatalogV2(record)), migrated: true };
+  }
   throw new CommandError("INVALID_ARGUMENT", "unsupported state version");
 }
 
@@ -369,6 +421,7 @@ async function migrateV1(old: CatalogV1): Promise<Catalog> {
     }
     projects.push({
       id: projectId,
+      kind: "git",
       name: main.name,
       path: main.path,
       lastOpenedAt: main.lastOpenedAt,
@@ -377,6 +430,55 @@ async function migrateV1(old: CatalogV1): Promise<Catalog> {
     });
   }
   return { version: PROJECT_STATE_VERSION, projects, activeWorktreeId };
+}
+
+function migrateV2(old: CatalogV2): Catalog {
+  return {
+    version: PROJECT_STATE_VERSION,
+    projects: old.projects.map((project) => ({ ...project, kind: "git" })),
+    activeWorktreeId: old.activeWorktreeId,
+  };
+}
+
+async function canonicalDirectory(selected: string): Promise<string> {
+  try {
+    const canonical = await realpath(selected);
+    if (!(await stat(canonical)).isDirectory()) {
+      throw new CommandError(
+        "INVALID_ARGUMENT",
+        "project path is not a directory",
+      );
+    }
+    return canonical;
+  } catch (error) {
+    throw toCommandError(error);
+  }
+}
+
+async function discoverRepositoryRoot(root: string): Promise<string | null> {
+  try {
+    return (await gitAbsolute(root, ["rev-parse", "--show-toplevel"])).trim();
+  } catch (error) {
+    if (!(error instanceof CommandError) || error.code !== "GIT_FAILED")
+      throw error;
+    if (await hasGitMarker(root)) throw error;
+    return null;
+  }
+}
+
+async function hasGitMarker(root: string): Promise<boolean> {
+  let candidate = root;
+  for (;;) {
+    try {
+      await stat(path.join(candidate, ".git"));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+    }
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return false;
+    candidate = parent;
+  }
 }
 
 async function isMainCheckout(root: string): Promise<boolean> {
@@ -425,11 +527,16 @@ async function gitAbsolute(
 }
 
 function findWorktree(catalog: Catalog, id: string): WorktreeSummary {
-  for (const project of catalog.projects) {
-    const worktree = project.worktrees.find((value) => value.id === id);
-    if (worktree) return worktree;
-  }
-  throw new CommandError("NOT_FOUND", "worktree not found");
+  const project = findProjectByWorktree(catalog, id);
+  return project.worktrees.find((value) => value.id === id)!;
+}
+
+function findProjectByWorktree(catalog: Catalog, id: string): ProjectSummary {
+  const project = catalog.projects.find((value) =>
+    value.worktrees.some((worktree) => worktree.id === id),
+  );
+  if (!project) throw new CommandError("NOT_FOUND", "worktree not found");
+  return project;
 }
 
 function emptyCatalog(): Catalog {
@@ -450,12 +557,27 @@ function parseCatalog(value: Record<string, unknown>): Catalog {
 
 function parseProject(value: unknown): ProjectSummary {
   const record = asRecord(value);
+  const id = uuid(record.id, "project.id");
+  const kind = projectKind(record.kind);
+  const worktrees = array(record.worktrees, "project.worktrees").map(
+    parseWorktree,
+  );
+  if (worktrees.some((worktree) => worktree.projectId !== id)) {
+    throw invalid("worktree.projectId");
+  }
+  if (
+    kind === "directory" &&
+    (worktrees.length !== 1 || worktrees[0]?.kind !== "main")
+  ) {
+    throw invalid("project.worktrees");
+  }
   return {
-    id: uuid(record.id, "project.id"),
+    id,
+    kind,
     name: string(record.name, "project.name"),
     path: string(record.path, "project.path"),
     lastOpenedAt: unsignedInteger(record.lastOpenedAt, "project.lastOpenedAt"),
-    worktrees: array(record.worktrees, "project.worktrees").map(parseWorktree),
+    worktrees,
     nextWorktreeSequence: unsignedInteger(
       record.nextWorktreeSequence,
       "project.nextWorktreeSequence",
@@ -478,6 +600,37 @@ function parseWorktree(value: unknown): WorktreeSummary {
     baseRef: string(record.baseRef, "worktree.baseRef"),
     kind,
     lastOpenedAt: unsignedInteger(record.lastOpenedAt, "worktree.lastOpenedAt"),
+  };
+}
+
+function parseCatalogV2(value: Record<string, unknown>): CatalogV2 {
+  return {
+    version: unsignedInteger(value.version, "version"),
+    projects: array(value.projects, "projects").map((item) => {
+      const record = asRecord(item);
+      const id = uuid(record.id, "project.id");
+      const worktrees = array(record.worktrees, "project.worktrees").map(
+        parseWorktree,
+      );
+      if (worktrees.some((worktree) => worktree.projectId !== id)) {
+        throw invalid("worktree.projectId");
+      }
+      return {
+        id,
+        name: string(record.name, "project.name"),
+        path: string(record.path, "project.path"),
+        lastOpenedAt: unsignedInteger(
+          record.lastOpenedAt,
+          "project.lastOpenedAt",
+        ),
+        worktrees,
+        nextWorktreeSequence: unsignedInteger(
+          record.nextWorktreeSequence,
+          "project.nextWorktreeSequence",
+        ),
+      };
+    }),
+    activeWorktreeId: nullableUuid(value.activeWorktreeId, "activeWorktreeId"),
   };
 }
 
@@ -509,6 +662,14 @@ function asRecord(value: unknown): Record<string, unknown> {
 function array(value: unknown, field: string): unknown[] {
   if (!Array.isArray(value)) throw invalid(field);
   return value;
+}
+
+function projectKind(value: unknown): ProjectKind {
+  const result = string(value, "project.kind");
+  if (result !== "git" && result !== "directory") {
+    throw invalid("project.kind");
+  }
+  return result;
 }
 
 function string(value: unknown, field: string): string {

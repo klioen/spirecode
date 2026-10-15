@@ -79,6 +79,7 @@ export class WorktreeService {
 
   async listOriginBranches(projectId: string): Promise<OriginBranches> {
     const project = await this.projects.project(projectId);
+    gitOnly(project);
     const [originConfigured, branches] = await Promise.all([
       this.originConfigured(project.path),
       this.originBranches(project.path),
@@ -98,6 +99,7 @@ export class WorktreeService {
   ): Promise<WorktreeSummary> {
     return this.mutate(projectId, async () => {
       const project = await this.projects.project(projectId);
+      gitOnly(project);
       validateName(name);
       await this.ensureUnique(project, name);
       const branches = await this.originBranches(project.path);
@@ -173,6 +175,8 @@ export class WorktreeService {
 
   async rollbackCreated(worktreeId: string): Promise<void> {
     const initial = await this.projects.worktree(worktreeId);
+    const initialProject = await this.projects.project(initial.projectId);
+    gitOnly(initialProject);
     managedOnly(initial);
     await this.mutate(initial.projectId, async () => {
       const current = await this.projects.worktree(worktreeId);
@@ -220,6 +224,7 @@ export class WorktreeService {
 
   async rename(worktreeId: string, name: string): Promise<WorktreeSummary> {
     const initial = await this.projects.worktree(worktreeId);
+    gitOnly(await this.projects.project(initial.projectId));
     managedOnly(initial);
     return this.mutate(initial.projectId, async () => {
       const current = await this.projects.worktree(worktreeId);
@@ -277,6 +282,7 @@ export class WorktreeService {
 
   async inspectDelete(worktreeId: string): Promise<DeleteInspection> {
     const worktree = await this.projects.worktree(worktreeId);
+    gitOnly(await this.projects.project(worktree.projectId));
     managedOnly(worktree);
     const output = await runGit(worktree.path, [
       "status",
@@ -293,6 +299,7 @@ export class WorktreeService {
 
   async delete(worktreeId: string, force: boolean): Promise<DeleteResult> {
     const initial = await this.projects.worktree(worktreeId);
+    gitOnly(await this.projects.project(initial.projectId));
     managedOnly(initial);
     return this.mutate(initial.projectId, async () => {
       const current = await this.projects.worktree(worktreeId);
@@ -532,6 +539,15 @@ function validateName(name: string): void {
     throw new CommandError(
       "INVALID_WORKTREE_NAME",
       "name may contain ASCII letters, digits, '-' and '_', and must start and end alphanumeric",
+    );
+  }
+}
+
+function gitOnly(project: ProjectSummary): void {
+  if (project.kind !== "git") {
+    throw new CommandError(
+      "NOT_A_GIT_REPOSITORY",
+      "project does not support Git worktrees",
     );
   }
 }

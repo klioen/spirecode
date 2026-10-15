@@ -49,7 +49,7 @@ export class AppState {
     this.diagnostics = new DiagnosticsService(dataDirectory, "0.1.0");
     const root = (id: string) => projects.root(id);
     this.filesystem = new FilesystemService(root);
-    this.git = new GitService(root);
+    this.git = new GitService(root, (id) => projects.assertGitWorktree(id));
     this.memory = new MemoryService();
     this.models = new ModelCatalogService();
     this.terminals = new TerminalService(root, (subscriptionId, payload) => {
@@ -75,7 +75,7 @@ export class AppState {
     for (const project of await projects.list()) {
       for (const worktree of project.worktrees) {
         try {
-          await state.ensureWatcher(worktree.id, worktree.path);
+          await state.ensureWatcher(project.kind, worktree.id, worktree.path);
         } catch (error) {
           console.warn(
             `Unable to watch persisted worktree ${worktree.id}`,
@@ -156,7 +156,7 @@ export class AppState {
   async openProject(selectedPath: string) {
     const project = await this.projects.openPath(selectedPath);
     for (const worktree of project.worktrees)
-      await this.ensureWatcher(worktree.id, worktree.path);
+      await this.ensureWatcher(project.kind, worktree.id, worktree.path);
     return project;
   }
 
@@ -201,7 +201,7 @@ export class AppState {
   async createWorktree(projectId: string, name: string, baseRef: string) {
     const worktree = await this.worktrees.create(projectId, name, baseRef);
     try {
-      await this.ensureWatcher(worktree.id, worktree.path);
+      await this.ensureWatcher("git", worktree.id, worktree.path);
       return worktree;
     } catch (error) {
       await this.worktrees.rollbackCreated(worktree.id);
@@ -214,7 +214,7 @@ export class AppState {
     await this.watchers.close(worktreeId);
     try {
       const renamed = await this.worktrees.rename(worktreeId, name);
-      await this.ensureWatcher(renamed.id, renamed.path);
+      await this.ensureWatcher("git", renamed.id, renamed.path);
       return renamed;
     } catch (error) {
       try {
@@ -222,7 +222,7 @@ export class AppState {
         if (current.name !== original.name)
           await this.worktrees.rename(worktreeId, original.name);
         const restored = await this.projects.worktree(worktreeId);
-        await this.ensureWatcher(restored.id, restored.path);
+        await this.ensureWatcher("git", restored.id, restored.path);
       } catch {
         // Preserve the primary failure; recovery is best effort here.
       }
@@ -248,7 +248,7 @@ export class AppState {
     } catch (error) {
       try {
         const current = await this.projects.worktree(worktreeId);
-        await this.ensureWatcher(current.id, current.path);
+        await this.ensureWatcher("git", current.id, current.path);
       } catch {
         // The worktree may already be gone.
       }
@@ -267,7 +267,17 @@ export class AppState {
         console.warn("Application cleanup was incomplete", result.reason);
   }
 
-  private async ensureWatcher(worktreeId: string, root: string): Promise<void> {
+  private async ensureWatcher(
+    kind: "git" | "directory",
+    worktreeId: string,
+    root: string,
+  ): Promise<void> {
+    if (kind === "directory") {
+      await this.watchers.ensure(worktreeId, root, (event) =>
+        this.emitWatchEvent(event),
+      );
+      return;
+    }
     const gitDir = (
       await gitText(root, ["rev-parse", "--path-format=absolute", "--git-dir"])
     ).trim();

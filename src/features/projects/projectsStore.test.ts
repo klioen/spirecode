@@ -21,6 +21,7 @@ const project = (
   ...worktrees: WorktreeSummary[]
 ): ProjectSummary => ({
   id,
+  kind: "git",
   name: id,
   path: `/tmp/${id}`,
   lastOpenedAt: 1,

@@ -97,6 +97,36 @@ describe("FileTree accessibility", () => {
     );
   });
 
+  it("keeps the previous entries visible while watcher invalidation refreshes in the background", async () => {
+    let resolveRead!: (
+      entries: Awaited<ReturnType<typeof commands.fsReadDir>>,
+    ) => void;
+    vi.mocked(commands.fsReadDir).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    useFileTreeStore.setState({
+      expandedByWorktree: { w1: [] },
+    });
+    render(<FileTree worktreeId="w1" />);
+
+    useFileTreeStore.getState().invalidateWorktree("w1");
+
+    await waitFor(() =>
+      expect(commands.fsReadDir).toHaveBeenCalledWith("w1", ""),
+    );
+    expect(screen.getByRole("treeitem", { name: "README.md" })).toBeVisible();
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+
+    resolveRead([
+      { name: "updated.txt", relativePath: "updated.txt", kind: "file" },
+    ]);
+    expect(
+      await screen.findByRole("treeitem", { name: "updated.txt" }),
+    ).toBeVisible();
+  });
+
   it("falls back to the first visible item when the focused item disappears", async () => {
     const { rerender } = render(<FileTree worktreeId="w1" />);
     const readme = screen.getByRole("treeitem", { name: "README.md" });

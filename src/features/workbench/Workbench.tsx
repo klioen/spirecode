@@ -12,6 +12,7 @@ import { ChangesPanel } from "../changes/ChangesPanel";
 import { refreshChanges } from "../changes/changesRefresh";
 import { useChangesStore } from "../changes/changesStore";
 import { EditorPane } from "../editor/EditorPane";
+import { useEditorStore } from "../editor/editorStore";
 import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
@@ -91,10 +92,20 @@ export function Workbench() {
       : null,
   );
   useEffect(() => {
-    if (activeWorktreeId) void refreshChanges(activeWorktreeId);
-  }, [activeWorktreeId]);
+    if (!active) return;
+    if (active.project.kind === "git") {
+      void refreshChanges(active.worktree.id);
+      return;
+    }
+    useEditorStore.getState().clearDiffTabs(active.worktree.id);
+  }, [active]);
   const error = useProjectsStore((state) => state.error);
   const workbench = useWorkbenchStore();
+  const supportsGit = active?.project.kind === "git";
+  const visibleRightView =
+    !supportsGit && workbench.rightView === "changes"
+      ? "files"
+      : workbench.rightView;
   const resizeProjects = (width: number) => {
     const right = workbench.rightCollapsed ? 0 : workbench.rightPanelWidth;
     const available = viewportWidth - right - MIN_EDITOR_WIDTH - PANEL_GAP;
@@ -218,24 +229,26 @@ export function Workbench() {
       <aside className="right-panel">
         <div className="right-tabs">
           <button
-            className={workbench.rightView === "files" ? "active" : ""}
+            className={visibleRightView === "files" ? "active" : ""}
             aria-label={t("workbench.files")}
             title={t("workbench.files")}
             onClick={() => workbench.setRightView("files")}
           >
             <RiFolder3Line size={15} />
           </button>
-          <button
-            className={workbench.rightView === "changes" ? "active" : ""}
-            aria-label={t("workbench.changes")}
-            title={t("workbench.changes")}
-            onClick={() => workbench.setRightView("changes")}
-          >
-            <RiGitCommitLine size={15} />
-          </button>
+          {supportsGit && (
+            <button
+              className={visibleRightView === "changes" ? "active" : ""}
+              aria-label={t("workbench.changes")}
+              title={t("workbench.changes")}
+              onClick={() => workbench.setRightView("changes")}
+            >
+              <RiGitCommitLine size={15} />
+            </button>
+          )}
         </div>
         {active ? (
-          workbench.rightView === "files" ? (
+          visibleRightView === "files" ? (
             <FileTree worktreeId={active.worktree.id} />
           ) : (
             <ChangesPanel worktreeId={active.worktree.id} />

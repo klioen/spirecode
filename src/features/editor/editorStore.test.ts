@@ -216,6 +216,29 @@ describe("preview and keep tabs", () => {
     expect(restored.p1.activeTabId).toBe("chat:p1:s1");
   });
 
+  it("clears only diff tabs when Git capabilities are unavailable", () => {
+    useEditorStore.getState().open(tab("a.ts"), true);
+    useEditorStore.getState().open(
+      {
+        id: "diff:p1:unstaged:b.ts",
+        worktreeId: "p1",
+        type: "diff",
+        relativePath: "b.ts",
+        scope: "unstaged",
+        preview: false,
+      },
+      true,
+    );
+    useEditorStore.getState().openChat("p1", "session-a", "Chat A");
+
+    useEditorStore.getState().clearDiffTabs("p1");
+
+    expect(
+      useEditorStore.getState().views.p1.tabs.map((item) => item.type),
+    ).toEqual(["file", "chat"]);
+    expect(localStorage.getItem(STORAGE_KEY)).not.toContain('"type":"diff"');
+  });
+
   it("clears a worktree from memory and persistence", () => {
     useEditorStore.getState().open(tab("a.ts"), true);
     expect(localStorage.getItem(STORAGE_KEY)).toContain("a.ts");

@@ -37,17 +37,50 @@ export class WatcherRegistry {
     rootPath: string,
     gitDirectory: string,
     sink: (event: WatchEvent) => void,
+  ): Promise<void>;
+  async ensure(
+    worktreeId: string,
+    rootPath: string,
+    sink: (event: WatchEvent) => void,
+  ): Promise<void>;
+  async ensure(
+    worktreeId: string,
+    rootPath: string,
+    gitDirectory: string | null | undefined,
+    sink: (event: WatchEvent) => void,
+  ): Promise<void>;
+  async ensure(
+    worktreeId: string,
+    rootPath: string,
+    gitDirectoryOrSink:
+      string | null | undefined | ((event: WatchEvent) => void),
+    optionalSink?: (event: WatchEvent) => void,
   ): Promise<void> {
     if (this.sessions.has(worktreeId)) return;
+    const gitDirectory =
+      typeof gitDirectoryOrSink === "function"
+        ? null
+        : (gitDirectoryOrSink ?? null);
+    const sink =
+      typeof gitDirectoryOrSink === "function"
+        ? gitDirectoryOrSink
+        : optionalSink;
+    if (!sink) {
+      throw new CommandError("INVALID_ARGUMENT", "watcher sink is required");
+    }
     const root = await realpath(rootPath);
     let gitDir = gitDirectory;
-    try {
-      gitDir = await realpath(gitDirectory);
-    } catch {
-      // Missing external git metadata is not fatal during watcher setup.
+    if (gitDir !== null) {
+      try {
+        gitDir = await realpath(gitDir);
+      } catch {
+        // Missing external git metadata is not fatal during watcher setup.
+      }
     }
     const watchPaths = [root];
-    if (!isWithin(root, gitDir) && gitDir !== root) watchPaths.push(gitDir);
+    if (gitDir !== null && !isWithin(root, gitDir) && gitDir !== root) {
+      watchPaths.push(gitDir);
+    }
 
     let timer: NodeJS.Timeout | undefined;
     const paths = new Set<string>();
@@ -68,7 +101,9 @@ export class WatcherRegistry {
           },
         });
       }
-      if (gitChanged) sink({ topic: "git://changed", payload: { worktreeId } });
+      if (gitDirectory !== null && gitChanged) {
+        sink({ topic: "git://changed", payload: { worktreeId } });
+      }
       paths.clear();
       truncated = false;
       gitChanged = false;
@@ -92,8 +127,8 @@ export class WatcherRegistry {
         }
         if (paths.size >= MAX_PATHS) truncated = true;
         else paths.add(rel);
-        gitChanged = true;
-      } else {
+        if (gitDirectory !== null) gitChanged = true;
+      } else if (gitDirectory !== null) {
         gitChanged = true;
       }
       schedule();
@@ -102,7 +137,7 @@ export class WatcherRegistry {
     let stopWatcher: (() => Promise<void>) | undefined;
     const handleError = () => {
       truncated = true;
-      gitChanged = true;
+      if (gitDirectory !== null) gitChanged = true;
       schedule();
     };
     try {
