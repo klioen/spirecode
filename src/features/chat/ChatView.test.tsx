@@ -371,34 +371,20 @@ describe("ChatView", () => {
     );
   });
 
-  it("cleans up the superseded attachment under StrictMode", async () => {
-    const firstDetach = vi.fn();
-    const secondDetach = vi.fn();
+  it("reuses the runtime attachment under StrictMode and keeps it after unmount", async () => {
+    const detach = vi.fn();
     const chatApi = api({
-      attach: vi
-        .fn()
-        .mockResolvedValueOnce({
-          snapshot: {
-            sessionId: "session-1",
-            worktreeId: "worktree-1",
-            status: "idle",
-            items: [],
-            queue: [],
-            sequence: 1,
-          },
-          detach: firstDetach,
-        })
-        .mockResolvedValueOnce({
-          snapshot: {
-            sessionId: "session-1",
-            worktreeId: "worktree-1",
-            status: "idle",
-            items: [],
-            queue: [],
-            sequence: 1,
-          },
-          detach: secondDetach,
-        }),
+      attach: vi.fn().mockResolvedValue({
+        snapshot: {
+          sessionId: "session-1",
+          worktreeId: "worktree-1",
+          status: "idle",
+          items: [],
+          queue: [],
+          sequence: 1,
+        },
+        detach,
+      }),
     });
     const onError = vi.fn();
     const { unmount } = render(
@@ -413,13 +399,12 @@ describe("ChatView", () => {
       </StrictMode>,
     );
 
-    await waitFor(() => expect(chatApi.attach).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(firstDetach).toHaveBeenCalledOnce());
+    await waitFor(() => expect(chatApi.attach).toHaveBeenCalledOnce());
     await waitFor(() => expect(chatApi.config).toHaveBeenCalledOnce());
     expect(onError).not.toHaveBeenCalled();
 
     unmount();
-    expect(secondDetach).toHaveBeenCalledOnce();
+    expect(detach).not.toHaveBeenCalled();
   });
 
   it("loads session config and wires model and thinking selectors", async () => {

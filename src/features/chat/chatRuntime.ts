@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { ChatApi } from "./chatApi";
 import { createInitialChatState, sessionReducer } from "./sessionReducer";
 import type {
   ChatEventEnvelope,
@@ -18,6 +19,12 @@ export class ChatRuntime {
   private readonly states = new Map<string, ChatSessionState>();
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly dirtySessions = new Set<string>();
+  private readonly activeListeners = new Set<Listener>();
+  private readonly connections = new Map<
+    string,
+    { promise: Promise<void>; detach?: () => void }
+  >();
+  private activeWorktreeIds: ReadonlySet<string> = new Set();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly batchMs: number;
   private readonly maxItems: number;
@@ -36,6 +43,7 @@ export class ChatRuntime {
     if (existing) return existing;
     const created = createInitialChatState(sessionId, worktreeId, status);
     this.states.set(sessionId, created);
+    this.updateActiveWorktrees();
     return created;
   }
 
@@ -70,8 +78,38 @@ export class ChatRuntime {
       activity: snapshot.activity ?? null,
       error: snapshot.error ?? null,
     });
+    this.updateActiveWorktrees();
     this.markDirty(snapshot.sessionId);
   }
+
+  track(api: ChatApi, worktreeId: string, sessionId: string): Promise<void> {
+    this.ensure(sessionId, worktreeId);
+    const existing = this.connections.get(sessionId);
+    if (existing) return existing.promise;
+    const connection: { promise: Promise<void>; detach?: () => void } = {
+      promise: Promise.resolve(),
+    };
+    connection.promise = api
+      .attach(worktreeId, sessionId, (event) => this.push(event))
+      .then((attachment) => {
+        connection.detach = attachment.detach;
+        this.hydrate(attachment.snapshot);
+      })
+      .catch((error: unknown) => {
+        if (this.connections.get(sessionId) === connection)
+          this.connections.delete(sessionId);
+        throw error;
+      });
+    this.connections.set(sessionId, connection);
+    return connection.promise;
+  }
+
+  getActiveWorktreeIds = (): ReadonlySet<string> => this.activeWorktreeIds;
+
+  subscribeActiveWorktrees = (listener: Listener): (() => void) => {
+    this.activeListeners.add(listener);
+    return () => this.activeListeners.delete(listener);
+  };
 
   push(envelope: ChatEventEnvelope): void {
     const current = this.states.get(envelope.sessionId);
@@ -86,6 +124,7 @@ export class ChatRuntime {
         ? { ...reduced, items: reduced.items.slice(-this.maxItems) }
         : reduced;
     this.states.set(envelope.sessionId, bounded);
+    this.updateActiveWorktrees();
     this.markDirty(envelope.sessionId);
   }
 
@@ -93,13 +132,38 @@ export class ChatRuntime {
     const current = this.states.get(sessionId);
     if (!current || current.status === status) return;
     this.states.set(sessionId, { ...current, status });
+    this.updateActiveWorktrees();
     this.markDirty(sessionId);
   }
 
   remove(sessionId: string): void {
+    this.connections.get(sessionId)?.detach?.();
+    this.connections.delete(sessionId);
     this.states.delete(sessionId);
     this.listeners.delete(sessionId);
     this.dirtySessions.delete(sessionId);
+    this.updateActiveWorktrees();
+  }
+
+  removeWorktree(worktreeId: string): void {
+    for (const state of [...this.states.values()]) {
+      if (state.worktreeId === worktreeId) this.remove(state.sessionId);
+    }
+  }
+
+  private updateActiveWorktrees(): void {
+    const next = new Set(
+      [...this.states.values()]
+        .filter(({ status }) => status === "streaming")
+        .map(({ worktreeId }) => worktreeId),
+    );
+    if (
+      next.size === this.activeWorktreeIds.size &&
+      [...next].every((id) => this.activeWorktreeIds.has(id))
+    )
+      return;
+    this.activeWorktreeIds = next;
+    for (const listener of this.activeListeners) listener();
   }
 
   private markDirty(sessionId: string): void {
@@ -125,6 +189,16 @@ export class ChatRuntime {
 }
 
 export const chatRuntime = new ChatRuntime();
+
+export function useActiveChatWorktrees(
+  runtime: ChatRuntime = chatRuntime,
+): ReadonlySet<string> {
+  return useSyncExternalStore(
+    runtime.subscribeActiveWorktrees,
+    runtime.getActiveWorktreeIds,
+    runtime.getActiveWorktreeIds,
+  );
+}
 
 export function useChatSession(
   sessionId: string,

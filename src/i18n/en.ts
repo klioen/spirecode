@@ -147,6 +147,7 @@ export const en = {
   "projects.expand": "Expand {name}",
   "projects.collapse": "Collapse {name}",
   "projects.open": "Open {name}",
+  "projects.sessionActive": "Pi session active",
   "projects.createWorktreeFor": "Create worktree for {name}",
   "projects.manage": "Manage {name}",
   "projects.revealFinder": "Reveal in Finder",
