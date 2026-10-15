@@ -327,7 +327,9 @@ export async function createPiAdapter(
           text,
           session.isStreaming ? "followUp" : undefined,
         ),
-      followUp: (text) => session.followUp(text),
+      followUp: async (text) => {
+        await session.followUp(text);
+      },
       clearQueue: () => session.clearQueue(),
       abort: () => session.abort(),
       dispose: () => session.dispose(),
@@ -617,13 +619,9 @@ function acceptPrompt(
     const run = session.prompt(text, {
       expandPromptTemplates: true,
       ...(streamingBehavior ? { streamingBehavior } : {}),
-      preflightResult(success) {
-        if (success) {
-          accepted = true;
-          resolve();
-        } else {
-          reject(new Error("Prompt was rejected"));
-        }
+      preflightResult() {
+        accepted = true;
+        resolve();
       },
     });
     void run.catch((error: unknown) => {

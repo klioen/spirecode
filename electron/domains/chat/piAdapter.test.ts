@@ -62,11 +62,15 @@ function sessionFixture() {
       _text: string,
       options: {
         streamingBehavior?: string;
-        preflightResult?: (success: boolean) => void;
+        preflightResult?: (
+          disposition: "started" | "handled" | "queued",
+        ) => void;
       },
     ) => {
       calls.push(["prompt", options.streamingBehavior]);
-      options.preflightResult?.(true);
+      options.preflightResult?.(
+        options.streamingBehavior === "followUp" ? "queued" : "started",
+      );
       return new Promise<void>(() => undefined);
     },
     followUp: async () => undefined,
