@@ -8,14 +8,21 @@ import type { DiffScope, GitDiff, GitStatus } from "./types.js";
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 
 export type RootResolver = (worktreeId: string) => string | Promise<string>;
+export type GitCapabilityResolver = (
+  worktreeId: string,
+) => void | Promise<void>;
 
 export class GitService {
   private readonly queues = new Map<string, Promise<void>>();
 
-  constructor(private readonly rootResolver: RootResolver) {}
+  constructor(
+    private readonly rootResolver: RootResolver,
+    private readonly assertGit: GitCapabilityResolver = () => undefined,
+  ) {}
 
   status(worktreeId: string): Promise<GitStatus> {
     return this.serial(worktreeId, async () => {
+      await this.assertGit(worktreeId);
       const root = await this.rootResolver(worktreeId);
       const output = await safeGitText(root, [
         "status",
@@ -52,6 +59,7 @@ export class GitService {
     scope: DiffScope | string,
   ): Promise<GitDiff> {
     return this.serial(worktreeId, async () => {
+      await this.assertGit(worktreeId);
       if (scope !== "staged" && scope !== "unstaged" && scope !== "untracked") {
         throw new CommandError(
           "INVALID_ARGUMENT",

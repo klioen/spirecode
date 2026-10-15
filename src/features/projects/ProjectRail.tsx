@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   RiAddLine,
   RiArrowRightSLine,
+  RiFolderLine,
   RiFolderOpenLine,
   RiGitBranchLine,
   RiGitRepositoryLine,
@@ -135,13 +136,17 @@ export function ProjectRail() {
           {store.loading ? (
             <span className="spinner" />
           ) : (
-            <RiAddLine size={16} />
+            <RiFolderOpenLine size={16} />
           )}
         </button>
       </div>
       <div className="project-list">
         {store.projects.map((project) => {
-          const expanded = expandedProjectIds.has(project.id);
+          const directory = project.kind === "directory";
+          const expanded = !directory && expandedProjectIds.has(project.id);
+          const primaryWorkspace =
+            project.worktrees.find(({ kind }) => kind === "main") ??
+            project.worktrees[0];
           return (
             <section className="project-group" key={project.id}>
               <div className="project-heading">
@@ -149,38 +154,56 @@ export function ProjectRail() {
                   className="project-name"
                   title={project.path}
                   aria-label={t(
-                    expanded ? "projects.collapse" : "projects.expand",
+                    directory
+                      ? "projects.open"
+                      : expanded
+                        ? "projects.collapse"
+                        : "projects.expand",
                     { name: project.name },
                   )}
-                  aria-expanded={expanded}
-                  onClick={() => toggleProject(project.id)}
+                  aria-expanded={directory ? undefined : expanded}
+                  onClick={() => {
+                    if (directory) {
+                      if (primaryWorkspace) void select(primaryWorkspace.id);
+                      return;
+                    }
+                    toggleProject(project.id);
+                  }}
                 >
-                  <RiArrowRightSLine
-                    className={`project-chevron ${expanded ? "expanded" : ""}`}
-                    size={15}
-                  />
-                  <RiGitRepositoryLine size={15} />
+                  {!directory && (
+                    <RiArrowRightSLine
+                      className={`project-chevron ${expanded ? "expanded" : ""}`}
+                      size={15}
+                    />
+                  )}
+                  {directory ? (
+                    <RiFolderLine size={15} />
+                  ) : (
+                    <RiGitRepositoryLine size={15} />
+                  )}
                   <span>{project.name}</span>
                 </button>
-                <button
-                  className="worktree-add"
-                  aria-label={t("projects.createWorktreeFor", {
-                    name: project.name,
-                  })}
-                  title={t("projects.createWorktreeFor", {
-                    name: project.name,
-                  })}
-                  disabled={store.creatingProjectId === project.id}
-                  onClick={() =>
-                    setDialog({
-                      type: "new",
-                      projectId: project.id,
-                      projectName: project.name,
-                    })
-                  }
-                >
-                  <RiAddLine size={15} />
-                </button>
+                {!directory && (
+                  <button
+                    className="worktree-add"
+                    aria-label={t("projects.createWorktreeFor", {
+                      name: project.name,
+                    })}
+                    title={t("projects.createWorktreeFor", {
+                      name: project.name,
+                    })}
+                    disabled={store.creatingProjectId === project.id}
+                    onClick={() =>
+                      setDialog({
+                        type: "new",
+                        projectId: project.id,
+                        projectName: project.name,
+                      })
+                    }
+                  >
+                    <RiAddLine size={15} />
+                  </button>
+                )}
                 <div
                   className="project-menu-container"
                   ref={

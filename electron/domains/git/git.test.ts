@@ -212,6 +212,29 @@ describe("safe Git runner", () => {
 });
 
 describe("GitService", () => {
+  it("rejects Git operations before resolving a directory workspace root", async () => {
+    let resolved = false;
+    const service = new GitService(
+      () => {
+        resolved = true;
+        return "/unused";
+      },
+      () => {
+        throw new CommandError(
+          "NOT_A_GIT_REPOSITORY",
+          "workspace does not support Git operations",
+        );
+      },
+    );
+
+    await expectCode(service.status("directory-1"), "NOT_A_GIT_REPOSITORY");
+    await expectCode(
+      service.diffFile("directory-1", "file.txt", "unstaged"),
+      "NOT_A_GIT_REPOSITORY",
+    );
+    expect(resolved).toBe(false);
+  });
+
   it("returns status with combined staged and unstaged stats", async () => {
     const root = await temporaryRepository();
     await writeFile(path.join(root, "tracked.txt"), "index\n");

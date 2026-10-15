@@ -206,6 +206,7 @@ interface EditorState {
   beginNavigation: () => number;
   invalidateFiles: (worktreeId: string) => void;
   invalidateDiffs: (worktreeId: string) => void;
+  clearDiffTabs: (worktreeId: string) => void;
   clearWorktree: (worktreeId: string) => void;
 }
 const emptyView = (): WorktreeEditorView => ({ tabs: [], activeTabId: null });
@@ -390,6 +391,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         [worktreeId]: (state.diffGenerationByWorktree[worktreeId] ?? 0) + 1,
       },
     })),
+  clearDiffTabs: (worktreeId) =>
+    set((state) => {
+      const view = state.views[worktreeId] ?? emptyView();
+      const tabs = view.tabs.filter((tab) => tab.type !== "diff");
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          tabs,
+          activeTabId: tabs.some((tab) => tab.id === view.activeTabId)
+            ? view.activeTabId
+            : (tabs[tabs.length - 1]?.id ?? null),
+        },
+      };
+      persistEditorViews(views);
+      return { views };
+    }),
   clearWorktree: (worktreeId) =>
     set((state) => {
       const views = { ...state.views };

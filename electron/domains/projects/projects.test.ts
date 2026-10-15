@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+  mkdir,
+  symlink,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -52,24 +59,120 @@ afterEach(async () => {
 });
 
 describe("ProjectService", () => {
-  it("opens a v2 project with distinct repository and main worktree ids", async () => {
+  it("opens a Git subdirectory with distinct repository and main workspace ids", async () => {
     const directory = await tempDir();
     await init(directory);
+    const nested = path.join(directory, "src", "nested");
+    await mkdir(nested, { recursive: true });
     const statePath = path.join(directory, "app", "state.json");
     const service = await ProjectService.load(statePath);
 
-    const first = await service.openPath(directory);
+    const first = await service.openPath(nested);
     const second = await service.openPath(directory);
 
-    expect(second.id).toBe(first.id);
-    expect(first.id).not.toBe(first.worktrees[0]?.id);
-    expect(await service.root(first.worktrees[0]!.id)).toBe(
+    expect(first.kind).toBe("git");
+    expect(first.path).toBe(
       await import("node:fs/promises").then((fs) => fs.realpath(directory)),
     );
+    expect(second.id).toBe(first.id);
+    expect(first.id).not.toBe(first.worktrees[0]?.id);
+    expect(await service.root(first.worktrees[0]!.id)).toBe(first.path);
     await expect(
       (await ProjectService.load(statePath)).list(),
     ).resolves.toHaveLength(1);
     expect((await service.catalog()).version).toBe(PROJECT_STATE_VERSION);
+  });
+
+  it("opens ordinary directories with one synthetic workspace and deduplicates canonical aliases", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "ordinary");
+    const alias = path.join(root, "alias");
+    await mkdir(directory);
+    await writeFile(path.join(directory, "notes.txt"), "not a repository\n");
+    await symlink(directory, alias, "dir");
+    const service = await ProjectService.load(path.join(root, "state.json"));
+
+    const canonical = await import("node:fs/promises").then((fs) =>
+      fs.realpath(directory),
+    );
+    const first = await service.openPath(alias);
+    const second = await service.openPath(directory);
+
+    expect(first).toMatchObject({
+      kind: "directory",
+      name: "ordinary",
+      path: canonical,
+      nextWorktreeSequence: 1,
+    });
+    expect(first.worktrees).toEqual([
+      expect.objectContaining({
+        projectId: first.id,
+        name: "ordinary",
+        path: canonical,
+        branch: "",
+        baseRef: "",
+        kind: "main",
+      }),
+    ]);
+    expect(second.id).toBe(first.id);
+    expect(second.worktrees[0]?.id).toBe(first.worktrees[0]?.id);
+    expect(await service.list()).toHaveLength(1);
+  });
+
+  it("rejects files and missing paths without mutating the catalog", async () => {
+    const root = await tempDir();
+    const file = path.join(root, "file.txt");
+    await writeFile(file, "content");
+    const service = await ProjectService.load(path.join(root, "state.json"));
+
+    await expect(service.openPath(file)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    await expect(
+      service.openPath(path.join(root, "missing")),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect((await service.catalog()).projects).toEqual([]);
+  });
+
+  it("upgrades a directory project to Git without changing its ids", async () => {
+    const directory = await tempDir();
+    const service = await ProjectService.load(
+      path.join(directory, "app", "state.json"),
+    );
+    const ordinary = await service.openPath(directory);
+
+    await init(directory);
+    const repository = await service.openPath(directory);
+
+    expect(repository.kind).toBe("git");
+    expect(repository.id).toBe(ordinary.id);
+    expect(repository.worktrees[0]?.id).toBe(ordinary.worktrees[0]?.id);
+    expect(repository.worktrees[0]?.branch).not.toBe("");
+    expect(repository.worktrees[0]?.baseRef).toBe(
+      repository.worktrees[0]?.branch,
+    );
+  });
+
+  it("exposes authoritative Git capabilities by project and workspace id", async () => {
+    const root = await tempDir();
+    const gitRoot = path.join(root, "repo");
+    const directoryRoot = path.join(root, "folder");
+    await init(gitRoot);
+    await mkdir(directoryRoot);
+    const service = await ProjectService.load(path.join(root, "state.json"));
+    const gitProject = await service.openPath(gitRoot);
+    const directoryProject = await service.openPath(directoryRoot);
+
+    await expect(service.projectKind(gitProject.id)).resolves.toBe("git");
+    await expect(
+      service.worktreeProjectKind(directoryProject.worktrees[0]!.id),
+    ).resolves.toBe("directory");
+    await expect(
+      service.assertGitProject(gitProject.id),
+    ).resolves.toBeUndefined();
+    await expect(
+      service.assertGitWorktree(directoryProject.worktrees[0]!.id),
+    ).rejects.toMatchObject({ code: "NOT_A_GIT_REPOSITORY" });
   });
 
   it("sorts projects by last-opened time and closes the active project", async () => {
@@ -152,14 +255,63 @@ describe("ProjectService", () => {
 
     const catalog = await (await ProjectService.load(statePath)).catalog();
 
-    expect(catalog.version).toBe(2);
+    expect(catalog.version).toBe(3);
     expect(catalog.projects[0]?.worktrees[0]?.id).toBe(oldId);
     expect(catalog.activeWorktreeId).toBe(oldId);
     await expect(readFile(corruptBackupPath(statePath))).rejects.toMatchObject({
       code: "ENOENT",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 2,
+      version: 3,
+    });
+  });
+
+  it("migrates v2 to v3 as Git without changing ids", async () => {
+    const directory = await tempDir();
+    await init(directory);
+    const statePath = path.join(directory, "state.json");
+    const projectId = randomUUID();
+    const worktreeId = randomUUID();
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 2,
+        projects: [
+          {
+            id: projectId,
+            name: "repo",
+            path: directory,
+            lastOpenedAt: 7,
+            worktrees: [
+              {
+                id: worktreeId,
+                projectId,
+                name: "main",
+                path: directory,
+                branch: "main",
+                baseRef: "main",
+                kind: "main",
+                lastOpenedAt: 7,
+              },
+            ],
+            nextWorktreeSequence: 2,
+          },
+        ],
+        activeWorktreeId: worktreeId,
+      }),
+    );
+
+    const catalog = await (await ProjectService.load(statePath)).catalog();
+
+    expect(catalog).toMatchObject({
+      version: 3,
+      activeWorktreeId: worktreeId,
+      projects: [{ id: projectId, kind: "git" }],
+    });
+    expect(catalog.projects[0]?.worktrees[0]?.id).toBe(worktreeId);
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      version: 3,
+      projects: [{ kind: "git" }],
     });
   });
 
@@ -214,7 +366,7 @@ describe("ProjectService", () => {
     const unsupportedPath = path.join(directory, "unsupported.json");
     await writeFile(
       unsupportedPath,
-      JSON.stringify({ version: 3, projects: [], activeWorktreeId: null }),
+      JSON.stringify({ version: 4, projects: [], activeWorktreeId: null }),
     );
     await expect(ProjectService.load(unsupportedPath)).rejects.toMatchObject({
       code: "INVALID_ARGUMENT",
@@ -222,7 +374,54 @@ describe("ProjectService", () => {
     });
 
     const invalidPath = path.join(directory, "invalid.json");
-    await writeFile(invalidPath, JSON.stringify({ version: 2, projects: [] }));
+    await writeFile(
+      invalidPath,
+      JSON.stringify({ version: 3, projects: [], activeWorktreeId: null }),
+    );
+    await expect(ProjectService.load(invalidPath)).resolves.toBeDefined();
+
+    const projectId = randomUUID();
+    const worktreeId = randomUUID();
+    const invalidProject = {
+      id: projectId,
+      kind: "unknown",
+      name: "bad",
+      path: directory,
+      lastOpenedAt: 1,
+      worktrees: [
+        {
+          id: worktreeId,
+          projectId: randomUUID(),
+          name: "bad",
+          path: directory,
+          branch: "",
+          baseRef: "",
+          kind: "main",
+          lastOpenedAt: 1,
+        },
+      ],
+      nextWorktreeSequence: 1,
+    };
+    await writeFile(
+      invalidPath,
+      JSON.stringify({
+        version: 3,
+        projects: [invalidProject],
+        activeWorktreeId: worktreeId,
+      }),
+    );
+    await expect(ProjectService.load(invalidPath)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    invalidProject.kind = "directory";
+    await writeFile(
+      invalidPath,
+      JSON.stringify({
+        version: 3,
+        projects: [invalidProject],
+        activeWorktreeId: worktreeId,
+      }),
+    );
     await expect(ProjectService.load(invalidPath)).rejects.toMatchObject({
       code: "INVALID_ARGUMENT",
     });

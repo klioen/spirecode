@@ -31,7 +31,7 @@ describe("filesystem invalidation", () => {
     });
     expect(
       useFileTreeStore.getState().directories[directoryKey("current", "")],
-    ).toBeUndefined();
+    ).toMatchObject({ status: "idle", entries: [] });
     expect(
       useFileTreeStore.getState().directories[directoryKey("other", "")],
     ).toBeDefined();
@@ -64,6 +64,6 @@ describe("filesystem invalidation", () => {
     });
     expect(
       useFileTreeStore.getState().directories[directoryKey("current", "")],
-    ).toBeUndefined();
+    ).toMatchObject({ status: "idle", entries: [] });
   });
 });

@@ -60,6 +60,7 @@ async function fixture(): Promise<{
 
   const project: ProjectSummary = {
     id: "11111111-1111-4111-8111-111111111111",
+    kind: "git",
     name: "repo",
     path: repo,
     lastOpenedAt: 1,
@@ -131,6 +132,18 @@ describe("WorktreeService", () => {
     expect(defaultManagedHome("/Users/example")).toBe(
       path.join("/Users/example", ".spirecode"),
     );
+  });
+
+  it("rejects directory projects before running Git or validating worktree input", async () => {
+    const value = await fixture();
+    value.project.kind = "directory";
+
+    await expect(
+      value.service.listOriginBranches(value.project.id),
+    ).rejects.toMatchObject({ code: "NOT_A_GIT_REPOSITORY" });
+    await expect(
+      value.service.create(value.project.id, "bad/name", "origin/main"),
+    ).rejects.toMatchObject({ code: "NOT_A_GIT_REPOSITORY" });
   });
 
   it("lists real origin branches, default branch, and the next available name", async () => {

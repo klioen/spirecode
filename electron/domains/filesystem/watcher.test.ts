@@ -32,6 +32,70 @@ describe("WatcherRegistry", () => {
     expect(watcherBackendForPlatform("win32")).toBe("chokidar");
   });
 
+  it.each([
+    ["omitted", undefined],
+    ["null", null],
+  ] as const)(
+    "emits only filesystem changes when Git metadata is %s",
+    async (_label, gitDirectory) => {
+      const root = await temporaryDirectory();
+      const events: WatchEvent[] = [];
+      const registry = new WatcherRegistry();
+      const sink = (event: WatchEvent) => events.push(event);
+
+      if (gitDirectory === undefined) {
+        await registry.ensure("directory-1", root, sink);
+      } else {
+        await registry.ensure("directory-1", root, gitDirectory, sink);
+      }
+      await writeFile(path.join(root, "file.ts"), "export {};\n");
+      await vi.waitFor(
+        () => {
+          expect(
+            events.some(
+              (event) =>
+                event.topic === "filesystem://changed" &&
+                event.payload.paths.includes("file.ts"),
+            ),
+          ).toBe(true);
+        },
+        { timeout: 5_000 },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      expect(events.some((event) => event.topic === "git://changed")).toBe(
+        false,
+      );
+      await registry.dispose();
+    },
+  );
+
+  it("preserves filesystem and Git invalidations for Git watchers", async () => {
+    const root = await temporaryDirectory();
+    const gitDirectory = path.join(root, ".git");
+    await mkdir(gitDirectory);
+    const events: WatchEvent[] = [];
+    const registry = new WatcherRegistry();
+
+    await registry.ensure("git-1", root, gitDirectory, (event) =>
+      events.push(event),
+    );
+    await writeFile(path.join(root, "file.ts"), "export {};\n");
+    await vi.waitFor(
+      () => {
+        expect(
+          events.some((event) => event.topic === "filesystem://changed"),
+        ).toBe(true);
+        expect(events.some((event) => event.topic === "git://changed")).toBe(
+          true,
+        );
+      },
+      { timeout: 5_000 },
+    );
+
+    await registry.dispose();
+  });
+
   it.runIf(process.platform === "darwin")(
     "observes nested files with the native recursive backend and releases it",
     async () => {

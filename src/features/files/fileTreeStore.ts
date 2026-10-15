@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { CommandError, FileEntry } from "../../bindings";
 
 export interface DirectoryState {
-  status: "idle" | "loading" | "ready" | "error";
+  status: "idle" | "loading" | "refreshing" | "ready" | "error";
   entries: FileEntry[];
   error?: CommandError;
 }
@@ -47,9 +47,12 @@ export const useFileTreeStore = create<FileTreeState>((set) => ({
   invalidateWorktree: (worktreeId) =>
     set((state) => ({
       directories: Object.fromEntries(
-        Object.entries(state.directories).filter(
-          ([key]) => !key.startsWith(`${worktreeId}:`),
-        ),
+        Object.entries(state.directories).map(([key, directory]) => [
+          key,
+          key.startsWith(`${worktreeId}:`)
+            ? { ...directory, status: "idle" as const }
+            : directory,
+        ]),
       ),
       generationByWorktree: {
         ...state.generationByWorktree,

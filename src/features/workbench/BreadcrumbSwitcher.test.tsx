@@ -44,6 +44,7 @@ const projects: ProjectSummary[] = [
     id: "p-one",
     name: "Alpha Project",
     path: "/one",
+    kind: "git",
     lastOpenedAt: 1,
     worktrees: [featureWorktree, mainWorktree],
   },
@@ -51,6 +52,7 @@ const projects: ProjectSummary[] = [
     id: "p-two",
     name: "Beta Project",
     path: "/two",
+    kind: "git",
     lastOpenedAt: 1,
     worktrees: [fallbackWorktree],
   },
@@ -58,6 +60,7 @@ const projects: ProjectSummary[] = [
     id: "p-empty",
     name: "Empty Project",
     path: "/empty",
+    kind: "git",
     lastOpenedAt: 1,
     worktrees: [],
   },
@@ -114,6 +117,43 @@ describe("BreadcrumbSwitcher", () => {
     expect(
       screen.queryByRole("option", { name: /Alpha Project/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders only the project switcher for a directory project", () => {
+    const directoryWorktree: WorktreeSummary = {
+      ...mainWorktree,
+      id: "w-directory",
+      projectId: "p-directory",
+      name: "Notes",
+      path: "/notes",
+      branch: "",
+      baseRef: "",
+    };
+    const directoryProject: ProjectSummary = {
+      id: "p-directory",
+      name: "Notes",
+      path: "/notes",
+      kind: "directory",
+      lastOpenedAt: 1,
+      worktrees: [directoryWorktree],
+    };
+
+    render(
+      <BreadcrumbSwitcher
+        activeProject={directoryProject}
+        activeWorktree={directoryWorktree}
+        branch=""
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Project: Notes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Worktree: Notes" }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector(".breadcrumb-separator")).toBeNull();
+    expect(document.querySelector(".breadcrumb-branch")).toBeNull();
   });
 
   it("selects a project's main worktree, falls back to its first worktree, and disables empty projects", async () => {
