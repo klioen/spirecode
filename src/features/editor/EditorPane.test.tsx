@@ -236,6 +236,7 @@ describe("EditorPane resources", () => {
     render(<EditorPane worktreeId="p1" />);
     const editor = await screen.findByRole("textbox", { name: "File editor" });
     fireEvent.change(editor, { target: { value: "first edit" } });
+    await screen.findByLabelText("Unsaved changes");
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     await waitFor(() => expect(commands.fsWriteFile).toHaveBeenCalledOnce());
     fireEvent.change(editor, { target: { value: "newer edit" } });
@@ -348,6 +349,7 @@ describe("EditorPane resources", () => {
     render(<EditorPane worktreeId="p1" />);
     const editor = await screen.findByRole("textbox", { name: "File editor" });
     fireEvent.change(editor, { target: { value: "local edit" } });
+    await screen.findByLabelText("Unsaved changes");
     fireEvent.keyDown(window, { key: "s", metaKey: true });
 
     expect(await screen.findByText("file changed on disk")).toBeInTheDocument();
@@ -375,6 +377,7 @@ describe("EditorPane resources", () => {
     render(<EditorPane worktreeId="p1" />);
     const editor = await screen.findByRole("textbox", { name: "File editor" });
     fireEvent.change(editor, { target: { value: "local edit" } });
+    await screen.findByLabelText("Unsaved changes");
     fireEvent.keyDown(window, { key: "s", metaKey: true });
     await screen.findByRole("button", { name: "Reload" });
 
@@ -403,6 +406,7 @@ describe("EditorPane resources", () => {
     render(<EditorPane worktreeId="p1" />);
     const editor = await screen.findByRole("textbox", { name: "File editor" });
     fireEvent.change(editor, { target: { value: "local edit" } });
+    await screen.findByLabelText("Unsaved changes");
     fireEvent.keyDown(window, { key: "s", metaKey: true });
     await screen.findByRole("button", { name: "Compare" });
 
@@ -438,6 +442,7 @@ describe("EditorPane resources", () => {
     render(<EditorPane worktreeId="p1" />);
     const editor = await screen.findByRole("textbox", { name: "File editor" });
     fireEvent.change(editor, { target: { value: "local edit" } });
+    await screen.findByLabelText("Unsaved changes");
     fireEvent.keyDown(window, { key: "s", metaKey: true });
     await screen.findByRole("button", { name: "Overwrite" });
 
