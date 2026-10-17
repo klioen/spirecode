@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SettingsDialog } from "./SettingsDialog";
+import { SettingsPage } from "./SettingsPage";
 import { memoryApi } from "./memoryApi";
 import { settingsApi } from "./settingsApi";
 import { commands } from "../../bindings";
@@ -93,13 +93,13 @@ beforeEach(() => {
   vi.mocked(settingsApi.setSkillEnabled).mockResolvedValue([]);
 });
 
-describe("SettingsDialog", () => {
+describe("SettingsPage", () => {
   it("offers system, light, and dark appearance modes", () => {
     render(
-      <SettingsDialog
+      <SettingsPage
         worktreeId={null}
         initialSection="general"
-        onClose={() => undefined}
+        onBack={() => undefined}
       />,
     );
 
@@ -112,7 +112,7 @@ describe("SettingsDialog", () => {
   });
 
   it("shows only resolved user resources as a read-only list", async () => {
-    render(<SettingsDialog worktreeId="w1" onClose={() => undefined} />);
+    render(<SettingsPage worktreeId="w1" onBack={() => undefined} />);
 
     expect(
       await screen.findByText("Configured user resources"),
@@ -125,7 +125,7 @@ describe("SettingsDialog", () => {
   });
 
   it("shows global user resources without an open project", async () => {
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
 
     expect(
       await screen.findByText("Configured user resources"),
@@ -172,7 +172,7 @@ describe("SettingsDialog", () => {
       { ...skills[1], enabled: false, status: "disabled" },
       skills[2],
     ]);
-    render(<SettingsDialog worktreeId="w1" onClose={() => undefined} />);
+    render(<SettingsPage worktreeId="w1" onBack={() => undefined} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));
     expect(await screen.findByText("System built-in")).toBeInTheDocument();
@@ -197,7 +197,7 @@ describe("SettingsDialog", () => {
   });
 
   it("requires a project before loading skills", () => {
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));
     expect(
@@ -222,7 +222,7 @@ describe("SettingsDialog", () => {
         defaultModelAvailable: true,
         resourcesHealthy: true,
       });
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Agent" }));
     expect(
@@ -235,7 +235,7 @@ describe("SettingsDialog", () => {
   });
 
   it("opens global memory without requiring a worktree", async () => {
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Memory" }));
     expect(
@@ -251,7 +251,7 @@ describe("SettingsDialog", () => {
         resolveLanguage = resolve;
       }),
     );
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
     const language = screen.getByRole("combobox", { name: "Language" });
     fireEvent.change(language, { target: { value: "zh-CN" } });
@@ -271,7 +271,7 @@ describe("SettingsDialog", () => {
   });
 
   it("removes diagnostics and keeps feedback as a standalone setting", () => {
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
 
     expect(screen.queryByText("Diagnostics")).not.toBeInTheDocument();
@@ -295,7 +295,7 @@ describe("SettingsDialog", () => {
       code: "SETTINGS_FAILED",
       message: "write failed",
     });
-    render(<SettingsDialog worktreeId={null} onClose={() => undefined} />);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
       target: { value: "zh-CN" },
@@ -308,49 +308,44 @@ describe("SettingsDialog", () => {
     expect(document.documentElement.lang).toBe("en");
   });
 
-  it("traps focus and restores it to the opener when closed", () => {
-    const opener = document.createElement("button");
-    document.body.append(opener);
-    opener.focus();
-    const { unmount } = render(
-      <SettingsDialog worktreeId={null} onClose={() => undefined} />,
+  it("renders as a full page with grouped navigation and an explicit back action", () => {
+    const back = vi.fn();
+    render(
+      <SettingsPage worktreeId={null} initialSection="general" onBack={back} />,
     );
 
-    const dialog = screen.getByRole("dialog", { name: "Settings" });
-    const closeButton = screen.getByRole("button", { name: "Close settings" });
-    const terminalButton = screen.getByRole("button", { name: "Terminal" });
-    expect(closeButton).toHaveFocus();
-
-    terminalButton.focus();
-    fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(closeButton).toHaveFocus();
-
-    closeButton.focus();
-    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
-    expect(terminalButton).toHaveFocus();
-
-    unmount();
-    expect(opener).toHaveFocus();
-    opener.remove();
+    expect(screen.getByRole("main", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("CORE")).toBeInTheDocument();
+    expect(screen.getByText("CAPABILITIES")).toBeInTheDocument();
+    expect(screen.getByText("WORKSPACE")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "General" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to workspace" }));
+    expect(back).toHaveBeenCalledOnce();
   });
 
-  it("closes from the close button, Escape, and backdrop", () => {
-    const close = vi.fn();
-    const { rerender } = render(
-      <SettingsDialog worktreeId={null} onClose={close} />,
+  it("filters sections from the Settings search field and focuses the first match", async () => {
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
+    const search = screen.getByRole("searchbox", { name: "Search settings" });
+    expect(search).toHaveFocus();
+
+    fireEvent.change(search, { target: { value: "theme" } });
+
+    expect(screen.queryByRole("button", { name: "Extensions" })).toBeNull();
+    expect(screen.getByRole("button", { name: "General" })).toHaveAttribute(
+      "aria-current",
+      "page",
     );
+    expect(
+      await screen.findByRole("heading", { name: "General" }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
-    expect(close).toHaveBeenCalledOnce();
-
-    close.mockClear();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(close).toHaveBeenCalledOnce();
-
-    close.mockClear();
-    const dialog = screen.getByRole("dialog");
-    fireEvent.mouseDown(dialog.parentElement!);
-    expect(close).toHaveBeenCalledOnce();
-    rerender(<></>);
+    fireEvent.change(search, { target: { value: "no-setting-matches" } });
+    expect(
+      screen.getByText('No settings found for "no-setting-matches".'),
+    ).toBeInTheDocument();
   });
 });

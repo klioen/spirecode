@@ -1,14 +1,15 @@
 import {
+  RiArrowLeftLine,
   RiBookOpenLine,
-  RiCloseLine,
   RiComputerLine,
   RiExternalLinkLine,
   RiFileList3Line,
   RiRobot2Line,
+  RiSearchLine,
   RiSettings3Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   formatNumber,
   setLanguage,
@@ -23,7 +24,7 @@ import {
   type SkillSetting,
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
-import { useDialogFocus } from "../../lib/useDialogFocus";
+import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { useThemeStore, type ThemeMode } from "../theme/themeStore";
 import { useSettingsStore } from "./settingsStore";
 import { MemorySettings } from "./MemorySettings";
@@ -38,113 +39,190 @@ export type SettingsSection =
   | "editor"
   | "terminal";
 
+type SettingsGroup = "core" | "capabilities" | "workspace";
+
 const sections: Array<{
   id: SettingsSection;
   label: TranslationKey;
+  description: TranslationKey;
+  group: SettingsGroup;
+  keywords: string[];
   icon: ReactNode;
 }> = [
   {
     id: "general",
     label: "settings.section.general",
+    description: "settings.general.description",
+    group: "core",
+    keywords: ["appearance", "theme", "language", "feedback"],
     icon: <RiSettings3Line size={16} />,
   },
   {
     id: "agent",
     label: "settings.section.agent",
+    description: "settings.agent.description",
+    group: "core",
+    keywords: ["model", "provider", "authentication", "configuration"],
     icon: <RiRobot2Line size={16} />,
   },
   {
     id: "skills",
     label: "settings.section.skills",
+    description: "settings.skills.description",
+    group: "capabilities",
+    keywords: ["skill", "command", "builtin", "project"],
     icon: <RiBookOpenLine size={16} />,
   },
   {
     id: "memory",
     label: "settings.section.memory",
+    description: "settings.memory.description",
+    group: "capabilities",
+    keywords: ["memory", "summary", "instructions", "model"],
     icon: <RiFileList3Line size={16} />,
   },
   {
     id: "extensions",
     label: "settings.section.extensions",
+    description: "settings.extensions.description",
+    group: "capabilities",
+    keywords: ["extension", "package", "resource", "plugin"],
     icon: <RiExternalLinkLine size={16} />,
   },
   {
     id: "editor",
     label: "settings.section.editor",
+    description: "settings.editor.description",
+    group: "workspace",
+    keywords: ["editor", "font", "wrap"],
     icon: <RiComputerLine size={16} />,
   },
   {
     id: "terminal",
     label: "settings.section.terminal",
+    description: "settings.terminal.description",
+    group: "workspace",
+    keywords: ["terminal", "font", "scrollback"],
     icon: <RiTerminalBoxLine size={16} />,
   },
 ];
 
-export function SettingsDialog({
+const groups: Array<{ id: SettingsGroup; label: TranslationKey }> = [
+  { id: "core", label: "settings.group.core" },
+  { id: "capabilities", label: "settings.group.capabilities" },
+  { id: "workspace", label: "settings.group.workspace" },
+];
+
+export function SettingsPage({
   worktreeId,
-  onClose,
+  onBack,
   initialSection = "extensions",
 }: {
   worktreeId: string | null;
-  onClose: () => void;
+  onBack: () => void;
   initialSection?: SettingsSection;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [query, setQuery] = useState("");
   const { t } = useTranslation();
-  const { dialogRef, trapFocus } = useDialogFocus<HTMLElement>();
+  const visibleSections = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return sections;
+    return sections.filter((item) =>
+      [t(item.label), t(item.description), ...item.keywords]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(normalized),
+    );
+  }, [query, t]);
+  useEffect(() => {
+    if (
+      visibleSections.length > 0 &&
+      !visibleSections.some((item) => item.id === section)
+    )
+      setSection(visibleSections[0].id);
+  }, [section, visibleSections]);
   return (
-    <div
-      className="dialog-backdrop"
-      role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <section
-        ref={dialogRef}
-        className="settings-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        tabIndex={-1}
-        onKeyDown={(event) => {
-          trapFocus(event);
-          if (event.key === "Escape") onClose();
-        }}
-      >
-        <header className="settings-header">
-          <h2 id="settings-title">{t("settings.title")}</h2>
-          <button aria-label={t("settings.close")} onClick={onClose} autoFocus>
-            <RiCloseLine size={18} />
-          </button>
-        </header>
-        <div className="settings-body">
+    <div className="settings-page">
+      <header className="settings-page-titlebar">
+        <SpireCodeMark className="settings-page-mark" />
+        <span>SpireCode</span>
+        <span className="settings-page-title-separator">/</span>
+        <strong>{t("settings.title")}</strong>
+      </header>
+      <div className="settings-page-body">
+        <aside className="settings-sidebar">
+          <div className="settings-page-back">
+            <button type="button" onClick={onBack}>
+              <RiArrowLeftLine size={16} />
+              {t("settings.back")}
+            </button>
+          </div>
+          <div className="settings-page-search">
+            <RiSearchLine size={15} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label={t("settings.search")}
+              placeholder={t("settings.search")}
+              value={query}
+              autoFocus
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
           <nav
             className="settings-nav"
             aria-label={t("settings.sections.label")}
           >
-            {sections.map((item) => (
-              <button
-                key={item.id}
-                className={section === item.id ? "active" : ""}
-                onClick={() => setSection(item.id)}
-              >
-                {item.icon}
-                {t(item.label)}
-              </button>
-            ))}
+            {groups.map((group) => {
+              const items = visibleSections.filter(
+                (item) => item.group === group.id,
+              );
+              if (items.length === 0) return null;
+              return (
+                <section className="settings-nav-group" key={group.id}>
+                  <h2>{t(group.label)}</h2>
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      className={section === item.id ? "active" : ""}
+                      aria-current={section === item.id ? "page" : undefined}
+                      onClick={() => setSection(item.id)}
+                    >
+                      {item.icon}
+                      <span>{t(item.label)}</span>
+                    </button>
+                  ))}
+                </section>
+              );
+            })}
           </nav>
-          <main className="settings-content">
-            {section === "general" && <GeneralSettings />}
-            {section === "agent" && <AgentSettings />}
-            {section === "skills" && <SkillsSettings worktreeId={worktreeId} />}
-            {section === "memory" && <MemorySettings worktreeId={worktreeId} />}
-            {section === "extensions" && (
-              <ExtensionsSettings worktreeId={worktreeId} />
+        </aside>
+        <main className="settings-main" aria-label={t("settings.title")}>
+          <div className="settings-content">
+            {visibleSections.length === 0 ? (
+              <div className="settings-no-results">
+                {t("settings.search.empty", { query: query.trim() })}
+              </div>
+            ) : (
+              <>
+                {section === "general" && <GeneralSettings />}
+                {section === "agent" && <AgentSettings />}
+                {section === "skills" && (
+                  <SkillsSettings worktreeId={worktreeId} />
+                )}
+                {section === "memory" && (
+                  <MemorySettings worktreeId={worktreeId} />
+                )}
+                {section === "extensions" && (
+                  <ExtensionsSettings worktreeId={worktreeId} />
+                )}
+                {section === "editor" && <EditorSettings />}
+                {section === "terminal" && <TerminalSettings />}
+              </>
             )}
-            {section === "editor" && <EditorSettings />}
-            {section === "terminal" && <TerminalSettings />}
-          </main>
-        </div>
-      </section>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

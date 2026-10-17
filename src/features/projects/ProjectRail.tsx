@@ -6,11 +6,14 @@ import {
   RiFolderOpenLine,
   RiGitBranchLine,
   RiGitRepositoryLine,
+  RiLayoutLeftLine,
   RiMore2Fill,
+  RiSettings3Line,
 } from "@remixicon/react";
 import type { WorktreeSummary } from "../../bindings";
 import { chatRuntime, useActiveChatWorktrees } from "../chat/chatRuntime";
 import { SpireCodeMark } from "../../components/SpireCodeMark";
+import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { projectsApi } from "./projectsApi";
@@ -27,7 +30,13 @@ type DialogState =
   | { type: "delete"; worktree: WorktreeSummary }
   | null;
 
-export function ProjectRail() {
+export function ProjectRail({
+  onToggleProjects = () => undefined,
+  onOpenSettings = () => undefined,
+}: {
+  onToggleProjects?: () => void;
+  onOpenSettings?: () => void;
+}) {
   const { t } = useTranslation();
   const store = useProjectsStore();
   const activeChatWorktrees = useActiveChatWorktrees();
@@ -127,6 +136,16 @@ export function ProjectRail() {
       <div className="brand">
         <SpireCodeMark className="brand-mark" />
         <span>SPIRECODE</span>
+        <Tooltip label={t("workbench.toggleProjects")} align="end">
+          <button
+            className="project-panel-toggle"
+            type="button"
+            aria-label={t("workbench.toggleProjects")}
+            onClick={onToggleProjects}
+          >
+            <RiLayoutLeftLine size={16} />
+          </button>
+        </Tooltip>
       </div>
       <div className="project-rail-heading">
         <span>{t("projects.heading")}</span>
@@ -362,6 +381,12 @@ export function ProjectRail() {
           <small>{t("projects.empty.action")}</small>
         </button>
       )}
+      <div className="project-rail-footer">
+        <button type="button" onClick={onOpenSettings}>
+          <RiSettings3Line size={15} />
+          <span>{t("workbench.settings")}</span>
+        </button>
+      </div>
       {dialog?.type === "new" && (
         <NewWorktreeDialog
           projectId={dialog.projectId}

@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Moved Projects and Settings controls into the Projects rail and redesigned Settings as an Orca-inspired full-window page with grouped navigation and search.
 - Upgraded Git Changes into an Orca-inspired Source Control panel with filtering, collapsible conflict-aware groups, rich status metadata, safe stage/unstage/discard actions, and per-worktree commit drafts.
 - Refined the workbench with quieter neutral chrome, a narrower Chat reading column, accessible icon tooltips, and a System appearance option that follows the operating system theme.
 
