@@ -260,6 +260,14 @@ describe("Workbench panel handles", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps theme selection exclusive to Settings", () => {
+    render(<Workbench />);
+
+    expect(
+      screen.queryByRole("button", { name: /^Theme:/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("uses icon-only controls to switch files and changes", () => {
     render(<Workbench />);
 

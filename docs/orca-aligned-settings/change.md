@@ -17,6 +17,7 @@ Adopt Orca's useful navigation pattern without importing its product complexity:
   - a centered, scrollable content column with section headers and contained setting surfaces;
   - existing General, Agent, Skills, Memory, Extensions, Editor, and Terminal behavior without changing persistence or IPC.
 - Manual Settings entry opens General. Agent-readiness failures continue to open Agent automatically.
+- Theme selection exists only in Settings; the workspace top bar does not expose a theme toggle.
 - Returning to the workspace preserves panel widths/collapse state, active project/worktree, editor resources, and right-panel state.
 - English and Simplified Chinese copy remain complete.
 - No new dependency, Renderer authority, Main IPC, persistence schema, or product capability is introduced.
@@ -29,5 +30,6 @@ Risk classification: standard. This is a cross-module, user-visible navigation a
 2. Convert the existing Settings dialog shell into a controlled full-window Settings page while retaining the existing section implementations and data APIs.
 3. Move Settings and the open-panel toggle into ProjectRail via explicit callbacks owned by Workbench; add a collapsed-edge reopen control outside the unmounted rail.
 4. Replace modal CSS with Orca-inspired page sidebar, search, navigation groups, centered content, contained rows, focus, and responsive behavior.
-5. Update localized copy, changelog, and style-contract tests.
-6. Run targeted tests, `pnpm check`, `pnpm build`, `git diff --check`, then update the existing feature PR and reinstall the verified macOS bundle.
+5. Keep theme selection in General Settings and remove the redundant workspace shortcut.
+6. Update localized copy, changelog, and style-contract tests.
+7. Run targeted tests, `pnpm check`, `pnpm build`, `git diff --check`, then update the existing feature PR and reinstall the verified macOS bundle.
