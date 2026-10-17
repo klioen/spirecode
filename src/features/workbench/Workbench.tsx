@@ -7,6 +7,7 @@ import {
   RiSettings3Line,
 } from "@remixicon/react";
 import { SpireCodeMark } from "../../components/SpireCodeMark";
+import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { ChangesPanel } from "../changes/ChangesPanel";
 import { refreshChanges } from "../changes/changesRefresh";
@@ -181,30 +182,33 @@ export function Workbench() {
         </nav>
         <div className="layout-actions">
           <ThemeToggle />
-          <button
-            title={t("workbench.settings")}
-            aria-label={t("workbench.settings")}
-            onClick={() => {
-              setSettingsSection("extensions");
-              setSettingsOpen(true);
-            }}
-          >
-            <RiSettings3Line size={17} />
-          </button>
-          <button
-            title={t("workbench.toggleProjects")}
-            aria-label={t("workbench.toggleProjects")}
-            onClick={workbench.toggleProjects}
-          >
-            <RiLayoutLeftLine size={17} />
-          </button>
-          <button
-            title={t("workbench.toggleFiles")}
-            aria-label={t("workbench.toggleFiles")}
-            onClick={workbench.toggleRight}
-          >
-            <RiLayoutRightLine size={17} />
-          </button>
+          <Tooltip label={t("workbench.settings")}>
+            <button
+              aria-label={t("workbench.settings")}
+              onClick={() => {
+                setSettingsSection("extensions");
+                setSettingsOpen(true);
+              }}
+            >
+              <RiSettings3Line size={17} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t("workbench.toggleProjects")}>
+            <button
+              aria-label={t("workbench.toggleProjects")}
+              onClick={workbench.toggleProjects}
+            >
+              <RiLayoutLeftLine size={17} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t("workbench.toggleFiles")} align="end">
+            <button
+              aria-label={t("workbench.toggleFiles")}
+              onClick={workbench.toggleRight}
+            >
+              <RiLayoutRightLine size={17} />
+            </button>
+          </Tooltip>
         </div>
       </header>
       <div className="workspace-center">
@@ -228,23 +232,25 @@ export function Workbench() {
       )}
       <aside className="right-panel">
         <div className="right-tabs">
-          <button
-            className={visibleRightView === "files" ? "active" : ""}
-            aria-label={t("workbench.files")}
-            title={t("workbench.files")}
-            onClick={() => workbench.setRightView("files")}
-          >
-            <RiFolder3Line size={15} />
-          </button>
-          {supportsGit && (
+          <Tooltip label={t("workbench.files")}>
             <button
-              className={visibleRightView === "changes" ? "active" : ""}
-              aria-label={t("workbench.changes")}
-              title={t("workbench.changes")}
-              onClick={() => workbench.setRightView("changes")}
+              className={visibleRightView === "files" ? "active" : ""}
+              aria-label={t("workbench.files")}
+              onClick={() => workbench.setRightView("files")}
             >
-              <RiGitCommitLine size={15} />
+              <RiFolder3Line size={15} />
             </button>
+          </Tooltip>
+          {supportsGit && (
+            <Tooltip label={t("workbench.changes")}>
+              <button
+                className={visibleRightView === "changes" ? "active" : ""}
+                aria-label={t("workbench.changes")}
+                onClick={() => workbench.setRightView("changes")}
+              >
+                <RiGitCommitLine size={15} />
+              </button>
+            </Tooltip>
           )}
         </div>
         {active ? (

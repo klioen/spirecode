@@ -33,6 +33,10 @@ const required = [
   "success",
   "shadow",
   "modal-overlay",
+  "surface-popover",
+  "interactive-hover",
+  "interactive-selected",
+  "focus-ring",
 ];
 
 describe("theme tokens", () => {

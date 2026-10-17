@@ -94,6 +94,23 @@ beforeEach(() => {
 });
 
 describe("SettingsDialog", () => {
+  it("offers system, light, and dark appearance modes", () => {
+    render(
+      <SettingsDialog
+        worktreeId={null}
+        initialSection="general"
+        onClose={() => undefined}
+      />,
+    );
+
+    const theme = screen.getByRole("combobox", { name: "Theme" });
+    expect(
+      Array.from((theme as HTMLSelectElement).options).map((option) =>
+        option.textContent?.trim(),
+      ),
+    ).toEqual(["System", "Light", "Dark"]);
+  });
+
   it("shows only resolved user resources as a read-only list", async () => {
     render(<SettingsDialog worktreeId="w1" onClose={() => undefined} />);
 

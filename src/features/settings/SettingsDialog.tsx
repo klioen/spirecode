@@ -24,7 +24,7 @@ import {
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
 import { useDialogFocus } from "../../lib/useDialogFocus";
-import { useThemeStore } from "../theme/themeStore";
+import { useThemeStore, type ThemeMode } from "../theme/themeStore";
 import { useSettingsStore } from "./settingsStore";
 import { MemorySettings } from "./MemorySettings";
 import { settingsApi } from "./settingsApi";
@@ -181,8 +181,9 @@ function GeneralSettings() {
         <select
           aria-label={t("settings.general.theme.label")}
           value={mode}
-          onChange={(event) => setMode(event.target.value as "light" | "dark")}
+          onChange={(event) => setMode(event.target.value as ThemeMode)}
         >
+          <option value="system">{t("settings.general.theme.system")}</option>
           <option value="light">{t("settings.general.theme.light")}</option>
           <option value="dark">{t("settings.general.theme.dark")}</option>
         </select>

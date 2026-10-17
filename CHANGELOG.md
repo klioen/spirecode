@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Cross-platform development packaging for macOS arm64, Windows x64, and Linux x64.
 - Projects, managed worktrees, file editing, Git changes, terminals, multi-tab pi Agent chat, settings, and support for user-installed standard Pi resources.
 
+### Changed
+
+- Refined the workbench with quieter neutral chrome, a narrower Chat reading column, accessible icon tooltips, and a System appearance option that follows the operating system theme.
+
 ### Removed
 
 - **Breaking:** SpireCode no longer depends on or bundles packages from `github:klioen/pi-extensions`. Web access, subagents, memory, todo, plan, goal, and SDLC resources must now be installed and declared by users through standard Pi settings.

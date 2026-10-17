@@ -253,8 +253,17 @@ describe("Workbench panel handles", () => {
 
     const files = screen.getByRole("button", { name: "FILES" });
     const changes = screen.getByRole("button", { name: "CHANGES" });
-    expect(files).toHaveAttribute("title", "FILES");
-    expect(changes).toHaveAttribute("title", "CHANGES");
+    fireEvent.focus(files);
+    expect(screen.getByRole("tooltip", { name: "FILES" })).toHaveAttribute(
+      "id",
+      files.getAttribute("aria-describedby"),
+    );
+    fireEvent.blur(files, { relatedTarget: changes });
+    fireEvent.focus(changes);
+    expect(screen.getByRole("tooltip", { name: "CHANGES" })).toHaveAttribute(
+      "id",
+      changes.getAttribute("aria-describedby"),
+    );
     expect(files).toHaveTextContent("");
     expect(changes).toHaveTextContent("");
     expect(screen.getByText("Files")).toBeInTheDocument();

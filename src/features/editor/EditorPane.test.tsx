@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../bindings";
@@ -799,10 +800,11 @@ describe("Chat history popover", () => {
     await user.click(screen.getByRole("button", { name: "New chat" }));
 
     expect(await screen.findByText("chat body untitled")).toBeInTheDocument();
-    expect(screen.getByText("New chat").closest(".editor-tab")).not.toBeNull();
+    const tabs = within(screen.getByRole("tablist"));
+    expect(tabs.getByText("New chat").closest(".editor-tab")).not.toBeNull();
 
     act(() => setLanguage("zh-CN"));
-    expect(screen.getByText("新建聊天").closest(".editor-tab")).not.toBeNull();
+    expect(tabs.getByText("新建聊天").closest(".editor-tab")).not.toBeNull();
   });
 
   it("opens a selected session and closes history", async () => {
