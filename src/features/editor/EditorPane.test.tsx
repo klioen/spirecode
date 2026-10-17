@@ -272,6 +272,7 @@ describe("EditorPane resources", () => {
       await screen.findByRole("textbox", { name: "File editor" }),
       { target: { value: "after" } },
     );
+    await screen.findByLabelText("Unsaved changes");
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     expect(await screen.findByText("try again")).toBeInTheDocument();
 
