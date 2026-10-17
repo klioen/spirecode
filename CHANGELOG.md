@@ -8,12 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Complete Files CRUD with inline file/folder creation and rename, duplication, cut/copy/paste moves, system Trash deletion, file-manager reveal, active-file reveal, and secure worktree-relative Main-process operations.
 - Public contribution, security, support, conduct, issue, and pull request guidance.
 - Cross-platform development packaging for macOS arm64, Windows x64, and Linux x64.
 - Projects, managed worktrees, file editing, Git changes, terminals, multi-tab pi Agent chat, settings, and support for user-installed standard Pi resources.
 
 ### Changed
 
+- Upgraded Git Changes into an Orca-inspired Source Control panel with filtering, collapsible conflict-aware groups, rich status metadata, safe stage/unstage/discard actions, and per-worktree commit drafts.
 - Refined the workbench with quieter neutral chrome, a narrower Chat reading column, accessible icon tooltips, and a System appearance option that follows the operating system theme.
 
 ### Removed

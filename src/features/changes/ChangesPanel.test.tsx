@@ -3,11 +3,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GitStatus } from "../../bindings";
 import { useEditorStore } from "../editor/editorStore";
 import { ChangesPanel } from "./ChangesPanel";
+import { commitChanges, discardChanges, stageChanges } from "./changesActions";
 import { refreshChanges } from "./changesRefresh";
 import { useChangesStore } from "./changesStore";
 
 vi.mock("./changesRefresh", () => ({
   refreshChanges: vi.fn(),
+}));
+vi.mock("./changesActions", () => ({
+  stageChanges: vi.fn(() => Promise.resolve(true)),
+  unstageChanges: vi.fn(() => Promise.resolve(true)),
+  discardChanges: vi.fn(() => Promise.resolve(true)),
+  commitChanges: vi.fn(() => Promise.resolve(true)),
 }));
 
 const snapshot: GitStatus = {
@@ -42,6 +49,9 @@ const snapshot: GitStatus = {
 
 beforeEach(() => {
   vi.mocked(refreshChanges).mockReset();
+  vi.mocked(stageChanges).mockClear();
+  vi.mocked(discardChanges).mockClear();
+  vi.mocked(commitChanges).mockClear();
   useChangesStore.setState({
     byWorktree: {
       w1: {
@@ -53,9 +63,19 @@ beforeEach(() => {
     },
     mode: "list",
     diffMode: "unified",
+    commitDraftByWorktree: {},
+    operationByWorktree: {},
+    operationErrorByWorktree: {},
   });
   useEditorStore.setState({ views: {}, navigationGeneration: 0 });
 });
+
+const openViewOptions = () =>
+  fireEvent.click(screen.getByRole("button", { name: "View options" }));
+const selectTreeView = () => {
+  openViewOptions();
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Tree view" }));
+};
 
 describe("ChangesPanel view modes", () => {
   it("defaults to the flat list mode without a manual refresh control", () => {
@@ -65,14 +85,13 @@ describe("ChangesPanel view modes", () => {
     expect(
       screen.queryByRole("button", { name: "Refresh changes" }),
     ).toBeNull();
-    expect(screen.getByRole("button", { name: "List view" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByRole("button", { name: "Tree view" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    openViewOptions();
+    expect(
+      screen.getByRole("menuitemradio", { name: "List view" }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("menuitemradio", { name: "Tree view" }),
+    ).toHaveAttribute("aria-checked", "false");
     expect(
       screen.getByRole("treeitem", {
         name: "src/features/changes/ChangesPanel.tsx M",
@@ -83,7 +102,7 @@ describe("ChangesPanel view modes", () => {
 
   it("shows grouped paths as an expanded, collapsible tree", () => {
     render(<ChangesPanel worktreeId="w1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
+    selectTreeView();
 
     const src = screen.getByRole("treeitem", { name: "src" });
     expect(src).toHaveAttribute("aria-expanded", "true");
@@ -112,7 +131,7 @@ describe("ChangesPanel view modes", () => {
 
   it("adds tree semantics and supports the complete keyboard matrix", () => {
     render(<ChangesPanel worktreeId="w1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
+    selectTreeView();
 
     expect(screen.getByRole("tree")).toBeInTheDocument();
     const src = screen.getByRole("treeitem", { name: "src" });
@@ -159,7 +178,7 @@ describe("ChangesPanel view modes", () => {
 
   it("opens the original path with the group scope from tree mode", () => {
     render(<ChangesPanel worktreeId="w1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
+    selectTreeView();
     fireEvent.click(
       screen.getByRole("treeitem", { name: "ChangesPanel.tsx M" }),
     );
@@ -175,12 +194,97 @@ describe("ChangesPanel view modes", () => {
     });
   });
 
+  it("filters by path and hides section-wide actions while filtering", () => {
+    render(<ChangesPanel worktreeId="w1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Filter changes" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter changes" }), {
+      target: { value: "README" },
+    });
+
+    expect(
+      screen.queryByRole("treeitem", {
+        name: "src/features/changes/ChangesPanel.tsx M",
+      }),
+    ).toBeNull();
+    expect(screen.getByRole("treeitem", { name: "README.md U" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Stage all" })).toBeNull();
+  });
+
+  it("runs a row action without opening its diff", () => {
+    render(<ChangesPanel worktreeId="w1" />);
+    const row = screen.getByRole("treeitem", { name: "README.md U" });
+    fireEvent.click(within(row).getByRole("button", { name: "Stage" }));
+
+    expect(stageChanges).toHaveBeenCalledWith(
+      "w1",
+      expect.arrayContaining([
+        expect.objectContaining({
+          change: expect.objectContaining({ path: "README.md" }),
+        }),
+      ]),
+    );
+    expect(useEditorStore.getState().views.w1).toBeUndefined();
+  });
+
+  it("collapses sections and exposes destructive confirmation", () => {
+    render(<ChangesPanel worktreeId="w1" />);
+    const heading = screen.getByRole("button", { name: "CHANGES2" });
+    fireEvent.click(heading);
+    expect(heading).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("treeitem", { name: "src/main.tsx M" }),
+    ).toBeNull();
+    fireEvent.click(heading);
+    const row = screen.getByRole("treeitem", { name: "src/main.tsx M" });
+    fireEvent.click(within(row).getByRole("button", { name: "Discard" }));
+    const dialog = screen.getByRole("dialog", { name: "Discard changes?" });
+    expect(dialog).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+    expect(discardChanges).toHaveBeenCalledWith(
+      "w1",
+      expect.arrayContaining([
+        expect.objectContaining({
+          change: expect.objectContaining({ path: "src/main.tsx" }),
+        }),
+      ]),
+    );
+  });
+
+  it("commits a staged change with the platform keyboard shortcut", () => {
+    useChangesStore.setState({
+      byWorktree: {
+        w1: {
+          snapshot: {
+            ...snapshot,
+            changes: [
+              {
+                path: "staged.ts",
+                status: "M.",
+                staged: true,
+                unstaged: false,
+                untracked: false,
+              },
+            ],
+          },
+          loading: false,
+          staleError: null,
+          generation: 1,
+        },
+      },
+    });
+    render(<ChangesPanel worktreeId="w1" />);
+    const message = screen.getByRole("textbox", { name: "Commit message" });
+    fireEvent.change(message, { target: { value: "ship it" } });
+    fireEvent.keyDown(message, { key: "Enter", metaKey: true });
+    expect(commitChanges).toHaveBeenCalledWith("w1", "ship it");
+  });
+
   it("keeps status groups separate in tree mode", () => {
     render(<ChangesPanel worktreeId="w1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
+    selectTreeView();
 
     const groups = screen.getAllByRole("region");
     expect(within(groups[0]).getByText("CHANGES")).toBeInTheDocument();
-    expect(within(groups[1]).getByText("UNTRACKED")).toBeInTheDocument();
+    expect(within(groups[1]).getByText("UNTRACKED FILES")).toBeInTheDocument();
   });
 });

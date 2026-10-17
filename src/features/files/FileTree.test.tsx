@@ -9,12 +9,30 @@ vi.mock("../../bindings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../bindings")>();
   return {
     ...actual,
-    commands: { ...actual.commands, fsReadDir: vi.fn() },
+    commands: {
+      ...actual.commands,
+      fsReadDir: vi.fn(),
+      fsCreateFile: vi.fn(),
+      fsCreateDirectory: vi.fn(),
+      fsRename: vi.fn(),
+      fsMove: vi.fn(),
+      fsCopy: vi.fn(),
+      fsTrash: vi.fn(),
+      fsReveal: vi.fn(),
+    },
   };
 });
 
 beforeEach(() => {
   vi.mocked(commands.fsReadDir).mockReset();
+  vi.mocked(commands.fsReadDir).mockResolvedValue([]);
+  vi.mocked(commands.fsCreateFile).mockReset();
+  vi.mocked(commands.fsCreateDirectory).mockReset();
+  vi.mocked(commands.fsRename).mockReset();
+  vi.mocked(commands.fsMove).mockReset();
+  vi.mocked(commands.fsCopy).mockReset();
+  vi.mocked(commands.fsTrash).mockReset();
+  vi.mocked(commands.fsReveal).mockReset();
   useFileTreeStore.setState({
     expandedByWorktree: { w1: ["src"] },
     generationByWorktree: { w1: 0 },
@@ -125,6 +143,49 @@ describe("FileTree accessibility", () => {
     expect(
       await screen.findByRole("treeitem", { name: "updated.txt" }),
     ).toBeVisible();
+  });
+
+  it("creates a file inline from the toolbar and opens it as a pinned tab", async () => {
+    vi.mocked(commands.fsCreateFile).mockResolvedValue({
+      operation: "create",
+      kind: "file",
+      destinationRelativePath: "new.ts",
+    });
+    render(<FileTree worktreeId="w1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New File" }));
+    const input = screen.getByRole("textbox", { name: "New file name" });
+    fireEvent.change(input, { target: { value: "new.ts" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(commands.fsCreateFile).toHaveBeenCalledWith("w1", "new.ts"),
+    );
+    expect(useEditorStore.getState().views.w1.activeTabId).toBe(
+      "file:w1:new.ts",
+    );
+  });
+
+  it("keeps inline creation open with an accessible error and cancels with Escape", async () => {
+    vi.mocked(commands.fsCreateDirectory).mockRejectedValue({
+      code: "EEXIST",
+      message: "destination already exists",
+    });
+    render(<FileTree worktreeId="w1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New Folder" }));
+    const input = screen.getByRole("textbox", { name: "New folder name" });
+    fireEvent.change(input, { target: { value: "src" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "destination already exists",
+    );
+    expect(input).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(
+      screen.queryByRole("textbox", { name: "New folder name" }),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to the first visible item when the focused item disappears", async () => {

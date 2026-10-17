@@ -7,10 +7,23 @@ interface SnapshotState {
   staleError: CommandError | null;
   generation: number;
 }
+export interface GitOperationState {
+  kind: "stage" | "unstage" | "discard" | "commit";
+  paths: string[];
+}
+
 interface ChangesState {
   byWorktree: Record<string, SnapshotState>;
   mode: "list" | "tree";
   diffMode: "unified" | "split";
+  commitDraftByWorktree: Record<string, string>;
+  operationByWorktree: Record<string, GitOperationState | null>;
+  operationErrorByWorktree: Record<string, CommandError | null>;
+  setCommitDraft: (worktreeId: string, value: string) => void;
+  beginOperation: (worktreeId: string, operation: GitOperationState) => boolean;
+  finishOperation: (worktreeId: string) => void;
+  failOperation: (worktreeId: string, error: CommandError) => void;
+  clearOperationError: (worktreeId: string) => void;
   setMode: (mode: "list" | "tree") => void;
   setDiffMode: (mode: "unified" | "split") => void;
   startRefresh: (worktreeId: string) => number;
@@ -37,6 +50,59 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   byWorktree: {},
   mode: "list",
   diffMode: "unified",
+  commitDraftByWorktree: {},
+  operationByWorktree: {},
+  operationErrorByWorktree: {},
+  setCommitDraft: (worktreeId, value) =>
+    set((state) => ({
+      commitDraftByWorktree: {
+        ...state.commitDraftByWorktree,
+        [worktreeId]: value,
+      },
+    })),
+  beginOperation: (worktreeId, operation) => {
+    if (get().operationByWorktree[worktreeId]) return false;
+    set((state) => ({
+      operationByWorktree: {
+        ...state.operationByWorktree,
+        [worktreeId]: operation,
+      },
+      operationErrorByWorktree: {
+        ...state.operationErrorByWorktree,
+        [worktreeId]: null,
+      },
+    }));
+    return true;
+  },
+  finishOperation: (worktreeId) =>
+    set((state) => ({
+      operationByWorktree: {
+        ...state.operationByWorktree,
+        [worktreeId]: null,
+      },
+      operationErrorByWorktree: {
+        ...state.operationErrorByWorktree,
+        [worktreeId]: null,
+      },
+    })),
+  failOperation: (worktreeId, error) =>
+    set((state) => ({
+      operationByWorktree: {
+        ...state.operationByWorktree,
+        [worktreeId]: null,
+      },
+      operationErrorByWorktree: {
+        ...state.operationErrorByWorktree,
+        [worktreeId]: error,
+      },
+    })),
+  clearOperationError: (worktreeId) =>
+    set((state) => ({
+      operationErrorByWorktree: {
+        ...state.operationErrorByWorktree,
+        [worktreeId]: null,
+      },
+    })),
   setMode: (mode) => set({ mode }),
   setDiffMode: (diffMode) => set({ diffMode }),
   startRefresh: (worktreeId) => {
@@ -101,7 +167,18 @@ export const useChangesStore = create<ChangesState>((set, get) => ({
   clearWorktree: (worktreeId) =>
     set((state) => {
       const byWorktree = { ...state.byWorktree };
+      const commitDraftByWorktree = { ...state.commitDraftByWorktree };
+      const operationByWorktree = { ...state.operationByWorktree };
+      const operationErrorByWorktree = { ...state.operationErrorByWorktree };
       delete byWorktree[worktreeId];
-      return { byWorktree };
+      delete commitDraftByWorktree[worktreeId];
+      delete operationByWorktree[worktreeId];
+      delete operationErrorByWorktree[worktreeId];
+      return {
+        byWorktree,
+        commitDraftByWorktree,
+        operationByWorktree,
+        operationErrorByWorktree,
+      };
     }),
 }));

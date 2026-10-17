@@ -6,6 +6,17 @@ describe("Electron host allowlists", () => {
     for (const command of COMMANDS) expect(isCommand(command)).toBe(true);
     expect(COMMANDS).toEqual(
       expect.arrayContaining([
+        "fs_create_file",
+        "fs_create_directory",
+        "fs_rename",
+        "fs_move",
+        "fs_copy",
+        "fs_trash",
+        "fs_reveal",
+        "git_stage",
+        "git_unstage",
+        "git_discard",
+        "git_commit",
         "chat_session_config",
         "chat_session_set_model",
         "chat_session_set_thinking_level",
@@ -23,6 +34,8 @@ describe("Electron host allowlists", () => {
     expect(isCommand("chat_session_invoke")).toBe(false);
     expect(isCommand("pi_command")).toBe(false);
     expect(isCommand("fs_read_absolute")).toBe(false);
+    expect(isCommand("git_exec")).toBe(false);
+    expect(isCommand("git_reset_hard")).toBe(false);
     expect(isCommand("child_process.exec")).toBe(false);
     expect(isCommand(1)).toBe(false);
   });

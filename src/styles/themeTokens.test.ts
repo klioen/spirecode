@@ -39,6 +39,21 @@ const required = [
   "focus-ring",
 ];
 
+const declarationBlock = (selector: string) => {
+  const start = css.indexOf(`${selector} {`);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = css.indexOf("}", start);
+  return css.slice(start, end);
+};
+
+const expectDeclarations = (
+  selector: string,
+  declarations: readonly string[],
+) => {
+  const block = declarationBlock(selector);
+  for (const declaration of declarations) expect(block).toContain(declaration);
+};
+
 describe("theme tokens", () => {
   it.each([":root", '[data-theme="light"]', '[data-theme="dark"]'])(
     "%s defines the complete visual token contract",
@@ -66,5 +81,31 @@ describe("theme tokens", () => {
   it("keeps raw colors inside the theme declarations", () => {
     const componentCss = css.slice(css.indexOf("* {"));
     expect(componentCss).not.toMatch(/#[0-9a-f]{3,8}|rgb\(/i);
+  });
+
+  it("aligns Projects popovers with the Files menu surface", () => {
+    const menuSurface = [
+      "min-width: 178px",
+      "border: 1px solid var(--border-default)",
+      "border-radius: 7px",
+      "background: var(--surface-popover)",
+      "box-shadow: 0 8px 24px var(--shadow)",
+    ];
+    expectDeclarations(".file-context-menu", menuSurface);
+    expectDeclarations(".project-menu,\n.worktree-menu", menuSurface);
+    expectDeclarations(".branch-options", menuSurface.slice(1));
+  });
+
+  it("aligns Projects dialogs with the Files confirmation surface", () => {
+    const dialogSurface = [
+      "width: min(360px, calc(100vw - 32px))",
+      "padding: 18px",
+      "border: 1px solid var(--border-default)",
+      "border-radius: 10px",
+      "background: var(--elevated-bg)",
+      "box-shadow: 0 18px 55px var(--shadow)",
+    ];
+    expectDeclarations(".chat-delete-dialog", dialogSurface);
+    expectDeclarations(".worktree-dialog", dialogSurface);
   });
 });

@@ -36,7 +36,7 @@ function validateRelativePath(relativePath: string): void {
       "path must contain only normal relative components",
     );
   }
-  if (components.includes(".git")) {
+  if (components.some((component) => component.toLowerCase() === ".git")) {
     throw new CommandError("OUTSIDE_PROJECT", ".git is not accessible");
   }
 }

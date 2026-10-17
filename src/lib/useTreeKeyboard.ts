@@ -51,7 +51,12 @@ export function useTreeKeyboard(): {
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const tree = treeRef.current;
     const current = event.currentTarget;
-    if (!tree || current.getAttribute("role") !== "treeitem") return;
+    if (
+      !tree ||
+      event.target !== current ||
+      current.getAttribute("role") !== "treeitem"
+    )
+      return;
     const items = visibleItems(tree);
     const index = items.indexOf(current);
     if (index < 0) return;

@@ -12,6 +12,7 @@ import type {
   ExtensionSetting,
   FileContent,
   FileEntry,
+  FilesystemMutationResult,
   GitDiff,
   GitStatus,
   MemoryConfig,
@@ -147,11 +148,62 @@ export const commands = {
       content,
       expectedVersion,
     }),
+  fsCreateFile: (worktreeId: string, relativePath: string) =>
+    command<FilesystemMutationResult>("fs_create_file", {
+      worktreeId,
+      relativePath,
+    }),
+  fsCreateDirectory: (worktreeId: string, relativePath: string) =>
+    command<FilesystemMutationResult>("fs_create_directory", {
+      worktreeId,
+      relativePath,
+    }),
+  fsRename: (worktreeId: string, relativePath: string, newName: string) =>
+    command<FilesystemMutationResult>("fs_rename", {
+      worktreeId,
+      relativePath,
+      newName,
+    }),
+  fsMove: (
+    worktreeId: string,
+    sourceRelativePath: string,
+    destinationRelativePath: string,
+  ) =>
+    command<FilesystemMutationResult>("fs_move", {
+      worktreeId,
+      sourceRelativePath,
+      destinationRelativePath,
+    }),
+  fsCopy: (
+    worktreeId: string,
+    sourceRelativePath: string,
+    destinationRelativePath: string,
+  ) =>
+    command<FilesystemMutationResult>("fs_copy", {
+      worktreeId,
+      sourceRelativePath,
+      destinationRelativePath,
+    }),
+  fsTrash: (worktreeId: string, relativePath: string) =>
+    command<FilesystemMutationResult>("fs_trash", {
+      worktreeId,
+      relativePath,
+    }),
+  fsReveal: (worktreeId: string, relativePath: string) =>
+    command<void>("fs_reveal", { worktreeId, relativePath }),
 
   gitStatus: (worktreeId: string) =>
     command<GitStatus>("git_status", { worktreeId }),
   gitDiffFile: (worktreeId: string, relativePath: string, scope: string) =>
     command<GitDiff>("git_diff_file", { worktreeId, relativePath, scope }),
+  gitStage: (worktreeId: string, relativePath: string) =>
+    command<void>("git_stage", { worktreeId, relativePath }),
+  gitUnstage: (worktreeId: string, relativePath: string) =>
+    command<void>("git_unstage", { worktreeId, relativePath }),
+  gitDiscard: (worktreeId: string, relativePath: string, untracked: boolean) =>
+    command<void>("git_discard", { worktreeId, relativePath, untracked }),
+  gitCommit: (worktreeId: string, message: string) =>
+    command<void>("git_commit", { worktreeId, message }),
 
   terminalCreate: (worktreeId: string) =>
     command<TerminalSummary>("terminal_create", {

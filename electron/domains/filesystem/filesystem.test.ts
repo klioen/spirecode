@@ -3,6 +3,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readlink,
   realpath,
   rm,
   symlink,
@@ -62,6 +63,10 @@ describe("resolveProjectPath", () => {
     );
     await expectCode(
       resolveProjectPath(root, ".git/config", true),
+      "OUTSIDE_PROJECT",
+    );
+    await expectCode(
+      resolveProjectPath(root, ".GIT/config", false),
       "OUTSIDE_PROJECT",
     );
     await expectCode(
@@ -249,6 +254,152 @@ describe("FilesystemService", () => {
       "root-only.ts",
       "visible.ts",
     ]);
+  });
+
+  it("creates files and directories exclusively inside existing parents", async () => {
+    const root = await temporaryDirectory();
+    await mkdir(path.join(root, "src"));
+    const service = new FilesystemService(() => root);
+
+    await expect(
+      service.createFile("worktree-1", "src/new.ts"),
+    ).resolves.toMatchObject({
+      operation: "create",
+      destinationRelativePath: "src/new.ts",
+      kind: "file",
+    });
+    await expect(readFile(path.join(root, "src/new.ts"), "utf8")).resolves.toBe(
+      "",
+    );
+    await expect(
+      service.createDirectory("worktree-1", "src/components"),
+    ).resolves.toMatchObject({
+      operation: "create",
+      destinationRelativePath: "src/components",
+      kind: "directory",
+    });
+    await expectCode(service.createFile("worktree-1", "src/new.ts"), "EEXIST");
+    await expectCode(
+      service.createFile("worktree-1", "missing/new.ts"),
+      "NOT_FOUND",
+    );
+  });
+
+  it("renames and moves entries without overwriting or moving a directory into itself", async () => {
+    const root = await temporaryDirectory();
+    await mkdir(path.join(root, "src/nested"), { recursive: true });
+    await mkdir(path.join(root, "dest"));
+    await writeFile(path.join(root, "src/file.ts"), "content");
+    await writeFile(path.join(root, "dest/existing.ts"), "existing");
+    const service = new FilesystemService(() => root);
+
+    await expect(
+      service.renameEntry("worktree-1", "src/file.ts", "renamed.ts"),
+    ).resolves.toMatchObject({
+      operation: "move",
+      sourceRelativePath: "src/file.ts",
+      destinationRelativePath: "src/renamed.ts",
+      kind: "file",
+    });
+    await expect(
+      service.moveEntry("worktree-1", "src/renamed.ts", "dest/renamed.ts"),
+    ).resolves.toMatchObject({ destinationRelativePath: "dest/renamed.ts" });
+    await expectCode(
+      service.moveEntry("worktree-1", "dest/renamed.ts", "dest/existing.ts"),
+      "EEXIST",
+    );
+    await expectCode(
+      service.moveEntry("worktree-1", "src", "src/nested/moved"),
+      "INVALID_ARGUMENT",
+    );
+  });
+
+  it("recursively copies directories and preserves safe symlinks without following them", async () => {
+    const root = await temporaryDirectory();
+    await mkdir(path.join(root, "src/nested"), { recursive: true });
+    await writeFile(path.join(root, "src/nested/file.ts"), "content");
+    if (process.platform !== "win32") {
+      await symlink("nested/file.ts", path.join(root, "src/link.ts"));
+    }
+    const service = new FilesystemService(() => root);
+
+    await expect(
+      service.copyEntry("worktree-1", "src", "copy"),
+    ).resolves.toMatchObject({
+      operation: "copy",
+      sourceRelativePath: "src",
+      destinationRelativePath: "copy",
+      kind: "directory",
+    });
+    await expect(
+      readFile(path.join(root, "copy/nested/file.ts"), "utf8"),
+    ).resolves.toBe("content");
+    if (process.platform !== "win32") {
+      await expect(readlink(path.join(root, "copy/link.ts"))).resolves.toBe(
+        "nested/file.ts",
+      );
+    }
+    await expectCode(
+      service.copyEntry("worktree-1", "src", "src/nested/copy"),
+      "INVALID_ARGUMENT",
+    );
+  });
+
+  it("moves entries to Trash only through the injected operation", async () => {
+    const root = await temporaryDirectory();
+    await writeFile(path.join(root, "trash.txt"), "trash");
+    const trashItem = vi.fn(async (target: string) => rm(target));
+    const service = new FilesystemService(() => root, { trashItem });
+
+    await expect(
+      service.trashEntry("worktree-1", "trash.txt"),
+    ).resolves.toMatchObject({
+      operation: "trash",
+      sourceRelativePath: "trash.txt",
+      kind: "file",
+    });
+    expect(trashItem).toHaveBeenCalledWith(
+      path.join(await realpath(root), "trash.txt"),
+    );
+    await expectCode(service.trashEntry("worktree-1", ""), "OUTSIDE_PROJECT");
+  });
+
+  it("rejects mutation traversal, .git access, unsafe names, and symlink-parent escape", async () => {
+    const root = await temporaryDirectory();
+    await mkdir(path.join(root, ".git"));
+    await writeFile(path.join(root, "file.ts"), "content");
+    const service = new FilesystemService(() => root, {
+      trashItem: async () => undefined,
+    });
+
+    await expectCode(
+      service.createFile("worktree-1", "../escape"),
+      "OUTSIDE_PROJECT",
+    );
+    await expectCode(
+      service.createFile("worktree-1", ".git/config"),
+      "OUTSIDE_PROJECT",
+    );
+    await expectCode(
+      service.copyEntry("worktree-1", ".git", "git-copy"),
+      "OUTSIDE_PROJECT",
+    );
+    await expectCode(
+      service.trashEntry("worktree-1", ".git"),
+      "OUTSIDE_PROJECT",
+    );
+    await expectCode(
+      service.renameEntry("worktree-1", "file.ts", "../escape"),
+      "INVALID_ARGUMENT",
+    );
+    if (process.platform !== "win32") {
+      const outside = await temporaryDirectory("spirecode-outside-");
+      await symlink(outside, path.join(root, "escape"));
+      await expectCode(
+        service.createFile("worktree-1", "escape/new.ts"),
+        "OUTSIDE_PROJECT",
+      );
+    }
   });
 
   it("rejects directories, binary data, invalid UTF-8, and oversized files", async () => {

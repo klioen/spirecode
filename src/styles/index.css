@@ -494,32 +494,35 @@ body.panel-resizing-vertical * {
   right: 2px;
   top: 27px;
   z-index: 20;
-  min-width: 110px;
+  min-width: 178px;
   padding: 4px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--elevated-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-popover);
   box-shadow: 0 8px 24px var(--shadow);
+  color: var(--text-default);
 }
 .project-menu button,
 .worktree-menu button {
   width: 100%;
-  padding: 6px 8px;
+  min-height: 27px;
+  padding: 0 8px;
   border: 0;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
   background: transparent;
   color: var(--text-default);
+  font-size: 11px;
   text-align: left;
   cursor: pointer;
+  outline: none;
 }
 .project-menu button:hover,
-.worktree-menu button:hover {
-  background: var(--control-hover);
-}
-.project-menu {
-  right: 2px;
-  top: 27px;
-  min-width: 150px;
+.project-menu button:focus-visible,
+.worktree-menu button:hover,
+.worktree-menu button:focus-visible {
+  background: var(--interactive-hover);
 }
 .project-menu button:disabled {
   opacity: 0.5;
@@ -943,16 +946,24 @@ body.panel-resizing-vertical * {
   opacity: 0.6;
 }
 .worktree-dialog {
-  width: min(420px, calc(100vw - 32px));
-  padding: 20px;
-  border: 1px solid var(--border-strong);
+  width: min(360px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   background: var(--elevated-bg);
-  box-shadow: 0 18px 60px var(--shadow);
+  box-shadow: 0 18px 55px var(--shadow);
+  color: var(--text-default);
 }
 .worktree-dialog h2 {
-  margin: 0 0 18px;
-  font-size: 17px;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.worktree-dialog p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .worktree-dialog label {
   display: grid;
@@ -963,12 +974,17 @@ body.panel-resizing-vertical * {
 }
 .worktree-dialog input,
 .worktree-dialog select {
-  height: 34px;
+  height: 32px;
   padding: 0 9px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   background: var(--control-bg);
   color: var(--text-default);
+}
+.worktree-dialog input:focus-visible,
+.worktree-dialog select:focus-visible {
+  border-color: var(--focus-ring);
+  outline: 1px solid var(--focus-ring);
 }
 .branch-notice {
   margin-top: 8px;
@@ -1001,24 +1017,29 @@ body.panel-resizing-vertical * {
   max-height: 180px;
   overflow-y: auto;
   padding: 4px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--elevated-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-popover);
   box-shadow: 0 8px 24px var(--shadow);
+  color: var(--text-default);
 }
 .branch-options button {
   width: 100%;
-  padding: 7px 8px;
+  min-height: 27px;
+  padding: 0 8px;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--text-default);
+  font-size: 11px;
   text-align: left;
   cursor: pointer;
+  outline: none;
 }
 .branch-options button:hover,
+.branch-options button:focus-visible,
 .branch-options button[aria-selected="true"] {
-  background: var(--control-hover);
+  background: var(--interactive-hover);
 }
 .branch-options-empty {
   padding: 7px 8px;
@@ -1064,16 +1085,30 @@ body.panel-resizing-vertical * {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 18px;
 }
 .dialog-actions button {
   min-width: 76px;
-  height: 32px;
-  border: 1px solid var(--border-strong);
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
   border-radius: 6px;
-  background: transparent;
+  background: var(--control-bg);
   color: var(--text-default);
   cursor: pointer;
+}
+.dialog-actions button:not(.primary):not(.danger):hover:not(:disabled) {
+  background: var(--interactive-hover);
+}
+.dialog-actions .primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.dialog-actions .danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+.dialog-actions button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 .dialog-actions button:disabled {
   opacity: 0.5;
@@ -1086,8 +1121,8 @@ body.panel-resizing-vertical * {
 }
 .dialog-actions .danger {
   border-color: var(--danger);
-  background: var(--danger);
-  color: white;
+  background: var(--control-bg);
+  color: var(--danger);
 }
 .topbar {
   grid-area: top;
@@ -2782,11 +2817,160 @@ details[open] > summary > .chat-disclosure-icon {
   border-bottom: 2px solid var(--border-strong);
   background: var(--interactive-selected);
 }
-.file-tree,
-.changes-panel {
+.files-panel {
   height: calc(100% - 36px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.files-toolbar {
+  height: 31px;
+  flex: none;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-muted);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-subtle);
+}
+.files-toolbar .app-tooltip {
+  display: flex;
+}
+.files-toolbar button {
+  min-width: 25px;
+  height: 25px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-subtle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.files-toolbar button:hover {
+  background: var(--interactive-hover);
+  color: var(--text-default);
+}
+.files-toolbar .files-clipboard {
+  max-width: 94px;
+  margin-left: 3px;
+  padding: 0 7px;
+  border: 1px solid var(--border-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.files-toolbar-spacer {
+  flex: 1;
+}
+.file-tree {
+  min-height: 0;
+  flex: 1;
   overflow: auto;
   padding-top: 7px;
+}
+.changes-panel {
+  height: calc(100% - 36px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 7px;
+  overflow: hidden;
+}
+.changes-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.changes-tree {
+  padding-bottom: 6px;
+}
+.files-operation-error,
+.tree-directory-error {
+  padding: 5px 9px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  font-size: 10px;
+}
+.files-operation-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.files-operation-error span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-operation-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+.tree-inline-row {
+  min-height: 29px;
+  padding-right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.tree-inline-row input {
+  min-width: 0;
+  height: 21px;
+  flex: 1;
+  border: 1px solid var(--focus-ring);
+  border-radius: 3px;
+  outline: none;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font: inherit;
+  padding: 0 5px;
+}
+.tree-inline-error {
+  width: 100%;
+  padding-left: 34px;
+  color: var(--danger);
+  line-height: 16px;
+}
+.file-context-menu {
+  min-width: 178px;
+  padding: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-popover);
+  box-shadow: 0 8px 24px var(--shadow);
+  color: var(--text-default);
+  z-index: 90;
+}
+.file-context-menu [role="menuitem"] {
+  min-height: 27px;
+  padding: 0 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  outline: none;
+  user-select: none;
+}
+.file-context-menu [role="menuitem"][data-highlighted] {
+  background: var(--interactive-hover);
+}
+.file-context-menu [role="separator"] {
+  height: 1px;
+  margin: 4px;
+  background: var(--border-muted);
+}
+.files-dirty-warning {
+  color: var(--danger);
+  font-size: 11px;
 }
 .tree-row,
 .change-row {
@@ -2854,49 +3038,107 @@ details[open] > summary > .chat-disclosure-icon {
   color: var(--text-subtle);
   font-size: 10px;
 }
-.change-toolbar-actions,
-.change-mode-toggle {
+.change-toolbar-actions {
+  min-width: 0;
   display: flex;
   align-items: center;
-}
-.change-toolbar-actions {
   gap: 4px;
 }
-.change-mode-toggle {
-  padding: 1px;
-  border: 1px solid var(--border-muted);
-  border-radius: 5px;
-  background: var(--control-bg);
+.panel-toolbar button,
+.change-group-actions button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-muted);
 }
-.panel-toolbar .change-mode-toggle button {
-  padding: 4px;
-  border-radius: 3px;
-}
-.panel-toolbar .change-mode-toggle button.active {
-  background: var(--interactive-selected);
+.panel-toolbar button:hover,
+.panel-toolbar button.active,
+.change-group-actions button:hover:not(:disabled) {
+  background: var(--interactive-hover);
   color: var(--text-default);
 }
-.panel-toolbar button:hover {
-  border-color: var(--border-default);
-  background: var(--control-hover);
-  color: var(--text-default);
-}
-.change-heading {
+.changes-filter-field {
+  width: 180px;
   height: 25px;
+  padding: 0 4px 0 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
   display: flex;
   align-items: center;
   gap: 5px;
+  background: var(--control-bg);
   color: var(--text-muted);
+}
+.changes-filter-field input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-default);
+  font-size: 10px;
+}
+.changes-filter-field button {
+  width: 18px;
+  height: 18px;
+}
+.changes-view-menu {
+  position: relative;
+}
+.changes-view-menu-popover {
+  top: 27px;
+  right: 0;
+  z-index: 95;
+}
+.changes-view-menu-popover button {
+  width: 100%;
+  height: 27px;
+  display: flex;
+  gap: 7px;
+}
+.changes-view-menu-popover button[aria-checked="true"] {
+  background: var(--interactive-selected);
+}
+.change-heading {
+  height: 27px;
+  padding: 0 6px 0 8px;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+.change-heading-toggle {
+  min-width: 0;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  background: transparent;
+  color: inherit;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 0 8px;
+  text-align: left;
 }
-.change-heading b {
-  margin-left: auto;
-  background: var(--control-selected);
+.change-heading-toggle b {
   padding: 1px 5px;
   border-radius: 8px;
+  background: var(--control-selected);
+}
+.change-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.change-group-actions button:disabled {
+  opacity: 0.45;
 }
 .change-row {
   padding-left: 23px;
@@ -2913,29 +3155,163 @@ details[open] > summary > .chat-disclosure-icon {
 .change-directory-row > svg:nth-child(2) {
   color: var(--text-muted);
 }
-.change-row span {
+.change-row-copy {
+  min-width: 0;
   flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+}
+.change-row-copy > span,
+.change-row-copy > small {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.change-row-copy > small {
+  color: var(--text-subtle);
+  font-size: 9px;
+}
+.change-original-path::before {
+  content: "← ";
+}
+.change-stats {
+  display: flex;
+  gap: 3px;
+  font: 9px monospace;
+}
+.change-stats span:first-child {
+  color: var(--success);
+}
+.change-stats span:last-child {
+  color: var(--danger);
+}
 .change-row em {
+  width: 12px;
+  flex: 0 0 12px;
   font-style: normal;
   font: bold 10px monospace;
   color: var(--warning);
+  text-align: center;
 }
-.status-added,
-.status-untracked {
+.status-a,
+.status-u {
   color: var(--success) !important;
 }
-.status-deleted {
+.status-d,
+.status-c {
   color: var(--danger) !important;
+}
+.status-r {
+  color: var(--accent) !important;
+}
+.change-row-actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+}
+.change-row:hover .change-row-actions,
+.change-row:focus-within .change-row-actions {
+  display: flex;
+}
+.change-row:hover > .change-stats,
+.change-row:hover > em,
+.change-row:focus-within > .change-stats,
+.change-row:focus-within > em {
+  display: none;
+}
+.change-row-actions button {
+  width: 22px;
+  height: 21px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-muted);
+}
+.change-row-actions button:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.change-row-actions button:disabled {
+  opacity: 0.45;
 }
 .stale-banner {
   padding: 7px 10px;
   background: var(--warning-soft);
   color: var(--warning);
   font-size: 10px;
+}
+.changes-operation-banner {
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 10px;
+}
+.changes-operation-banner span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.changes-operation-banner button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+.changes-commit-area {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--border-muted);
+  display: grid;
+  gap: 6px;
+  background: var(--sidebar-bg);
+}
+.changes-commit-area textarea {
+  min-height: 48px;
+  max-height: 96px;
+  resize: vertical;
+  padding: 7px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  outline: none;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.changes-commit-area textarea:focus {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 1px var(--focus-ring);
+}
+.changes-operation-error {
+  color: var(--danger);
+  font-size: 10px;
+}
+.changes-commit-button {
+  min-height: 29px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font-size: 11px;
+}
+.changes-commit-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.changes-commit-button:disabled {
+  opacity: 0.5;
 }
 .empty-mini {
   display: flex;
