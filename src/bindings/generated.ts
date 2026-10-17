@@ -221,6 +221,30 @@ export interface ExtensionSetting {
   displayPath: string;
   enabled: boolean;
   status: "enabled" | "disabled";
+  packageSource?: string;
+  management?: "npm" | "local";
+}
+
+export type ExtensionCatalogSort = "downloads" | "recent" | "name";
+
+export interface ExtensionCatalogItem {
+  name: string;
+  description: string;
+  publisher: string;
+  downloads: number;
+  downloadsLabel: string;
+  publishedLabel: string;
+  types: string[];
+  catalogUrl: string;
+  npmUrl?: string;
+  repositoryUrl?: string;
+}
+
+export interface ExtensionCatalogResult {
+  items: ExtensionCatalogItem[];
+  page: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface SkillSetting {

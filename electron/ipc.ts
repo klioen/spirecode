@@ -370,6 +370,21 @@ async function invoke(
         worktreeId ? await state.projects.root(worktreeId) : homedir(),
       );
     }
+    case "settings_extension_catalog_list":
+      return state.extensionCatalog.list({
+        query: text(args, "query", true),
+        sort: text(args, "sort") as "downloads" | "recent" | "name",
+        page: number(args, "page"),
+      });
+    case "settings_extension_package_install":
+      await state.extensionPackages.install(text(args, "packageName"));
+      return state.settings.list(homedir());
+    case "settings_extension_package_update":
+      await state.extensionPackages.update(text(args, "source"));
+      return state.settings.list(homedir());
+    case "settings_extension_package_remove":
+      await state.extensionPackages.remove(text(args, "source"));
+      return state.settings.list(homedir());
     case "settings_skills_list": {
       const worktreeId = text(args, "worktreeId");
       return state.settings.listSkills(await state.projects.root(worktreeId));
@@ -481,6 +496,10 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
   chat_session_delete: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
+  settings_extension_catalog_list: ["query", "sort", "page"],
+  settings_extension_package_install: ["packageName"],
+  settings_extension_package_update: ["source"],
+  settings_extension_package_remove: ["source"],
   settings_skills_list: ["worktreeId"],
   settings_skill_set_enabled: ["worktreeId", "skillId", "enabled"],
   settings_language_get: [],
@@ -556,7 +575,7 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
       !(key in args)
     )
       continue;
-    if (key === "cols" || key === "rows") number(args, key);
+    if (key === "cols" || key === "rows" || key === "page") number(args, key);
     else if (key === "force" || key === "enabled" || key === "untracked")
       boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
@@ -575,7 +594,8 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
         args,
         key,
         (command === "fs_read_dir" && key === "relativePath") ||
-          (command === "settings_memory_models_list" && key === "worktreeId"),
+          (command === "settings_memory_models_list" && key === "worktreeId") ||
+          (command === "settings_extension_catalog_list" && key === "query"),
       );
   }
   return args;

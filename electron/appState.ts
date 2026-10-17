@@ -23,6 +23,13 @@ import { KeyedLock } from "./core/keyedLock.js";
 import { WindowCloseGuard } from "./windowCloseGuard.js";
 import { DiagnosticsService } from "./domains/diagnostics/service.js";
 import { resolveSpireResources } from "./domains/chat/spireSettings.js";
+import {
+  DefaultPackageManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
+import { ExtensionCatalogService } from "./domains/extensions/catalog.js";
+import { ExtensionPackageService } from "./domains/extensions/service.js";
+import { ensureNpmOnPath } from "./domains/extensions/packageManagerEnvironment.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -40,6 +47,8 @@ export class AppState {
   readonly watchers = new WatcherRegistry();
   readonly windowCloseGuard = new WindowCloseGuard();
   readonly diagnostics: DiagnosticsService;
+  readonly extensionCatalog: ExtensionCatalogService;
+  readonly extensionPackages: ExtensionPackageService;
 
   private constructor(
     readonly projects: ProjectService,
@@ -48,6 +57,22 @@ export class AppState {
     dataDirectory: string,
   ) {
     this.diagnostics = new DiagnosticsService(dataDirectory, "0.1.0");
+    this.extensionCatalog = new ExtensionCatalogService();
+    const agentDir = path.join(homedir(), ".pi", "agent");
+    const createPackageSettings = () =>
+      SettingsManager.create(homedir(), agentDir, { projectTrusted: false });
+    this.extensionPackages = new ExtensionPackageService(
+      () =>
+        new DefaultPackageManager({
+          cwd: homedir(),
+          agentDir,
+          settingsManager: createPackageSettings(),
+        }),
+      async () => {
+        if (!createPackageSettings().getNpmCommand()?.length)
+          await ensureNpmOnPath();
+      },
+    );
     const root = (id: string) => projects.root(id);
     const worktreeOperationLock = new KeyedLock();
     this.filesystem = new FilesystemService(root, {

@@ -9,6 +9,8 @@ import type {
   ChatSessionSummary,
   ChatThinkingLevel,
   ChatSnapshot,
+  ExtensionCatalogResult,
+  ExtensionCatalogSort,
   ExtensionSetting,
   FileContent,
   FileEntry,
@@ -80,6 +82,28 @@ export const commands = {
   settingsExtensionsList: (worktreeId?: string) =>
     command<ExtensionSetting[]>("settings_extensions_list", {
       ...(worktreeId ? { worktreeId } : {}),
+    }),
+  settingsExtensionCatalogList: (
+    query: string,
+    sort: ExtensionCatalogSort,
+    page: number,
+  ) =>
+    command<ExtensionCatalogResult>("settings_extension_catalog_list", {
+      query,
+      sort,
+      page,
+    }),
+  settingsExtensionPackageInstall: (packageName: string) =>
+    command<ExtensionSetting[]>("settings_extension_package_install", {
+      packageName,
+    }),
+  settingsExtensionPackageUpdate: (source: string) =>
+    command<ExtensionSetting[]>("settings_extension_package_update", {
+      source,
+    }),
+  settingsExtensionPackageRemove: (source: string) =>
+    command<ExtensionSetting[]>("settings_extension_package_remove", {
+      source,
     }),
   settingsSkillsList: (worktreeId: string) =>
     command<SkillSetting[]>("settings_skills_list", { worktreeId }),

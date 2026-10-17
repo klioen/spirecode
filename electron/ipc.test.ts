@@ -131,13 +131,56 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: apiKey");
   });
 
-  it("validates extension settings commands without accepting paths", () => {
+  it("validates extension settings commands without accepting paths or URLs", () => {
     expect(() =>
       validateCommandArgs("settings_extensions_list", {
         worktreeId: "worktree-1",
         path: "/tmp/extension.ts",
       }),
     ).toThrow("Unexpected argument: path");
+    expect(
+      validateCommandArgs("settings_extension_catalog_list", {
+        query: "web access",
+        sort: "downloads",
+        page: 1,
+      }),
+    ).toEqual({ query: "web access", sort: "downloads", page: 1 });
+    expect(
+      validateCommandArgs("settings_extension_catalog_list", {
+        query: "",
+        sort: "recent",
+        page: 2,
+      }),
+    ).toEqual({ query: "", sort: "recent", page: 2 });
+    expect(() =>
+      validateCommandArgs("settings_extension_catalog_list", {
+        query: "web",
+        sort: "downloads",
+        page: 1,
+        url: "https://evil.example",
+      }),
+    ).toThrow("Unexpected argument: url");
+    expect(
+      validateCommandArgs("settings_extension_package_install", {
+        packageName: "@scope/pi-tools",
+      }),
+    ).toEqual({ packageName: "@scope/pi-tools" });
+    expect(() =>
+      validateCommandArgs("settings_extension_package_install", {
+        packageName: "pi-tools",
+        cwd: "/tmp",
+      }),
+    ).toThrow("Unexpected argument: cwd");
+    expect(
+      validateCommandArgs("settings_extension_package_update", {
+        source: "npm:pi-tools",
+      }),
+    ).toEqual({ source: "npm:pi-tools" });
+    expect(
+      validateCommandArgs("settings_extension_package_remove", {
+        source: "npm:pi-tools",
+      }),
+    ).toEqual({ source: "npm:pi-tools" });
   });
 
   it("validates skill settings commands without accepting paths", () => {

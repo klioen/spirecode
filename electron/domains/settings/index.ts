@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
+  DefaultPackageManager,
   DefaultResourceLoader,
   SettingsManager,
   type ResolvedResource,
@@ -16,6 +17,10 @@ import {
   resolveSpireExtensions,
   resolveSpireResources,
 } from "../chat/spireSettings.js";
+import {
+  extensionManagementForSource,
+  type ExtensionManagement,
+} from "../extensions/sourcePolicy.js";
 
 export type ExtensionSource = "pi" | "package";
 export type ExtensionScope = "global" | "project";
@@ -30,6 +35,8 @@ export interface ExtensionSetting {
   displayPath: string;
   enabled: boolean;
   status: "enabled" | "disabled";
+  packageSource?: string;
+  management?: ExtensionManagement;
 }
 
 export interface SkillSetting {
@@ -86,6 +93,7 @@ interface Candidate {
   source: ExtensionSource;
   scope: ExtensionScope;
   defaultEnabled: boolean;
+  packageSource?: string;
 }
 
 export class SettingsService {
@@ -347,10 +355,29 @@ export class SettingsService {
     strict = false,
   ): Promise<ExtensionSetting[]> {
     const candidates = await this.candidates(cwd, strict);
+    const managedSources = new DefaultPackageManager({
+      cwd,
+      agentDir: this.agentDir,
+      settingsManager: SettingsManager.create(cwd, this.agentDir, {
+        projectTrusted: false,
+      }),
+    })
+      .listConfiguredPackages()
+      .filter(({ scope, filtered }) => scope === "user" && !filtered)
+      .flatMap((configured) => {
+        const management = extensionManagementForSource(configured.source);
+        return management ? [{ ...configured, management }] : [];
+      });
     return candidates
       .map((candidate) => {
         const id = extensionId(candidate);
         const enabled = candidate.defaultEnabled;
+        const managedSource = managedSources.find(
+          ({ source, installedPath, management }) =>
+            source === candidate.packageSource ||
+            (management === "local" &&
+              installedPath === candidate.packageSource),
+        );
         return {
           id,
           name:
@@ -366,6 +393,12 @@ export class SettingsService {
           displayPath: abbreviateHome(candidate.path),
           enabled,
           status: enabled ? "enabled" : "disabled",
+          ...(managedSource
+            ? {
+                packageSource: managedSource.source,
+                management: managedSource.management,
+              }
+            : {}),
         } satisfies ExtensionSetting;
       })
       .sort((left, right) =>
@@ -423,6 +456,9 @@ async function fromPiResource(
       : {}),
     ...(resource.metadata.origin === "package" && resource.metadata.baseDir
       ? await packageMetadataAt(resource.metadata.baseDir)
+      : {}),
+    ...(resource.metadata.origin === "package"
+      ? { packageSource: resource.metadata.source }
       : {}),
     kind: "user",
     source: resource.metadata.origin === "package" ? "package" : "pi",

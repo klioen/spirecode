@@ -380,6 +380,60 @@ describe("SettingsService", () => {
     ).not.toContain("escaped-skill");
   });
 
+  it("marks configured user local packages as removable without update support", async () => {
+    const { cwd, agentDir, statePath } = await fixture();
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.list(cwd)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "fixture-package",
+          packageSource: "../package",
+          management: "local",
+        }),
+      ]),
+    );
+  });
+
+  it("marks configured user npm extensions as package-manager managed", async () => {
+    const { cwd, agentDir, statePath } = await fixture();
+    const packageRoot = path.join(
+      agentDir,
+      "npm",
+      "node_modules",
+      "pi-managed",
+    );
+    await mkdir(path.join(packageRoot, "extensions"), { recursive: true });
+    await Promise.all([
+      writeFile(
+        path.join(packageRoot, "package.json"),
+        JSON.stringify({
+          name: "pi-managed",
+          version: "2.0.0",
+          pi: { extensions: ["./extensions"] },
+        }),
+      ),
+      writeFile(
+        path.join(packageRoot, "extensions", "index.js"),
+        "export default () => {}",
+      ),
+      writeFile(
+        path.join(agentDir, "settings.json"),
+        JSON.stringify({ packages: ["npm:pi-managed"] }),
+      ),
+    ]);
+    const service = await SettingsService.load(statePath, agentDir);
+
+    await expect(service.list(cwd)).resolves.toEqual([
+      expect.objectContaining({
+        name: "pi-managed",
+        version: "2.0.0",
+        packageSource: "npm:pi-managed",
+        management: "npm",
+      }),
+    ]);
+  });
+
   it("surfaces resource resolution failures instead of reporting an empty catalog", async () => {
     const { cwd, agentDir, statePath } = await fixture();
     await writeFile(

@@ -20,7 +20,6 @@ import {
 import {
   commands,
   type AgentReadiness,
-  type ExtensionSetting,
   type SkillSetting,
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
@@ -29,6 +28,7 @@ import { useThemeStore, type ThemeMode } from "../theme/themeStore";
 import { useSettingsStore } from "./settingsStore";
 import { MemorySettings } from "./MemorySettings";
 import { settingsApi } from "./settingsApi";
+import { ExtensionsSettings } from "./ExtensionsSettings";
 
 export type SettingsSection =
   | "general"
@@ -606,86 +606,6 @@ function SkillsSettings({ worktreeId }: { worktreeId: string | null }) {
               {skillList(skills.filter((skill) => skill.kind === kind))}
             </section>
           ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ExtensionsSettings({ worktreeId }: { worktreeId: string | null }) {
-  const { t } = useTranslation();
-  const [extensions, setExtensions] = useState<ExtensionSetting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let disposed = false;
-    setLoading(true);
-    settingsApi.listExtensions(worktreeId ?? undefined).then(
-      (items) => {
-        if (!disposed) {
-          setExtensions(items);
-          setError(null);
-          setLoading(false);
-        }
-      },
-      (failure) => {
-        if (!disposed) {
-          setError(commandError(failure).message);
-          setLoading(false);
-        }
-      },
-    );
-    return () => {
-      disposed = true;
-    };
-  }, [worktreeId]);
-
-  const extensionList = (items: ExtensionSetting[]) => (
-    <div className="extension-list">
-      {items.map((extension) => (
-        <article className="extension-row" key={extension.id}>
-          <div className="extension-details">
-            <div className="extension-title">
-              <b>{extension.name}</b>
-              {extension.version && <span>v{extension.version}</span>}
-              <span>{extension.source}</span>
-            </div>
-            <code title={extension.displayPath}>{extension.displayPath}</code>
-            <small>
-              {extension.enabled
-                ? t("settings.extensions.status.enabled")
-                : t("settings.extensions.status.disabled")}
-            </small>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-
-  return (
-    <section>
-      <h3>{t("settings.section.extensions")}</h3>
-      <p className="settings-description">
-        {t("settings.extensions.description")}
-      </p>
-      {loading && (
-        <div className="settings-empty">{t("settings.extensions.loading")}</div>
-      )}
-      {error && <div className="dialog-error">{error}</div>}
-      {!loading && (
-        <div className="extension-sections">
-          <section className="extension-section">
-            <h4>{t("settings.extensions.user")}</h4>
-            <p>{t("settings.extensions.user.description")}</p>
-            {extensions.length > 0 ? (
-              extensionList(extensions)
-            ) : (
-              <div className="settings-empty">
-                {t("settings.extensions.user.empty")}
-              </div>
-            )}
-          </section>
         </div>
       )}
     </section>
