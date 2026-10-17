@@ -622,8 +622,8 @@ export class FilesystemService {
     newName: string,
   ): Promise<FilesystemMutationResult> {
     assertLeafName(newName);
-    const parent = path.dirname(relativePath);
-    const destination = path.join(parent === "." ? "" : parent, newName);
+    const parent = path.posix.dirname(relativePath);
+    const destination = path.posix.join(parent === "." ? "" : parent, newName);
     return this.moveEntry(worktreeId, relativePath, destination);
   }
 
