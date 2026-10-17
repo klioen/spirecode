@@ -2614,7 +2614,7 @@ details[open] > summary > .chat-disclosure-icon {
   z-index: 5;
   top: 8px;
   right: 8px;
-  width: min(360px, calc(100% - 16px));
+  width: min(420px, calc(100% - 16px));
   max-height: calc(100% - 16px);
   display: flex;
 }
@@ -2717,7 +2717,8 @@ details[open] > summary > .chat-disclosure-icon {
   align-items: center;
 }
 .chat-history-item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 38px;
   padding: 9px 10px;
   display: flex;

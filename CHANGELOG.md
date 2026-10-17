@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Upgraded Git Changes into an Orca-inspired Source Control panel with filtering, collapsible conflict-aware groups, rich status metadata, safe stage/unstage/discard actions, and per-worktree commit drafts.
 - Refined the workbench with quieter neutral chrome, a narrower Chat reading column, accessible icon tooltips, and a System appearance option that follows the operating system theme.
 
+### Fixed
+
+- Widened Chat history and kept delete actions visible when session titles are too long for the popover row.
+
 ### Removed
 
 - **Breaking:** SpireCode no longer depends on or bundles packages from `github:klioen/pi-extensions`. Web access, subagents, memory, todo, plan, goal, and SDLC resources must now be installed and declared by users through standard Pi settings.

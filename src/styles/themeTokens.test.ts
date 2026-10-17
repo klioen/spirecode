@@ -116,6 +116,17 @@ describe("theme tokens", () => {
     ]);
   });
 
+  it("keeps long chat history titles from displacing row actions", () => {
+    expectDeclarations(".chat-history-popover", [
+      "width: min(420px, calc(100% - 16px))",
+    ]);
+    const item = declarationBlock(".chat-history-item");
+    expect(item).toContain("flex: 1");
+    expect(item).toContain("min-width: 0");
+    expect(item).not.toContain("width: 100%");
+    expectDeclarations(".chat-history-delete", ["flex-shrink: 0"]);
+  });
+
   it("aligns Projects dialogs with the Files confirmation surface", () => {
     const dialogSurface = [
       "width: min(360px, calc(100vw - 32px))",
