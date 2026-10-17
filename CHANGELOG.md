@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Pi Extension Marketplace in Settings for browsing community catalog packages and safely installing, updating, or uninstalling user-scoped npm extensions through Pi's package manager.
 - Complete Files CRUD with inline file/folder creation and rename, duplication, cut/copy/paste moves, system Trash deletion, file-manager reveal, active-file reveal, and secure worktree-relative Main-process operations.
 - Public contribution, security, support, conduct, issue, and pull request guidance.
 - Cross-platform development packaging for macOS arm64, Windows x64, and Linux x64.
@@ -15,12 +16,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Made Installed the first and default Extensions tab, loading the remote Marketplace only when opened.
+- Added safe `Remove from Pi` actions for user-configured local extension packages; this removes only their settings reference and never deletes local source files.
 - Moved Projects and Settings controls into the Projects rail and redesigned Settings as an Orca-inspired full-window page with grouped navigation and search.
 - Upgraded Git Changes into an Orca-inspired Source Control panel with filtering, collapsible conflict-aware groups, rich status metadata, safe stage/unstage/discard actions, and per-worktree commit drafts.
 - Refined the workbench with quieter neutral chrome, a narrower Chat reading column, accessible icon tooltips, and a System appearance option that follows the operating system theme.
 
 ### Fixed
 
+- Fixed `Remove from Pi` for relative local package sources by resolving the configured package path before asking Pi's PackageManager to remove the settings reference.
+- Restored Marketplace extension installation for desktop-launched apps by locating the user's Node.js/npm runtime before invoking Pi's package manager.
 - Widened Chat history and kept delete actions visible when session titles are too long for the popover row.
 
 ### Removed

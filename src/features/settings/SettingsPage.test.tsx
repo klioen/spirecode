@@ -29,6 +29,10 @@ vi.mock("./memoryApi", () => ({
 vi.mock("./settingsApi", () => ({
   settingsApi: {
     listExtensions: vi.fn(),
+    listExtensionCatalog: vi.fn(),
+    installExtensionPackage: vi.fn(),
+    updateExtensionPackage: vi.fn(),
+    removeExtensionPackage: vi.fn(),
     listSkills: vi.fn(),
     setSkillEnabled: vi.fn(),
     getLanguage: vi.fn(),
@@ -89,6 +93,37 @@ beforeEach(() => {
     updatedAt: 1,
   });
   vi.mocked(settingsApi.listExtensions).mockResolvedValue([extension]);
+  vi.mocked(settingsApi.listExtensionCatalog).mockResolvedValue({
+    items: [
+      {
+        name: "pi-safe",
+        description: "Safe community tools.",
+        publisher: "alice",
+        downloads: 1200,
+        downloadsLabel: "1.2K/mo",
+        publishedLabel: "2d ago",
+        types: ["extension"],
+        catalogUrl: "https://pi.dev/packages/pi-safe?type=extension",
+        npmUrl: "https://www.npmjs.com/package/pi-safe",
+        repositoryUrl: "https://github.com/example/pi-safe",
+      },
+    ],
+    page: 1,
+    total: 1,
+    totalPages: 1,
+  });
+  vi.mocked(settingsApi.installExtensionPackage).mockResolvedValue([
+    {
+      ...extension,
+      id: "installed-safe",
+      name: "pi-safe",
+      source: "package",
+      packageSource: "npm:pi-safe",
+      management: "npm",
+    },
+  ]);
+  vi.mocked(settingsApi.updateExtensionPackage).mockResolvedValue([extension]);
+  vi.mocked(settingsApi.removeExtensionPackage).mockResolvedValue([]);
   vi.mocked(settingsApi.listSkills).mockResolvedValue([]);
   vi.mocked(settingsApi.setSkillEnabled).mockResolvedValue([]);
 });
@@ -111,7 +146,19 @@ describe("SettingsPage", () => {
     ).toEqual(["System", "Light", "Dark"]);
   });
 
-  it("shows only resolved user resources as a read-only list", async () => {
+  it("shows Installed first and selects it by default", async () => {
+    render(<SettingsPage worktreeId="w1" onBack={() => undefined} />);
+
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "Installed",
+      "Marketplace",
+    ]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(settingsApi.listExtensionCatalog).not.toHaveBeenCalled();
+  });
+
+  it("shows resolved user resources in the Installed tab", async () => {
     render(<SettingsPage worktreeId="w1" onBack={() => undefined} />);
 
     expect(
@@ -127,10 +174,133 @@ describe("SettingsPage", () => {
   it("shows global user resources without an open project", async () => {
     render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
 
+    fireEvent.click(await screen.findByRole("tab", { name: "Installed" }));
     expect(
       await screen.findByText("Configured user resources"),
     ).toBeInTheDocument();
     expect(settingsApi.listExtensions).toHaveBeenCalledWith(undefined);
+  });
+
+  it("browses the Pi Catalog without presenting community packages as verified", async () => {
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Marketplace" }));
+    expect(await screen.findByText("pi-safe")).toBeInTheDocument();
+    expect(screen.getByText("Safe community tools.")).toBeInTheDocument();
+    expect(screen.getByText("alice")).toBeInTheDocument();
+    expect(screen.getByText("Community")).toBeInTheDocument();
+    expect(screen.queryByText("Verified")).not.toBeInTheDocument();
+    expect(settingsApi.listExtensionCatalog).toHaveBeenCalledWith(
+      "",
+      "downloads",
+      1,
+    );
+  });
+
+  it("requires an explicit trust confirmation before installing", async () => {
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Marketplace" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Install pi-safe" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Install pi-safe?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/same operating-system permissions as the Pi agent/i),
+    ).toBeInTheDocument();
+    expect(settingsApi.installExtensionPackage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Install extension" }));
+    await waitFor(() =>
+      expect(settingsApi.installExtensionPackage).toHaveBeenCalledWith(
+        "pi-safe",
+      ),
+    );
+    expect(
+      await screen.findByText(
+        /Restart active Agent sessions to apply extension changes/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Installed pi-safe" }),
+    ).toBeDisabled();
+  });
+
+  it("keeps unmanaged resources read-only and manages configured npm packages", async () => {
+    const installed = [
+      extension,
+      {
+        ...extension,
+        id: "managed",
+        name: "pi-safe",
+        source: "package" as const,
+        packageSource: "npm:pi-safe",
+        management: "npm" as const,
+      },
+      {
+        ...extension,
+        id: "local",
+        name: "pi-local",
+        source: "package" as const,
+        scope: "global" as const,
+        packageSource: "../../dev/pi-local",
+        management: "local" as const,
+      },
+    ];
+    vi.mocked(settingsApi.listExtensions).mockResolvedValue(installed);
+    vi.mocked(settingsApi.updateExtensionPackage).mockResolvedValue(installed);
+    render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Installed" }));
+    expect(await screen.findByText("review-tools")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Update review-tools" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Update pi-local" }),
+    ).toBeNull();
+    const removeLocal = screen.getByRole("button", {
+      name: "Remove pi-local from Pi",
+    });
+    expect(removeLocal).toBeInTheDocument();
+    vi.mocked(settingsApi.removeExtensionPackage).mockResolvedValueOnce(
+      installed,
+    );
+    fireEvent.click(removeLocal);
+    expect(
+      screen.getByRole("heading", { name: "Remove pi-local from Pi?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not delete or modify the source files/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove from Pi" }));
+    await waitFor(() =>
+      expect(settingsApi.removeExtensionPackage).toHaveBeenCalledWith(
+        "../../dev/pi-local",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Update pi-safe" }));
+    await waitFor(() =>
+      expect(settingsApi.updateExtensionPackage).toHaveBeenCalledWith(
+        "npm:pi-safe",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall pi-safe" }));
+    expect(
+      screen.getByRole("heading", { name: "Uninstall pi-safe?" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Uninstall extension" }),
+    );
+    await waitFor(() =>
+      expect(settingsApi.removeExtensionPackage).toHaveBeenCalledWith(
+        "npm:pi-safe",
+      ),
+    );
   });
 
   it("groups skills and persists a single-skill toggle", async () => {

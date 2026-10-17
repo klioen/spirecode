@@ -1058,6 +1058,233 @@ body.panel-resizing-vertical * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.extensions-tabs {
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-muted);
+  display: flex;
+  gap: 6px;
+}
+.extensions-tabs button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.extensions-tabs button:hover,
+.extensions-tabs button:focus-visible {
+  background: var(--interactive-hover);
+  color: var(--text-default);
+}
+.extensions-tabs button.active {
+  border-color: var(--border-default);
+  background: var(--interactive-selected);
+  color: var(--text-default);
+  font-weight: 600;
+}
+.extension-notice,
+.extension-community-note {
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--elevated-bg) 70%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.extension-notice {
+  border-color: var(--accent-muted);
+  color: var(--text-default);
+}
+.extension-community-note {
+  display: grid;
+  gap: 3px;
+}
+.extension-community-note b {
+  color: var(--text-default);
+  font-size: 11px;
+}
+.extension-marketplace-controls {
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px auto;
+  gap: 8px;
+}
+.extension-marketplace-controls input,
+.extension-marketplace-controls select,
+.extension-marketplace-controls button,
+.extension-row-actions button,
+.extension-pagination button,
+.extension-catalog-error button {
+  min-height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font: inherit;
+  font-size: 11px;
+}
+.extension-marketplace-controls input {
+  min-width: 0;
+  padding: 0 10px;
+}
+.extension-marketplace-controls select {
+  padding: 0 8px;
+}
+.extension-marketplace-controls button,
+.extension-row-actions button,
+.extension-pagination button,
+.extension-catalog-error button {
+  padding: 0 11px;
+  cursor: pointer;
+}
+.extension-marketplace-controls :focus-visible,
+.extension-row-actions button:focus-visible,
+.extension-pagination button:focus-visible,
+.extension-catalog-error button:focus-visible {
+  border-color: var(--accent-muted);
+  outline: 2px solid var(--focus-ring);
+}
+.extension-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.extension-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  display: grid;
+  gap: 10px;
+  background: color-mix(in srgb, var(--elevated-bg) 72%, transparent);
+}
+.extension-card-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.extension-card-heading > div {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.extension-card-heading a {
+  overflow-wrap: anywhere;
+  color: var(--text-default);
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.extension-card-heading span {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--control-hover);
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.extension-card-heading button {
+  min-height: 28px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid var(--accent-muted);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--content-bg);
+  font-size: 10px;
+  cursor: pointer;
+}
+.extension-card-heading button:disabled,
+.extension-row-actions button:disabled,
+.extension-pagination button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.extension-card > p {
+  min-height: 34px;
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.extension-card-meta,
+.extension-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-subtle);
+  font-size: 9px;
+}
+.extension-card-links a,
+.extension-catalog-error a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.extension-pagination {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.extension-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+.extension-catalog-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.extension-confirmation-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+.extension-confirmation-dialog dl {
+  margin: 14px 0 0;
+  display: grid;
+  gap: 6px;
+}
+.extension-confirmation-dialog dl > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 11px;
+}
+.extension-confirmation-dialog dt {
+  color: var(--text-subtle);
+}
+.extension-confirmation-dialog dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.extension-confirmation-dialog .chat-delete-actions button.primary {
+  border-color: var(--accent-muted);
+  background: var(--accent);
+  color: var(--content-bg);
+}
+@media (max-width: 1100px) {
+  .extension-catalog-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .skill-description {
   overflow: hidden;
   color: var(--text-muted);
