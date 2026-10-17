@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chatResourceId,
+  diffResourceId,
   fileResourceId,
   loadPersistedEditorViews,
   terminalResourceId,
@@ -74,6 +75,67 @@ describe("preview and keep tabs", () => {
       dirty: false,
     });
     expect(useEditorStore.getState().dirtyFileCount()).toBe(0);
+  });
+
+  it("remaps file and diff tabs for directory moves while preserving dirty active state", () => {
+    const store = useEditorStore.getState();
+    store.open(tab("src/a.ts"), true);
+    store.open(
+      {
+        id: diffResourceId("p1", "unstaged", "src/nested/b.ts"),
+        worktreeId: "p1",
+        type: "diff",
+        relativePath: "src/nested/b.ts",
+        scope: "unstaged",
+        preview: false,
+      },
+      true,
+    );
+    store.open(tab("src2/other.ts"), true);
+    store.setFileDirty("p1", fileResourceId("p1", "src/a.ts"), true);
+    store.activate("p1", fileResourceId("p1", "src/a.ts"));
+
+    const changes = store.remapPath("p1", "src", "app", "directory");
+
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        {
+          oldId: fileResourceId("p1", "src/a.ts"),
+          newId: fileResourceId("p1", "app/a.ts"),
+        },
+      ]),
+    );
+    expect(useEditorStore.getState().views.p1).toMatchObject({
+      activeTabId: fileResourceId("p1", "app/a.ts"),
+    });
+    expect(useEditorStore.getState().views.p1.tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relativePath: "app/a.ts", dirty: true }),
+        expect.objectContaining({ relativePath: "app/nested/b.ts" }),
+        expect.objectContaining({ relativePath: "src2/other.ts" }),
+      ]),
+    );
+    expect(useEditorStore.getState().dirtyFileCount()).toBe(1);
+  });
+
+  it("inspects and removes only an exact file or directory subtree", () => {
+    const store = useEditorStore.getState();
+    store.open(tab("src/a.ts"), true);
+    store.open(tab("src/nested/b.ts"), true);
+    store.open(tab("src2/c.ts"), true);
+    store.setFileDirty("p1", fileResourceId("p1", "src/a.ts"), true);
+
+    expect(store.inspectPath("p1", "src", "directory")).toEqual({
+      tabIds: [
+        fileResourceId("p1", "src/a.ts"),
+        fileResourceId("p1", "src/nested/b.ts"),
+      ],
+      dirtyFileTabIds: [fileResourceId("p1", "src/a.ts")],
+    });
+    expect(store.removePath("p1", "src", "directory")).toHaveLength(2);
+    expect(useEditorStore.getState().views.p1.tabs).toEqual([
+      expect.objectContaining({ relativePath: "src2/c.ts" }),
+    ]);
   });
 
   it("opens numbered terminal tabs without replacing file previews", () => {

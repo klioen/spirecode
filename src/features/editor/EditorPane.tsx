@@ -26,6 +26,10 @@ import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
+import {
+  isEditorDocumentBlocked,
+  trackEditorDocumentSave,
+} from "./editorDocumentOperations";
 import { chatRuntime, ChatHistory, ChatView, hostChatApi } from "../chat";
 import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
@@ -64,6 +68,22 @@ interface FileDraft {
 }
 const fileDrafts = new Map<string, FileDraft>();
 export const clearEditorDrafts = () => fileDrafts.clear();
+export const remapEditorDocuments = (
+  changes: Array<{ oldId: string; newId: string }>,
+) => {
+  for (const { oldId, newId } of changes) {
+    cache.move(oldId, newId);
+    const draft = fileDrafts.get(oldId);
+    if (draft) fileDrafts.set(newId, draft);
+    fileDrafts.delete(oldId);
+  }
+};
+export const discardEditorDocuments = (ids: readonly string[]) => {
+  for (const id of ids) {
+    cache.delete(id);
+    fileDrafts.delete(id);
+  }
+};
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; value: FileContent | GitDiff }
@@ -87,6 +107,9 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
   );
   const diffGeneration = useEditorStore(
     (store) => store.diffGenerationByWorktree[tab.worktreeId] ?? 0,
+  );
+  const documentResetGeneration = useEditorStore(
+    (store) => store.documentResetById[tab.id] ?? 0,
   );
   const resourceGeneration =
     tab.type === "file" ? fileGeneration : diffGeneration;
@@ -139,6 +162,7 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
       },
     );
   }, [
+    documentResetGeneration,
     navigationGeneration,
     resourceGeneration,
     tab.id,
@@ -169,6 +193,7 @@ function ResourceView({ tab }: { tab: DocumentTab }) {
   if (!("content" in state.value)) return null;
   return (
     <FileView
+      key={`${tab.id}:${documentResetGeneration}`}
       file={state.value}
       language={language}
       resourceGeneration={resourceGeneration}
@@ -314,57 +339,61 @@ function FileView({
       !latest.dirty ||
       latest.saving ||
       latest.conflictAction ||
-      latest.saveError?.code === "FILE_CONFLICT"
+      latest.saveError?.code === "FILE_CONFLICT" ||
+      isEditorDocumentBlocked(tab.id)
     )
       return;
-    saveState.current = { ...latest, saving: true, saveError: null };
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const saved = await commands.fsWriteFile(
-        tab.worktreeId,
-        tab.relativePath,
-        latest.content,
-        latest.version,
-      );
-      cache.set(tab.id, {
-        generation: resourceGeneration,
-        value: saved,
-      });
-      const contentAfterSave = saveState.current.content;
-      const changedWhileSaving = contentAfterSave !== latest.content;
-      saveState.current = {
-        conflictAction: null,
-        content: contentAfterSave,
-        dirty: changedWhileSaving,
-        saveError: null,
-        saving: true,
-        version: saved.version,
-      };
-      onSaved(saved);
-      setContent(contentAfterSave);
-      setSavedContent(saved.content);
-      setVersion(saved.version);
-      useEditorStore
-        .getState()
-        .setFileDirty(tab.worktreeId, tab.id, changedWhileSaving);
-      if (changedWhileSaving) {
-        fileDrafts.set(tab.id, {
-          content: contentAfterSave,
-          savedContent: saved.content,
-          version: saved.version,
+    const operation = (async () => {
+      saveState.current = { ...latest, saving: true, saveError: null };
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const saved = await commands.fsWriteFile(
+          tab.worktreeId,
+          tab.relativePath,
+          latest.content,
+          latest.version,
+        );
+        cache.set(tab.id, {
+          generation: resourceGeneration,
+          value: saved,
         });
-      } else {
-        fileDrafts.delete(tab.id);
+        const contentAfterSave = saveState.current.content;
+        const changedWhileSaving = contentAfterSave !== latest.content;
+        saveState.current = {
+          conflictAction: null,
+          content: contentAfterSave,
+          dirty: changedWhileSaving,
+          saveError: null,
+          saving: true,
+          version: saved.version,
+        };
+        onSaved(saved);
+        setContent(contentAfterSave);
+        setSavedContent(saved.content);
+        setVersion(saved.version);
+        useEditorStore
+          .getState()
+          .setFileDirty(tab.worktreeId, tab.id, changedWhileSaving);
+        if (changedWhileSaving) {
+          fileDrafts.set(tab.id, {
+            content: contentAfterSave,
+            savedContent: saved.content,
+            version: saved.version,
+          });
+        } else {
+          fileDrafts.delete(tab.id);
+        }
+      } catch (error) {
+        const nextError = commandError(error);
+        saveState.current = { ...saveState.current, saveError: nextError };
+        setSaveError(nextError);
+      } finally {
+        saveState.current = { ...saveState.current, saving: false };
+        setSaving(false);
       }
-    } catch (error) {
-      const nextError = commandError(error);
-      saveState.current = { ...saveState.current, saveError: nextError };
-      setSaveError(nextError);
-    } finally {
-      saveState.current = { ...saveState.current, saving: false };
-      setSaving(false);
-    }
+    })();
+    await trackEditorDocumentSave(tab.id, operation);
   };
 
   useEffect(() => {

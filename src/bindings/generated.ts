@@ -82,12 +82,21 @@ export interface FileEntry {
   name: string;
   relativePath: string;
   kind: "file" | "directory" | "symlink";
+  size?: number;
+}
+
+export interface FilesystemMutationResult {
+  operation: "create" | "move" | "copy" | "trash";
+  kind: "file" | "directory" | "symlink";
+  sourceRelativePath?: string;
+  destinationRelativePath?: string;
 }
 
 export interface FileContent {
   relativePath: string;
   content: string;
   language?: string | null;
+  size?: number;
   version: string;
 }
 

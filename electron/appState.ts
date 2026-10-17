@@ -19,6 +19,7 @@ import {
 import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
+import { KeyedLock } from "./core/keyedLock.js";
 import { WindowCloseGuard } from "./windowCloseGuard.js";
 import { DiagnosticsService } from "./domains/diagnostics/service.js";
 import { resolveSpireResources } from "./domains/chat/spireSettings.js";
@@ -48,8 +49,16 @@ export class AppState {
   ) {
     this.diagnostics = new DiagnosticsService(dataDirectory, "0.1.0");
     const root = (id: string) => projects.root(id);
-    this.filesystem = new FilesystemService(root);
-    this.git = new GitService(root, (id) => projects.assertGitWorktree(id));
+    const worktreeOperationLock = new KeyedLock();
+    this.filesystem = new FilesystemService(root, {
+      trashItem: (targetPath) => shell.trashItem(targetPath),
+      revealItem: async (targetPath) => shell.showItemInFolder(targetPath),
+      operationLock: worktreeOperationLock,
+    });
+    this.git = new GitService(root, (id) => projects.assertGitWorktree(id), {
+      trashItem: (targetPath) => shell.trashItem(targetPath),
+      operationLock: worktreeOperationLock,
+    });
     this.memory = new MemoryService();
     this.models = new ModelCatalogService();
     this.terminals = new TerminalService(root, (subscriptionId, payload) => {

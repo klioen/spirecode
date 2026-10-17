@@ -18,7 +18,22 @@ const SAFE_CONFIG = [
   "protocol.ext.allow=never",
   "-c",
   "core.fsmonitor=false",
+  "-c",
+  "commit.gpgSign=false",
 ];
+
+function safeGitEnvironment(): NodeJS.ProcessEnv {
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key, value]) => !key.startsWith("GIT_") && value !== undefined,
+    ),
+  );
+  return {
+    ...environment,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}
 
 export interface ProcessOutput {
   stdout: Buffer;
@@ -31,6 +46,7 @@ export interface GitRunOptions {
   maxOutput?: number;
   diffSafe?: boolean;
   allowFailure?: boolean;
+  input?: string | Buffer;
 }
 
 export async function runGit(
@@ -47,8 +63,9 @@ export async function runGit(
   return new Promise((resolve, reject) => {
     const child = spawn("git", [...config, ...args], {
       cwd,
+      env: safeGitEnvironment(),
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -83,8 +100,12 @@ export async function runGit(
         chunks.push(chunk);
       };
 
-    child.stdout.on("data", collect(stdout, "stdout"));
-    child.stderr.on("data", collect(stderr, "stderr"));
+    child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") fail(error);
+    });
+    if (options.input !== undefined) child.stdin?.end(options.input);
+    child.stdout?.on("data", collect(stdout, "stdout"));
+    child.stderr?.on("data", collect(stderr, "stderr"));
     child.on("error", fail);
     child.on("close", (code, signal) => {
       if (settled) return;

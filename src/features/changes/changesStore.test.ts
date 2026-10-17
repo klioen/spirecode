@@ -22,6 +22,9 @@ beforeEach(() =>
     byWorktree: {},
     mode: "list",
     diffMode: "unified",
+    commitDraftByWorktree: {},
+    operationByWorktree: {},
+    operationErrorByWorktree: {},
   }),
 );
 
@@ -58,6 +61,28 @@ describe("changes snapshot", () => {
     });
     expect(useChangesStore.getState().byWorktree.p1.snapshot).toBe(snapshot);
     expect(useChangesStore.getState().byWorktree.p1.staleError).toBeNull();
+  });
+
+  it("keeps commit drafts and operations isolated by worktree", () => {
+    const store = useChangesStore.getState();
+    store.setCommitDraft("w1", "first");
+    store.setCommitDraft("w2", "second");
+    expect(store.beginOperation("w1", { kind: "stage", paths: ["a.ts"] })).toBe(
+      true,
+    );
+    expect(
+      useChangesStore
+        .getState()
+        .beginOperation("w1", { kind: "commit", paths: [] }),
+    ).toBe(false);
+    expect(
+      useChangesStore
+        .getState()
+        .beginOperation("w2", { kind: "commit", paths: [] }),
+    ).toBe(true);
+    useChangesStore.getState().clearWorktree("w1");
+    expect(useChangesStore.getState().commitDraftByWorktree.w1).toBeUndefined();
+    expect(useChangesStore.getState().commitDraftByWorktree.w2).toBe("second");
   });
 
   it("stores the diff layout in the changes store", () => {

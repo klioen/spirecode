@@ -24,6 +24,7 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
   if (typeof value !== "string") throw new TypeError(`${key} must be a string`);
   const limits: Record<string, number> = {
     text: 64 * 1024,
+    message: 64 * 1024,
     data: 64 * 1024,
     relativePath: 4 * 1024,
     name: 48,
@@ -159,6 +160,44 @@ async function invoke(
         fileContent(args),
         text(args, "expectedVersion"),
       );
+    case "fs_create_file":
+      return state.filesystem.createFile(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+      );
+    case "fs_create_directory":
+      return state.filesystem.createDirectory(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+      );
+    case "fs_rename":
+      return state.filesystem.renameEntry(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+        text(args, "newName"),
+      );
+    case "fs_move":
+      return state.filesystem.moveEntry(
+        text(args, "worktreeId"),
+        text(args, "sourceRelativePath"),
+        text(args, "destinationRelativePath"),
+      );
+    case "fs_copy":
+      return state.filesystem.copyEntry(
+        text(args, "worktreeId"),
+        text(args, "sourceRelativePath"),
+        text(args, "destinationRelativePath"),
+      );
+    case "fs_trash":
+      return state.filesystem.trashEntry(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+      );
+    case "fs_reveal":
+      return state.filesystem.revealEntry(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+      );
     case "git_status":
       return state.git.status(text(args, "worktreeId"));
     case "git_diff_file":
@@ -167,6 +206,24 @@ async function invoke(
         text(args, "relativePath"),
         text(args, "scope"),
       );
+    case "git_stage":
+      return state.git.stage(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+      );
+    case "git_unstage":
+      return state.git.unstage(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+      );
+    case "git_discard":
+      return state.git.discard(
+        text(args, "worktreeId"),
+        text(args, "relativePath"),
+        boolean(args, "untracked"),
+      );
+    case "git_commit":
+      return state.git.commit(text(args, "worktreeId"), text(args, "message"));
     case "git_list_origin_branches":
       return state.worktrees.listOriginBranches(text(args, "projectId"));
     case "worktree_create":
@@ -385,8 +442,19 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   fs_read_dir: ["worktreeId", "relativePath"],
   fs_read_file: ["worktreeId", "relativePath"],
   fs_write_file: ["worktreeId", "relativePath", "content", "expectedVersion"],
+  fs_create_file: ["worktreeId", "relativePath"],
+  fs_create_directory: ["worktreeId", "relativePath"],
+  fs_rename: ["worktreeId", "relativePath", "newName"],
+  fs_move: ["worktreeId", "sourceRelativePath", "destinationRelativePath"],
+  fs_copy: ["worktreeId", "sourceRelativePath", "destinationRelativePath"],
+  fs_trash: ["worktreeId", "relativePath"],
+  fs_reveal: ["worktreeId", "relativePath"],
   git_status: ["worktreeId"],
   git_diff_file: ["worktreeId", "relativePath", "scope"],
+  git_stage: ["worktreeId", "relativePath"],
+  git_unstage: ["worktreeId", "relativePath"],
+  git_discard: ["worktreeId", "relativePath", "untracked"],
+  git_commit: ["worktreeId", "message"],
   git_list_origin_branches: ["projectId"],
   worktree_create: ["projectId", "name", "baseRef"],
   worktree_select: ["worktreeId"],
@@ -489,12 +557,18 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     )
       continue;
     if (key === "cols" || key === "rows") number(args, key);
-    else if (key === "force" || key === "enabled") boolean(args, key);
+    else if (key === "force" || key === "enabled" || key === "untracked")
+      boolean(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
     else if (key === "language") appLanguage(args);
     else if (key === "document") memoryDocument(args);
     else if (key === "content") fileContent(args);
-    else if (key === "phase1ReasoningEffort" || key === "phase2ReasoningEffort")
+    else if (key === "message") {
+      if (!text(args, key).trim()) throw new TypeError("message is empty");
+    } else if (
+      key === "phase1ReasoningEffort" ||
+      key === "phase2ReasoningEffort"
+    )
       memoryReasoningEffort(args, key);
     else
       text(

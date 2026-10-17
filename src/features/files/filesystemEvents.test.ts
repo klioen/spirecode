@@ -1,19 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editor/editorStore";
-import { useProjectsStore } from "../projects/projectsStore";
 import { handleFilesystemChanged } from "./filesystemEvents";
 import { directoryKey, useFileTreeStore } from "./fileTreeStore";
 
 beforeEach(() => {
-  useProjectsStore.setState({
-    projects: [],
-    activeWorktreeId: "current",
-    loading: false,
-    error: null,
-  });
   useFileTreeStore.setState({
     directories: {
       [directoryKey("current", "")]: { status: "ready", entries: [] },
+      [directoryKey("current", "src")]: { status: "ready", entries: [] },
+      [directoryKey("current", "docs")]: { status: "ready", entries: [] },
       [directoryKey("other", "")]: { status: "ready", entries: [] },
     },
     generationByWorktree: {},
@@ -33,6 +28,12 @@ describe("filesystem invalidation", () => {
       useFileTreeStore.getState().directories[directoryKey("current", "")],
     ).toMatchObject({ status: "idle", entries: [] });
     expect(
+      useFileTreeStore.getState().directories[directoryKey("current", "src")],
+    ).toMatchObject({ status: "idle" });
+    expect(
+      useFileTreeStore.getState().directories[directoryKey("current", "docs")],
+    ).toMatchObject({ status: "ready" });
+    expect(
       useFileTreeStore.getState().directories[directoryKey("other", "")],
     ).toBeDefined();
     expect(useFileTreeStore.getState().generationByWorktree.current).toBe(1);
@@ -41,18 +42,16 @@ describe("filesystem invalidation", () => {
     );
   });
 
-  it("ignores events for a background project", () => {
+  it("invalidates background worktrees so cached files are fresh when selected", () => {
     handleFilesystemChanged({
       worktreeId: "other",
       paths: [],
       truncated: true,
     });
-    expect(
-      useFileTreeStore.getState().generationByWorktree.other,
-    ).toBeUndefined();
-    expect(
-      useEditorStore.getState().resourceGenerationByWorktree.other,
-    ).toBeUndefined();
+    expect(useFileTreeStore.getState().generationByWorktree.other).toBe(1);
+    expect(useEditorStore.getState().resourceGenerationByWorktree.other).toBe(
+      1,
+    );
   });
 
   it("rejects a stale directory response after invalidation", () => {

@@ -180,11 +180,30 @@ function persistEditorViews(views: Record<string, WorktreeEditorView>): void {
     return;
   }
 }
+export interface PathImpact {
+  tabIds: string[];
+  dirtyFileTabIds: string[];
+}
+
+export interface ResourceIdChange {
+  oldId: string;
+  newId: string;
+}
+
+const pathMatches = (
+  candidate: string,
+  relativePath: string,
+  kind: "file" | "directory",
+) =>
+  candidate === relativePath ||
+  (kind === "directory" && candidate.startsWith(`${relativePath}/`));
+
 interface EditorState {
   views: Record<string, WorktreeEditorView>;
   navigationGeneration: number;
   resourceGenerationByWorktree: Record<string, number>;
   diffGenerationByWorktree: Record<string, number>;
+  documentResetById: Record<string, number>;
   terminalSequenceByWorktree: Record<string, number>;
   open: (tab: ResourceTab, keep?: boolean) => void;
   openTerminal: (worktreeId: string, terminalId: string) => ResourceTab;
@@ -206,6 +225,23 @@ interface EditorState {
   beginNavigation: () => number;
   invalidateFiles: (worktreeId: string) => void;
   invalidateDiffs: (worktreeId: string) => void;
+  resetDocuments: (worktreeId: string, tabIds: readonly string[]) => void;
+  inspectPath: (
+    worktreeId: string,
+    relativePath: string,
+    kind: "file" | "directory",
+  ) => PathImpact;
+  remapPath: (
+    worktreeId: string,
+    from: string,
+    to: string,
+    kind: "file" | "directory",
+  ) => ResourceIdChange[];
+  removePath: (
+    worktreeId: string,
+    relativePath: string,
+    kind: "file" | "directory",
+  ) => string[];
   clearDiffTabs: (worktreeId: string) => void;
   clearWorktree: (worktreeId: string) => void;
 }
@@ -216,6 +252,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   navigationGeneration: 0,
   resourceGenerationByWorktree: {},
   diffGenerationByWorktree: {},
+  documentResetById: {},
   terminalSequenceByWorktree: {},
   open: (incoming, keep = false) =>
     set((state) => {
@@ -391,6 +428,106 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         [worktreeId]: (state.diffGenerationByWorktree[worktreeId] ?? 0) + 1,
       },
     })),
+  resetDocuments: (worktreeId, tabIds) =>
+    set((state) => {
+      const targets = new Set(tabIds);
+      const view = state.views[worktreeId] ?? emptyView();
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          ...view,
+          tabs: view.tabs.map((tab) =>
+            targets.has(tab.id) && tab.type === "file"
+              ? { ...tab, dirty: false }
+              : tab,
+          ),
+        },
+      };
+      const documentResetById = { ...state.documentResetById };
+      for (const id of targets)
+        documentResetById[id] = (documentResetById[id] ?? 0) + 1;
+      persistEditorViews(views);
+      return { views, documentResetById };
+    }),
+  inspectPath: (worktreeId, relativePath, kind) => {
+    const tabs = get().views[worktreeId]?.tabs ?? [];
+    const affected = tabs.filter(
+      (tab) =>
+        (tab.type === "file" || tab.type === "diff") &&
+        pathMatches(tab.relativePath, relativePath, kind),
+    );
+    return {
+      tabIds: affected.map((tab) => tab.id),
+      dirtyFileTabIds: affected
+        .filter((tab) => tab.type === "file" && tab.dirty)
+        .map((tab) => tab.id),
+    };
+  },
+  remapPath: (worktreeId, from, to, kind) => {
+    const changes: ResourceIdChange[] = [];
+    set((state) => {
+      const view = state.views[worktreeId] ?? emptyView();
+      const mapped = view.tabs.map((tab): ResourceTab => {
+        if (
+          (tab.type !== "file" && tab.type !== "diff") ||
+          !pathMatches(tab.relativePath, from, kind)
+        )
+          return tab;
+        const suffix = tab.relativePath.slice(from.length);
+        const relativePath = `${to}${suffix}`;
+        const id =
+          tab.type === "file"
+            ? fileResourceId(worktreeId, relativePath)
+            : diffResourceId(worktreeId, tab.scope, relativePath);
+        changes.push({ oldId: tab.id, newId: id });
+        return { ...tab, id, relativePath };
+      });
+      const movedIds = new Set(changes.map(({ newId }) => newId));
+      const sourceOldIds = new Set(changes.map(({ oldId }) => oldId));
+      const tabs = mapped.filter(
+        (tab, index) =>
+          sourceOldIds.has(view.tabs[index]?.id ?? "") || !movedIds.has(tab.id),
+      );
+      const activeChange = changes.find(
+        ({ oldId }) => oldId === view.activeTabId,
+      );
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          tabs,
+          activeTabId: activeChange?.newId ?? view.activeTabId,
+        },
+      };
+      persistEditorViews(views);
+      return { views };
+    });
+    return changes;
+  },
+  removePath: (worktreeId, relativePath, kind) => {
+    const removed: string[] = [];
+    set((state) => {
+      const view = state.views[worktreeId] ?? emptyView();
+      const tabs = view.tabs.filter((tab) => {
+        const affected =
+          (tab.type === "file" || tab.type === "diff") &&
+          pathMatches(tab.relativePath, relativePath, kind);
+        if (affected) removed.push(tab.id);
+        return !affected;
+      });
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          tabs,
+          activeTabId: tabs.some((tab) => tab.id === view.activeTabId)
+            ? view.activeTabId
+            : (tabs[tabs.length - 1]?.id ?? null),
+        },
+      };
+      persistEditorViews(views);
+      return { views };
+    });
+    return removed;
+  },
   clearDiffTabs: (worktreeId) =>
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();
@@ -414,9 +551,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...state.resourceGenerationByWorktree,
       };
       const diffGenerationByWorktree = { ...state.diffGenerationByWorktree };
+      const documentResetById = { ...state.documentResetById };
       const terminalSequenceByWorktree = {
         ...state.terminalSequenceByWorktree,
       };
+      for (const tab of views[worktreeId]?.tabs ?? [])
+        delete documentResetById[tab.id];
       delete views[worktreeId];
       delete resourceGenerationByWorktree[worktreeId];
       delete diffGenerationByWorktree[worktreeId];
@@ -426,6 +566,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         views,
         resourceGenerationByWorktree,
         diffGenerationByWorktree,
+        documentResetById,
         terminalSequenceByWorktree,
       };
     }),

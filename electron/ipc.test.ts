@@ -26,6 +26,46 @@ describe("IPC command argument validation", () => {
     ).toThrow("relativePath is empty or too large");
   });
 
+  it("validates narrow Git mutation arguments", () => {
+    expect(
+      validateCommandArgs("git_discard", {
+        worktreeId: "w1",
+        relativePath: "src/file.ts",
+        untracked: false,
+      }),
+    ).toEqual({
+      worktreeId: "w1",
+      relativePath: "src/file.ts",
+      untracked: false,
+    });
+    expect(
+      validateCommandArgs("git_commit", {
+        worktreeId: "w1",
+        message: "subject\n\nbody",
+      }),
+    ).toEqual({ worktreeId: "w1", message: "subject\n\nbody" });
+    expect(() =>
+      validateCommandArgs("git_commit", {
+        worktreeId: "w1",
+        message: "   ",
+      }),
+    ).toThrow("message is empty");
+    expect(() =>
+      validateCommandArgs("git_stage", {
+        worktreeId: "w1",
+        relativePath: "file.ts",
+        args: ["reset", "--hard"],
+      }),
+    ).toThrow("Unexpected argument: args");
+    expect(() =>
+      validateCommandArgs("git_discard", {
+        worktreeId: "w1",
+        relativePath: "file.ts",
+        untracked: "yes",
+      }),
+    ).toThrow("untracked must be a boolean");
+  });
+
   it("allows chat deletion IDs without accepting renderer paths", () => {
     expect(
       validateCommandArgs("chat_session_delete", {
@@ -229,6 +269,40 @@ describe("IPC command argument validation", () => {
         worktreeId: "w1",
       }),
     ).toEqual({ worktreeId: "w1" });
+  });
+
+  it("accepts only the narrow filesystem mutation fields", () => {
+    expect(
+      validateCommandArgs("fs_create_file", {
+        worktreeId: "w1",
+        relativePath: "src/new.ts",
+      }),
+    ).toEqual({ worktreeId: "w1", relativePath: "src/new.ts" });
+    expect(
+      validateCommandArgs("fs_rename", {
+        worktreeId: "w1",
+        relativePath: "src/old.ts",
+        newName: "new.ts",
+      }),
+    ).toEqual({
+      worktreeId: "w1",
+      relativePath: "src/old.ts",
+      newName: "new.ts",
+    });
+    expect(() =>
+      validateCommandArgs("fs_trash", {
+        worktreeId: "w1",
+        relativePath: "src/file.ts",
+        force: true,
+      }),
+    ).toThrow("Unexpected argument: force");
+    expect(() =>
+      validateCommandArgs("fs_move", {
+        worktreeId: "w1",
+        sourceRelativePath: "src/file.ts",
+        destinationRelativePath: "",
+      }),
+    ).toThrow("destinationRelativePath is empty or too large");
   });
 
   it("retains path length limits and rejects unexpected fields", () => {

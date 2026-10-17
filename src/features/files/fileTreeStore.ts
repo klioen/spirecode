@@ -11,6 +11,8 @@ interface FileTreeState {
   directories: Record<string, DirectoryState>;
   generationByWorktree: Record<string, number>;
   toggle: (worktreeId: string, path: string) => void;
+  expandAncestors: (worktreeId: string, path: string) => void;
+  invalidateDirectories: (worktreeId: string, paths: string[]) => void;
   setDirectory: (
     worktreeId: string,
     key: string,
@@ -38,6 +40,43 @@ export const useFileTreeStore = create<FileTreeState>((set) => ({
         },
       };
     }),
+  expandAncestors: (worktreeId, targetPath) =>
+    set((state) => {
+      const components = targetPath.split("/").filter(Boolean);
+      const ancestors = components
+        .slice(0, -1)
+        .map((_, index) => components.slice(0, index + 1).join("/"));
+      const current = state.expandedByWorktree[worktreeId] ?? [];
+      const next = [...new Set([...current, ...ancestors])];
+      if (next.length === current.length) return state;
+      return {
+        expandedByWorktree: {
+          ...state.expandedByWorktree,
+          [worktreeId]: next,
+        },
+      };
+    }),
+  invalidateDirectories: (worktreeId, paths) =>
+    set((state) => ({
+      directories: Object.fromEntries(
+        Object.entries(state.directories).map(([key, directory]) => {
+          if (!key.startsWith(`${worktreeId}:`)) return [key, directory];
+          const cachedPath = key.slice(worktreeId.length + 1);
+          return [
+            key,
+            paths.includes(cachedPath) ||
+            directory.status === "loading" ||
+            directory.status === "refreshing"
+              ? { ...directory, status: "idle" as const }
+              : directory,
+          ];
+        }),
+      ),
+      generationByWorktree: {
+        ...state.generationByWorktree,
+        [worktreeId]: (state.generationByWorktree[worktreeId] ?? 0) + 1,
+      },
+    })),
   setDirectory: (worktreeId, key, generation, directory) =>
     set((state) =>
       (state.generationByWorktree[worktreeId] ?? 0) === generation
