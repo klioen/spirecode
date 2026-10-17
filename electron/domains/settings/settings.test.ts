@@ -303,7 +303,7 @@ describe("SettingsService", () => {
           name: "user-skill",
           description: "user-skill description",
           kind: "user",
-          displayPath: "external/user-skill/SKILL.md",
+          displayPath: expect.stringMatching(/user-skill\/SKILL\.md$/),
         }),
         expect.objectContaining({
           name: "project-skill",
@@ -314,6 +314,7 @@ describe("SettingsService", () => {
     );
 
     const selected = catalog.find(({ name }) => name === "user-skill")!;
+    expect(selected.displayPath).not.toContain("\\");
     const updated = await service.setSkillEnabled(cwd, selected.id, false);
     expect(updated.find(({ id }) => id === selected.id)?.enabled).toBe(false);
     expect(updated.find(({ name }) => name === "project-skill")?.enabled).toBe(

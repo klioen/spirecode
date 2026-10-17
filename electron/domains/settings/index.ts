@@ -465,9 +465,11 @@ function extensionName(extensionPath: string): string {
 
 function abbreviateHome(value: string): string {
   const home = homedir();
-  return value === home || value.startsWith(home + path.sep)
-    ? `~${value.slice(home.length)}`
-    : value;
+  return portablePath(
+    value === home || value.startsWith(home + path.sep)
+      ? `~${value.slice(home.length)}`
+      : value,
+  );
 }
 
 function validateMemoryConfig(value: MemoryConfig): MemoryConfig {

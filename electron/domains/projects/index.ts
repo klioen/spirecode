@@ -457,7 +457,10 @@ async function canonicalDirectory(selected: string): Promise<string> {
 
 async function discoverRepositoryRoot(root: string): Promise<string | null> {
   try {
-    return (await gitAbsolute(root, ["rev-parse", "--show-toplevel"])).trim();
+    const discovered = (
+      await gitAbsolute(root, ["rev-parse", "--show-toplevel"])
+    ).trim();
+    return await realpath(discovered);
   } catch (error) {
     if (!(error instanceof CommandError) || error.code !== "GIT_FAILED")
       throw error;
