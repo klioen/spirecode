@@ -81,6 +81,33 @@ describe("ProjectRail", () => {
     expect(screen.getByTestId("spirecode-mark")).toBeInTheDocument();
   });
 
+  it("places panel and Settings controls at the top and bottom edges", () => {
+    const toggleProjects = vi.fn();
+    const openSettings = vi.fn();
+    render(
+      <ProjectRail
+        onToggleProjects={toggleProjects}
+        onOpenSettings={openSettings}
+      />,
+    );
+
+    const rail = screen.getByRole("complementary", { name: "Projects" });
+    const toggle = screen.getByRole("button", {
+      name: "Toggle projects panel",
+    });
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect(toggle.closest(".brand")).toBeTruthy();
+    expect(settings.closest(".project-rail-footer")).toBeTruthy();
+    expect(rail.compareDocumentPosition(settings)).toBe(
+      Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    fireEvent.click(toggle);
+    fireEvent.click(settings);
+    expect(toggleProjects).toHaveBeenCalledOnce();
+    expect(openSettings).toHaveBeenCalledOnce();
+  });
+
   it("shows active Pi session loading on the owning project and worktree only", async () => {
     chatRuntime.ensure("active-feature", "feature", "streaming");
     render(<ProjectRail />);

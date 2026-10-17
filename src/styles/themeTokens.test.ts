@@ -96,6 +96,26 @@ describe("theme tokens", () => {
     expectDeclarations(".branch-options", menuSurface.slice(1));
   });
 
+  it("keeps Settings as a full-window navigation surface", () => {
+    expectDeclarations(".settings-page", [
+      "width: 100%",
+      "height: 100%",
+      "display: flex",
+      "overflow: hidden",
+      "background: var(--workspace-bg)",
+    ]);
+    expectDeclarations(".settings-sidebar", [
+      "width: 260px",
+      "border-right: 1px solid var(--border-muted)",
+      "background: var(--sidebar-bg)",
+    ]);
+    expectDeclarations(".settings-content", [
+      "width: min(880px, 100%)",
+      "margin: 0 auto",
+      "padding: 46px 48px 88px",
+    ]);
+  });
+
   it("aligns Projects dialogs with the Files confirmation surface", () => {
     const dialogSurface = [
       "width: min(360px, calc(100vw - 32px))",

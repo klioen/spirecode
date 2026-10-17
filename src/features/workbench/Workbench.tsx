@@ -4,7 +4,6 @@ import {
   RiGitCommitLine,
   RiLayoutLeftLine,
   RiLayoutRightLine,
-  RiSettings3Line,
 } from "@remixicon/react";
 import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { Tooltip } from "../../components/Tooltip";
@@ -18,10 +17,7 @@ import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
 import { settingsApi } from "../settings/settingsApi";
-import {
-  SettingsDialog,
-  type SettingsSection,
-} from "../settings/SettingsDialog";
+import { SettingsPage, type SettingsSection } from "../settings/SettingsPage";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { BreadcrumbSwitcher } from "./BreadcrumbSwitcher";
 import { PanelResizeHandle } from "./PanelResizeHandle";
@@ -144,6 +140,14 @@ export function Workbench() {
     "--projects-width": `${visibleProjectsWidth}px`,
     "--right-panel-width": `${visibleRightWidth}px`,
   } as CSSProperties;
+  if (settingsOpen)
+    return (
+      <SettingsPage
+        worktreeId={activeWorktreeId}
+        initialSection={settingsSection}
+        onBack={() => setSettingsOpen(false)}
+      />
+    );
   return (
     <div
       className={`workbench ${workbench.projectsCollapsed ? "projects-collapsed" : ""} ${workbench.rightCollapsed ? "right-collapsed" : ""}`}
@@ -151,7 +155,13 @@ export function Workbench() {
     >
       {!workbench.projectsCollapsed && (
         <>
-          <ProjectRail />
+          <ProjectRail
+            onToggleProjects={workbench.toggleProjects}
+            onOpenSettings={() => {
+              setSettingsSection("general");
+              setSettingsOpen(true);
+            }}
+          />
           <PanelResizeHandle
             label={t("workbench.resizeProjects")}
             edge="projects"
@@ -170,6 +180,17 @@ export function Workbench() {
           aria-label={t("workbench.projectContext")}
         >
           <span className="traffic-spacer" />
+          {workbench.projectsCollapsed && (
+            <Tooltip label={t("workbench.toggleProjects")} align="start">
+              <button
+                className="project-panel-reopen"
+                aria-label={t("workbench.toggleProjects")}
+                onClick={workbench.toggleProjects}
+              >
+                <RiLayoutLeftLine size={17} />
+              </button>
+            </Tooltip>
+          )}
           {active ? (
             <BreadcrumbSwitcher
               activeProject={active.project}
@@ -182,25 +203,6 @@ export function Workbench() {
         </nav>
         <div className="layout-actions">
           <ThemeToggle />
-          <Tooltip label={t("workbench.settings")}>
-            <button
-              aria-label={t("workbench.settings")}
-              onClick={() => {
-                setSettingsSection("extensions");
-                setSettingsOpen(true);
-              }}
-            >
-              <RiSettings3Line size={17} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t("workbench.toggleProjects")}>
-            <button
-              aria-label={t("workbench.toggleProjects")}
-              onClick={workbench.toggleProjects}
-            >
-              <RiLayoutLeftLine size={17} />
-            </button>
-          </Tooltip>
           <Tooltip label={t("workbench.toggleFiles")} align="end">
             <button
               aria-label={t("workbench.toggleFiles")}
@@ -263,13 +265,6 @@ export function Workbench() {
           <div className="tree-state">{t("workbench.openToBrowse")}</div>
         )}
       </aside>
-      {settingsOpen && (
-        <SettingsDialog
-          worktreeId={activeWorktreeId}
-          initialSection={settingsSection}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
       {error && (
         <div className="toast">
           <b>{error.code}</b>

@@ -9,7 +9,19 @@ import { settingsApi } from "../settings/settingsApi";
 import { resetWorkbenchStore, useWorkbenchStore } from "./workbenchStore";
 
 vi.mock("../projects/ProjectRail", () => ({
-  ProjectRail: () => <aside>Projects</aside>,
+  ProjectRail: ({
+    onToggleProjects,
+    onOpenSettings,
+  }: {
+    onToggleProjects: () => void;
+    onOpenSettings: () => void;
+  }) => (
+    <aside>
+      Projects
+      <button onClick={onToggleProjects}>Toggle projects panel</button>
+      <button onClick={onOpenSettings}>Settings</button>
+    </aside>
+  ),
 }));
 vi.mock("../files/FileTree", () => ({ FileTree: () => <div>Files</div> }));
 vi.mock("../changes/ChangesPanel", () => ({
@@ -47,18 +59,18 @@ vi.mock("./BreadcrumbSwitcher", () => ({
 vi.mock("../settings/settingsApi", () => ({
   settingsApi: { getAgentReadiness: vi.fn() },
 }));
-vi.mock("../settings/SettingsDialog", () => ({
-  SettingsDialog: ({
-    onClose,
+vi.mock("../settings/SettingsPage", () => ({
+  SettingsPage: ({
+    onBack,
     initialSection,
   }: {
-    onClose: () => void;
+    onBack: () => void;
     initialSection?: string;
   }) => (
-    <div role="dialog" aria-label="Settings dialog">
+    <main aria-label="Settings page">
       <span>{initialSection}</span>
-      <button onClick={onClose}>Close mocked settings</button>
-    </div>
+      <button onClick={onBack}>Back to workspace</button>
+    </main>
   ),
 }));
 
@@ -315,24 +327,27 @@ describe("Workbench panel handles", () => {
     render(<Workbench />);
 
     expect(
-      await screen.findByRole("dialog", { name: "Settings dialog" }),
+      await screen.findByRole("main", { name: "Settings page" }),
     ).toHaveTextContent("agent");
+    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
   });
 
-  it("opens settings from the top-right action", () => {
+  it("opens full-page settings from the Projects footer and returns to the workspace", () => {
     render(<Workbench />);
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(
-      screen.getByRole("dialog", { name: "Settings dialog" }),
-    ).toBeInTheDocument();
+      screen.getByRole("main", { name: "Settings page" }),
+    ).toHaveTextContent("general");
+    expect(screen.queryByText("Projects")).not.toBeInTheDocument();
+    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Close mocked settings" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to workspace" }));
     expect(
-      screen.queryByRole("dialog", { name: "Settings dialog" }),
+      screen.queryByRole("main", { name: "Settings page" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+    expect(screen.getByText("Editor")).toBeInTheDocument();
   });
 
   it("hides the projects panel and separator when collapsed", () => {
@@ -347,5 +362,11 @@ describe("Workbench panel handles", () => {
       screen.queryByRole("separator", { name: "Resize projects panel" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Editor")).toBeInTheDocument();
+    const reopen = screen.getByRole("button", {
+      name: "Toggle projects panel",
+    });
+    expect(reopen).toHaveClass("project-panel-reopen");
+    fireEvent.click(reopen);
+    expect(screen.getByText("Projects")).toBeInTheDocument();
   });
 });
