@@ -22,6 +22,7 @@ import {
   type FileContent,
   type GitDiff,
 } from "../../bindings";
+import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { ResourceCache } from "../../lib/resourceCache";
@@ -756,30 +757,33 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
           })}
         </div>
         <div className="editor-resource-actions">
-          <button
-            ref={historyTriggerRef}
-            title={t("editor.chatHistory")}
-            aria-label={t("editor.chatHistory")}
-            aria-expanded={historyOpen}
-            aria-controls={historyOpen ? historyId : undefined}
-            onClick={() => setHistoryOpen((open) => !open)}
-          >
-            <RiChatHistoryLine size={16} />
-          </button>
-          <button
-            title={t("editor.newChat")}
-            aria-label={t("editor.newChat")}
-            onClick={() => void createChat()}
-          >
-            <RiChatNewLine size={16} />
-          </button>
-          <button
-            title={t("editor.newTerminal")}
-            aria-label={t("editor.newTerminal")}
-            onClick={() => void createTerminal()}
-          >
-            <RiTerminalBoxLine size={16} />
-          </button>
+          <Tooltip label={t("editor.chatHistory")}>
+            <button
+              ref={historyTriggerRef}
+              aria-label={t("editor.chatHistory")}
+              aria-expanded={historyOpen}
+              aria-controls={historyOpen ? historyId : undefined}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <RiChatHistoryLine size={16} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t("editor.newChat")}>
+            <button
+              aria-label={t("editor.newChat")}
+              onClick={() => void createChat()}
+            >
+              <RiChatNewLine size={16} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t("editor.newTerminal")} align="end">
+            <button
+              aria-label={t("editor.newTerminal")}
+              onClick={() => void createTerminal()}
+            >
+              <RiTerminalBoxLine size={16} />
+            </button>
+          </Tooltip>
         </div>
       </div>
       <div className="editor-content">

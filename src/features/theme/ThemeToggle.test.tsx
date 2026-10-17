@@ -29,6 +29,22 @@ describe("ThemeToggle", () => {
     expect(screen.queryByRole("button", { name: /system/i })).toBeNull();
   });
 
+  it("uses the resolved system appearance without exposing a third mode", () => {
+    useThemeStore.setState({ mode: "system", resolved: "dark" });
+    render(<ThemeToggle />);
+
+    const button = screen.getByRole("button", {
+      name: "Theme: dark. Switch to light",
+    });
+    expect(screen.queryByRole("button", { name: /system/i })).toBeNull();
+
+    fireEvent.click(button);
+    expect(useThemeStore.getState()).toMatchObject({
+      mode: "light",
+      resolved: "light",
+    });
+  });
+
   it("rerenders its accessible label when the language changes", () => {
     render(<ThemeToggle />);
 

@@ -14,6 +14,7 @@ import {
   RiTreeLine,
 } from "@remixicon/react";
 import { type DiffScope, type GitChange } from "../../bindings";
+import { Tooltip } from "../../components/Tooltip";
 import { formatNumber, useTranslation } from "../../i18n";
 import { useTreeKeyboard } from "../../lib/useTreeKeyboard";
 import { diffResourceId, useEditorStore } from "../editor/editorStore";
@@ -368,24 +369,26 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
             className="change-mode-toggle"
             aria-label={t("changes.viewMode")}
           >
-            <button
-              className={mode === "list" ? "active" : ""}
-              aria-label={t("changes.listView")}
-              aria-pressed={mode === "list"}
-              title={t("changes.listView")}
-              onClick={() => setMode("list")}
-            >
-              <RiFileListLine size={15} />
-            </button>
-            <button
-              className={mode === "tree" ? "active" : ""}
-              aria-label={t("changes.treeView")}
-              aria-pressed={mode === "tree"}
-              title={t("changes.treeView")}
-              onClick={() => setMode("tree")}
-            >
-              <RiTreeLine size={15} />
-            </button>
+            <Tooltip label={t("changes.listView")} side="left">
+              <button
+                className={mode === "list" ? "active" : ""}
+                aria-label={t("changes.listView")}
+                aria-pressed={mode === "list"}
+                onClick={() => setMode("list")}
+              >
+                <RiFileListLine size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t("changes.treeView")} side="left">
+              <button
+                className={mode === "tree" ? "active" : ""}
+                aria-label={t("changes.treeView")}
+                aria-pressed={mode === "tree"}
+                onClick={() => setMode("tree")}
+              >
+                <RiTreeLine size={15} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </div>

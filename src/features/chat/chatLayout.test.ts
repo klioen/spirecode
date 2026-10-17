@@ -38,9 +38,9 @@ describe("chat timeline layout", () => {
   });
 
   it("uses the latest thread and composer geometry", () => {
-    expect(css).toMatch(/--chat-thread-width:\s*960px;/);
+    expect(css).toMatch(/--chat-thread-width:\s*800px;/);
     expect(css).toMatch(
-      /\.chat-message-user\s*\{[^}]*max-width:\s*min\(720px, 86%\);[^}]*border:\s*0;[^}]*border-radius:\s*8px;/s,
+      /\.chat-message-user\s*\{[^}]*max-width:\s*min\(680px, 86%\);[^}]*border:\s*0;[^}]*border-radius:\s*8px;/s,
     );
     expect(css).toMatch(
       /\.chat-thinking,\s*\.chat-process-group\s*\{[^}]*width:\s*min\(800px, 100%\);/s,
