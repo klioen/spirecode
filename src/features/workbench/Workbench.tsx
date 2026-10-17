@@ -18,7 +18,6 @@ import { ProjectRail } from "../projects/ProjectRail";
 import { useProjectsStore } from "../projects/projectsStore";
 import { settingsApi } from "../settings/settingsApi";
 import { SettingsPage, type SettingsSection } from "../settings/SettingsPage";
-import { ThemeToggle } from "../theme/ThemeToggle";
 import { BreadcrumbSwitcher } from "./BreadcrumbSwitcher";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 import { PANEL_LIMITS, useWorkbenchStore } from "./workbenchStore";
@@ -202,7 +201,6 @@ export function Workbench() {
           )}
         </nav>
         <div className="layout-actions">
-          <ThemeToggle />
           <Tooltip label={t("workbench.toggleFiles")} align="end">
             <button
               aria-label={t("workbench.toggleFiles")}
