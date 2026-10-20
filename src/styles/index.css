@@ -508,8 +508,15 @@ body.panel-resizing-vertical * {
 .project-chevron.expanded {
   transform: rotate(90deg);
 }
+.worktree-list {
+  padding-left: 14px;
+}
 .worktree-entry {
   min-width: 0;
+}
+.worktree-entry > .project-session-list .project-session-row,
+.worktree-entry > .project-session-list .project-session-state {
+  padding-left: 38px;
 }
 .worktree-session-toggle {
   width: 22px;
