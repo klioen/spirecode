@@ -80,7 +80,7 @@ Main 只接受三个字段，逐个执行长度和 nullable string 校验，拒�
 - 展开分组提供项目间 before/after drop slot；空分组和折叠分组标题提供“追加到末尾”目标。
 - 拖拽 overlay 仅显示项目图标和名称，不复制 worktree/session 子树。
 - 源行保留占位并降低透明度；目标分组高亮；插入位置显示不只依赖颜色的水平指示线。
-- 同组拖拽由 sortable transform 提供临时位置 preview；跨组拖拽保留源占位，并以目标分组高亮、overlay 和插入指示线预览，避免源分组高度变化导致空/折叠目标在 pointer 下漂移。drop 后立即以完整 catalog 快照乐观更新 Zustand，并设置全局单次 move pending。
+- 拖拽期间所有 project 行保持原位，源行仅降低透明度；drag overlay 跟随 pointer/keyboard，目标分组高亮并用 before/after 指示线预览最终位置。不得让源分组收缩或让源行之后的 project 发生 sortable transform；drop 后才以完整 catalog 快照乐观更新 Zustand，并设置全局单次 move pending。
 - 成功时使用 Main 返回的完整 catalog 覆盖 preview；失败时恢复 drop 前 catalog、显示现有结构化错误、通过 live region 播报恢复，并把焦点还给源项目 drag handle。
 - pending 期间禁止新的 project drag、菜单移动和 group mutation，避免旧完整 catalog 覆盖新状态。
 - group/project 折叠状态不进入持久化 model，移动不得自动改变长期折叠状态。

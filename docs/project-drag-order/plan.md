@@ -64,14 +64,14 @@ pnpm bundle
 - `ProjectCatalog` v5、v4 迁移、严格全排列、project 生命周期和原子 `project_move` 已由 domain/IPC 测试覆盖。
 - Renderer 已接入 6px Pointer sensor、Keyboard sensor、独立 handle、overlay、group target、before/after indicator、乐观更新、失败回滚、焦点恢复和双语播报；菜单继续作为替代入口。
 - 精确依赖版本为 `@dnd-kit/core@6.3.1`、`@dnd-kit/sortable@10.0.0`、`@dnd-kit/utilities@3.2.2`，license gate 通过。
-- `pnpm check` 通过：73 个 Vitest 文件、498 个测试以及 18 个 release tests。
+- `pnpm check` 通过：73 个 Vitest 文件、499 个测试以及 18 个 release tests。
 - `pnpm bundle`、app/DMG smoke 和严格 codesign 校验通过。
-- macOS arm64 packaged-app CDP smoke 从 v4 fixture 启动，实际用 pointer 将 `alpha` 拖入空分组，确认 UI 更新、v5 落盘和 `projectOrder` 全排列；`onDragEnd` 基于最终 collision 重新计算 intent，不依赖 Renderer 暂存完整 catalog。
+- macOS arm64 packaged-app CDP smoke 从 v4 fixture 启动，实际用 pointer 将 `alpha` 拖入空分组，确认 UI 更新、v5 落盘和 `projectOrder` 全排列；后续回归 smoke 在拖拽期间验证源行与后续行的 Y 坐标不变、computed transform 均为 `none`，drop 后顺序仍正确持久化。
 - 最新构建已安装到 `/Applications/SpireCode.app` 并启动；实际 profile 为合法 v5 catalog。
 
 ## Implementation deviation
 
-跨组拖拽不在 pointer 移动期间把源 DOM 直接插入目标列表。首次 packaged-app smoke 证明这样会让源分组收缩并使空分组标题移出 pointer，导致最终 collision 漂移到后续分组。最终实现保留源占位，用 overlay、目标高亮和 indicator 预览；同组仍由 sortable transform 实时预览。drop 后的 optimistic catalog、Main 权威覆盖和失败回滚保持原规格。
+拖拽不在 pointer 移动期间把源 DOM 插入目标列表，也不对源行之后的 project 应用 sortable transform。首次 packaged-app smoke 证明跨组临时插入会让源分组收缩并使空分组标题移出 pointer；后续用户反馈进一步证明默认 `verticalListSortingStrategy` 会让底部 project 跟随变换，与 Codex 的固定占位效果不一致。最终实现使用静态 sorting strategy，让所有 project 行保持原位，只用源行透明度、overlay、目标高亮和 indicator 预览。drop 后的 optimistic catalog、Main 权威覆盖和失败回滚保持原规格。
 
 ## Rollback
 
