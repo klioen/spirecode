@@ -5,7 +5,7 @@ import type { ChatTimelineItem } from "./types";
 const thinking: ChatTimelineItem = {
   type: "thinking",
   id: "thinking-1",
-  content: "inspect",
+  content: "inspect raw reasoning",
   status: "complete",
 };
 const tool = (id: string): ChatTimelineItem => ({
@@ -23,32 +23,19 @@ const message: ChatTimelineItem = {
   status: "complete",
 };
 
-it("renders a single process step directly", () => {
-  expect(projectChatTimeline([thinking])).toEqual([
-    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
-  ]);
+it("does not project raw thinking", () => {
+  expect(projectChatTimeline([thinking])).toEqual([]);
 });
 
-it("keeps thinking outside an adjacent multi-tool operation group", () => {
+it("groups adjacent tools across hidden thinking", () => {
   expect(
-    projectChatTimeline([thinking, tool("tool-1"), tool("tool-2")]),
+    projectChatTimeline([tool("tool-1"), thinking, tool("tool-2")]),
   ).toEqual([
-    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
     {
       type: "process",
       id: "tool:tool-1:tool:tool-2",
       steps: [tool("tool-1"), tool("tool-2")],
     },
-  ]);
-});
-
-it("uses thinking as a boundary between tool groups", () => {
-  expect(
-    projectChatTimeline([tool("tool-1"), thinking, tool("tool-2")]),
-  ).toEqual([
-    { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
-    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
-    { type: "process", id: "tool:tool-2", steps: [tool("tool-2")] },
   ]);
 });
 
@@ -113,7 +100,6 @@ it("uses visible messages and notices as process boundaries", () => {
   expect(
     projectChatTimeline([thinking, message, tool("tool-1"), notice]),
   ).toEqual([
-    { type: "process", id: "thinking:thinking-1", steps: [thinking] },
     message,
     { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
     notice,
