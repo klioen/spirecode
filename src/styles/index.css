@@ -402,8 +402,51 @@ body.panel-resizing-vertical * {
 }
 .project-section,
 .project-entry,
-.project-group-projects {
+.project-group-projects,
+.project-sortable {
   min-width: 0;
+}
+.project-section.drag-over > .project-group-heading {
+  background: color-mix(in srgb, var(--interactive-selected) 72%, transparent);
+  border-radius: 5px;
+}
+.project-sortable {
+  position: relative;
+}
+.project-sortable.dragging {
+  opacity: 0.25;
+}
+.project-sortable.drop-before::before,
+.project-sortable.drop-after::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  left: 4px;
+  z-index: 4;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.project-sortable.drop-before::before {
+  top: -1px;
+}
+.project-sortable.drop-after::after {
+  bottom: -1px;
+}
+.project-drag-overlay {
+  max-width: 220px;
+  padding: 7px 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-popover);
+  box-shadow: 0 8px 24px var(--shadow);
+  color: var(--text-default);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .project-group-heading {
   min-width: 0;
@@ -486,12 +529,41 @@ body.panel-resizing-vertical * {
 .worktree-row:hover {
   background: var(--control-hover);
 }
+.project-drag-handle {
+  width: 18px;
+  height: 26px;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
+}
+.project-heading:hover .project-drag-handle,
+.project-drag-handle:focus-visible {
+  opacity: 1;
+}
+.project-drag-handle:active {
+  cursor: grabbing;
+}
+.project-drag-handle:focus-visible {
+  border-radius: 4px;
+  outline: 1px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.project-drag-handle:disabled {
+  cursor: default;
+}
 .project-name,
 .worktree-name {
   min-width: 0;
   height: 100%;
   flex: 1;
-  padding: 0 4px 0 8px;
+  padding: 0 4px 0 2px;
   border: 0;
   display: flex;
   align-items: center;
@@ -2847,8 +2919,9 @@ details[open] > summary > .chat-disclosure-icon {
   }
   .chat-process-group,
   .chat-disclosure-icon,
-  .chat-composer {
-    transition: none;
+  .chat-composer,
+  .project-sortable {
+    transition: none !important;
   }
 }
 .chat-history-popover {

@@ -16,6 +16,7 @@ vi.mock("./projectsApi", () => ({
     renameGroup: vi.fn(),
     deleteGroup: vi.fn(),
     setProjectGroup: vi.fn(),
+    moveProject: vi.fn(),
   },
 }));
 
@@ -33,9 +34,10 @@ const catalog = (
   groups: ProjectCatalog["groups"],
   projects: ProjectSummary[] = [project],
 ): ProjectCatalog => ({
-  version: 4,
+  version: 5,
   groups,
   projects,
+  projectOrder: projects.map(({ id }) => id),
   activeWorktreeId: null,
 });
 

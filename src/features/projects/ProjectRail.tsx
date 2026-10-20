@@ -1,4 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   RiAddLine,
   RiArrowRightSLine,
@@ -6,6 +26,7 @@ import {
   RiFolderLine,
   RiFolderOpenLine,
   RiGitBranchLine,
+  RiDraggable,
   RiGitRepositoryLine,
   RiLayoutLeftLine,
   RiMore2Fill,
@@ -23,6 +44,13 @@ import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { ProjectSessionList } from "./ProjectSessionList";
 import { projectsApi } from "./projectsApi";
+import {
+  groupDropId,
+  previewProjectMove,
+  projectDragId,
+  projectMoveIntent,
+  resolveProjectDropTarget,
+} from "./projectDnd";
 import {
   CreateProjectGroupDialog,
   DeleteProjectGroupDialog,
@@ -48,6 +76,76 @@ type DialogState =
 
 const UNGROUPED_ID = "__ungrouped__";
 
+function SortableProjectEntry({
+  project,
+  disabled,
+  indicator,
+  children,
+}: {
+  project: ProjectSummary;
+  disabled: boolean;
+  indicator: "before" | "after" | null;
+  children: (handle: ReactNode) => ReactNode;
+}) {
+  const { t } = useTranslation();
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: projectDragId(project.id),
+    disabled,
+    data: { type: "project", projectId: project.id },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`project-sortable ${isDragging ? "dragging" : ""} ${indicator ? `drop-${indicator}` : ""}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      {children(
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          className="project-drag-handle"
+          data-project-drag-handle={project.id}
+          aria-label={t("projects.drag.handle", { name: project.name })}
+          disabled={disabled}
+          {...attributes}
+          {...listeners}
+        >
+          <RiDraggable size={14} />
+        </button>,
+      )}
+    </div>
+  );
+}
+
+function ProjectDropSection({
+  groupId,
+  children,
+}: {
+  groupId: string | null;
+  children: ReactNode;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: groupDropId(groupId),
+    data: { type: "group", groupId },
+  });
+  return (
+    <section
+      ref={setNodeRef}
+      className={`project-section ${isOver ? "drag-over" : ""}`}
+    >
+      {children}
+    </section>
+  );
+}
+
 export function ProjectRail({
   onToggleProjects = () => undefined,
   onOpenSettings = () => undefined,
@@ -70,6 +168,22 @@ export function ProjectRail({
   const groupMenuRef = useRef<HTMLDivElement | null>(null);
   const dialogReturnFocusTargetRef = useRef<string | null>(null);
   const selectionGenerationRef = useRef(0);
+  const dragSnapshotRef = useRef<ProjectSummary[] | null>(null);
+  const [activeDragProjectId, setActiveDragProjectId] = useState<string | null>(
+    null,
+  );
+  const [movePending, setMovePending] = useState(false);
+  const [dragStatus, setDragStatus] = useState("");
+  const [dropIndicator, setDropIndicator] = useState<{
+    projectId: string;
+    edge: "before" | "after";
+  } | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -197,6 +311,118 @@ export function ProjectRail({
       setMenuProjectId(null);
     }
   };
+  const focusDragHandle = (projectId: string) => {
+    requestAnimationFrame(() => {
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          "[data-project-drag-handle]",
+        ),
+      )
+        .find((element) => element.dataset.projectDragHandle === projectId)
+        ?.focus();
+    });
+  };
+  const resetDrag = (projectId: string | null) => {
+    dragSnapshotRef.current = null;
+    setDropIndicator(null);
+    setActiveDragProjectId(null);
+    if (projectId) focusDragHandle(projectId);
+  };
+  const handleDragStart = (event: DragStartEvent) => {
+    if (movePending) return;
+    const projectId = event.active.data.current?.projectId;
+    if (typeof projectId !== "string") return;
+    closeMenus();
+    setDragStatus("");
+    dragSnapshotRef.current = store.projects;
+    setActiveDragProjectId(projectId);
+  };
+  const handleDragOver = (event: DragOverEvent) => {
+    const snapshot = dragSnapshotRef.current;
+    const draggedProjectId = event.active.data.current?.projectId;
+    if (!snapshot || !event.over || typeof draggedProjectId !== "string")
+      return;
+    const target = resolveProjectDropTarget(String(event.over.id));
+    if (!target) return;
+    const translated = event.active.rect.current.translated;
+    const placeAfter =
+      target.type === "project" &&
+      translated !== null &&
+      translated.top + translated.height / 2 >
+        event.over.rect.top + event.over.rect.height / 2;
+    const intent = projectMoveIntent(
+      snapshot,
+      draggedProjectId,
+      target,
+      placeAfter,
+    );
+    if (!intent) {
+      setDropIndicator(null);
+      return;
+    }
+    setDropIndicator(
+      target.type === "project"
+        ? {
+            projectId: target.projectId,
+            edge: placeAfter ? "after" : "before",
+          }
+        : null,
+    );
+  };
+  const handleDragCancel = () => {
+    resetDrag(activeDragProjectId);
+  };
+  const handleDragEnd = (event: DragEndEvent) => {
+    const draggedProjectId = event.active.data.current?.projectId;
+    const projectId =
+      typeof draggedProjectId === "string"
+        ? draggedProjectId
+        : activeDragProjectId;
+    const snapshot = dragSnapshotRef.current;
+    const target = event.over
+      ? resolveProjectDropTarget(String(event.over.id))
+      : null;
+    const translated = event.active.rect.current.translated;
+    const placeAfter =
+      target?.type === "project" &&
+      translated !== null &&
+      translated.top + translated.height / 2 >
+        event.over!.rect.top + event.over!.rect.height / 2;
+    const intent =
+      projectId && snapshot && target
+        ? projectMoveIntent(snapshot, projectId, target, placeAfter)
+        : null;
+    if (!projectId || !snapshot || !intent) {
+      resetDrag(projectId);
+      return;
+    }
+    const optimistic = previewProjectMove(snapshot, intent);
+    dragSnapshotRef.current = null;
+    setDropIndicator(null);
+    setActiveDragProjectId(null);
+    setMovePending(true);
+    store.setProjects(optimistic);
+    void projectsApi
+      .moveProject(
+        intent.projectId,
+        intent.targetGroupId,
+        intent.beforeProjectId,
+      )
+      .then((catalog) => {
+        store.setCatalog(catalog);
+        setDragStatus(t("projects.drag.end"));
+      })
+      .catch((error: unknown) => {
+        store.setProjects(snapshot);
+        store.setError(commandError(error));
+        setDragStatus(t("projects.drag.failed"));
+      })
+      .finally(() => {
+        setMovePending(false);
+        focusDragHandle(projectId);
+      });
+  };
+
   const closeProject = async (projectId: string) => {
     setProjectActionPending(projectId);
     try {
@@ -213,7 +439,7 @@ export function ProjectRail({
     }
   };
 
-  const renderProject = (project: ProjectSummary) => {
+  const renderProject = (project: ProjectSummary, dragHandle: ReactNode) => {
     const directory = project.kind === "directory";
     const expanded = expandedProjectIds.has(project.id);
     const primaryWorkspace =
@@ -225,6 +451,7 @@ export function ProjectRail({
     return (
       <section className="project-entry" key={project.id}>
         <div className="project-heading">
+          {dragHandle}
           <button
             className="project-name"
             title={project.path}
@@ -284,6 +511,7 @@ export function ProjectRail({
               aria-label={t("projects.manage", { name: project.name })}
               title={t("projects.manage", { name: project.name })}
               aria-expanded={menuProjectId === project.id}
+              disabled={movePending}
               onClick={() => {
                 setMenuWorktreeId(null);
                 setMenuGroupId(null);
@@ -454,15 +682,16 @@ export function ProjectRail({
     );
   };
 
-  const ungrouped = store.projects.filter(({ groupId }) => groupId === null);
+  const displayedProjects = store.projects;
+  const ungrouped = displayedProjects.filter(({ groupId }) => groupId === null);
   const sections = [
     ...store.groups.map((group) => ({
       id: group.id,
       name: group.name,
       group,
-      projects: store.projects.filter(({ groupId }) => groupId === group.id),
+      projects: displayedProjects.filter(({ groupId }) => groupId === group.id),
     })),
-    ...(ungrouped.length > 0
+    ...(displayedProjects.length > 0
       ? [
           {
             id: UNGROUPED_ID,
@@ -498,6 +727,7 @@ export function ProjectRail({
             title={t("projects.group.create")}
             aria-label={t("projects.group.create")}
             onClick={() => setDialog({ type: "create-group" })}
+            disabled={movePending}
           >
             <RiFolderAddLine size={16} />
           </button>
@@ -507,7 +737,7 @@ export function ProjectRail({
             title={t("workbench.openProject")}
             aria-label={t("workbench.openProject")}
             onClick={() => void open()}
-            disabled={store.loading}
+            disabled={store.loading || movePending}
           >
             {store.loading ? (
               <span className="spinner" />
@@ -517,107 +747,188 @@ export function ProjectRail({
           </button>
         </div>
       </div>
-      <div className="project-list">
-        {sections.map((section) => {
-          const expanded = !collapsedGroupIds.has(section.id);
-          const sessionActive = section.projects.some((project) =>
-            project.worktrees.some(({ id }) => activeChatWorktrees.has(id)),
-          );
-          return (
-            <section className="project-section" key={section.id}>
-              <div className="project-group-heading">
-                <button
-                  className="project-group-name"
-                  aria-expanded={expanded}
-                  aria-label={t(
-                    expanded
-                      ? "projects.group.collapse"
-                      : "projects.group.expand",
-                    { name: section.name },
-                  )}
-                  onClick={() => toggleGroup(section.id)}
-                >
-                  <RiArrowRightSLine
-                    className={`project-chevron ${expanded ? "expanded" : ""}`}
-                    size={15}
-                  />
-                  <RiFolderLine size={14} />
-                  <span>{section.name}</span>
-                  {sessionActive && (
-                    <span
-                      className="spinner project-session-spinner"
-                      aria-label={t("projects.sessionActive")}
-                    />
-                  )}
-                </button>
-                {section.group && (
-                  <div
-                    className="project-menu-container"
-                    ref={menuGroupId === section.id ? groupMenuRef : undefined}
-                  >
-                    <button
-                      className="project-group-menu-button"
-                      data-dialog-return-focus={`group:${section.id}`}
-                      aria-label={t("projects.group.manage", {
-                        name: section.name,
-                      })}
-                      aria-expanded={menuGroupId === section.id}
-                      onClick={() => {
-                        setMenuProjectId(null);
-                        setMenuWorktreeId(null);
-                        setMenuGroupId(
-                          menuGroupId === section.id ? null : section.id,
-                        );
-                      }}
-                    >
-                      <RiMore2Fill size={15} />
-                    </button>
-                    {menuGroupId === section.id && (
-                      <div
-                        className="project-menu project-group-menu"
-                        role="menu"
-                      >
-                        <button
-                          role="menuitem"
-                          onClick={() => {
-                            dialogReturnFocusTargetRef.current = `group:${section.id}`;
-                            setMenuGroupId(null);
-                            setDialog({
-                              type: "rename-group",
-                              group: section.group!,
-                            });
-                          }}
-                        >
-                          {t("projects.group.rename")}
-                        </button>
-                        <button
-                          role="menuitem"
-                          className="danger-text"
-                          onClick={() => {
-                            dialogReturnFocusTargetRef.current = `group:${section.id}`;
-                            setMenuGroupId(null);
-                            setDialog({
-                              type: "delete-group",
-                              group: section.group!,
-                              projectCount: section.projects.length,
-                            });
-                          }}
-                        >
-                          {t("projects.group.delete")}
-                        </button>
-                      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragCancel={handleDragCancel}
+        onDragEnd={handleDragEnd}
+        accessibility={{
+          announcements: {
+            onDragStart({ active }) {
+              const project = displayedProjects.find(
+                ({ id }) => projectDragId(id) === active.id,
+              );
+              return project
+                ? t("projects.drag.start", { name: project.name })
+                : undefined;
+            },
+            onDragOver({ over }) {
+              if (!over) return t("projects.drag.outside");
+              const target = resolveProjectDropTarget(String(over.id));
+              if (!target) return undefined;
+              if (target.type === "group") {
+                const name =
+                  target.groupId === null
+                    ? t("projects.group.ungrouped")
+                    : (store.groups.find(({ id }) => id === target.groupId)
+                        ?.name ?? "");
+                return t("projects.drag.overGroup", { name });
+              }
+              const project = displayedProjects.find(
+                ({ id }) => id === target.projectId,
+              );
+              return project
+                ? t("projects.drag.overProject", { name: project.name })
+                : undefined;
+            },
+            onDragEnd() {
+              return t("projects.drag.saving");
+            },
+            onDragCancel() {
+              return t("projects.drag.cancel");
+            },
+          },
+        }}
+      >
+        <div className="project-list">
+          {sections.map((section) => {
+            const expanded = !collapsedGroupIds.has(section.id);
+            const sessionActive = section.projects.some((project) =>
+              project.worktrees.some(({ id }) => activeChatWorktrees.has(id)),
+            );
+            return (
+              <ProjectDropSection
+                key={section.id}
+                groupId={section.group?.id ?? null}
+              >
+                <div className="project-group-heading">
+                  <button
+                    className="project-group-name"
+                    aria-expanded={expanded}
+                    aria-label={t(
+                      expanded
+                        ? "projects.group.collapse"
+                        : "projects.group.expand",
+                      { name: section.name },
                     )}
-                  </div>
-                )}
-              </div>
-              {expanded && (
-                <div className="project-group-projects">
-                  {section.projects.map(renderProject)}
+                    onClick={() => toggleGroup(section.id)}
+                  >
+                    <RiArrowRightSLine
+                      className={`project-chevron ${expanded ? "expanded" : ""}`}
+                      size={15}
+                    />
+                    <RiFolderLine size={14} />
+                    <span>{section.name}</span>
+                    {sessionActive && (
+                      <span
+                        className="spinner project-session-spinner"
+                        aria-label={t("projects.sessionActive")}
+                      />
+                    )}
+                  </button>
+                  {section.group && (
+                    <div
+                      className="project-menu-container"
+                      ref={
+                        menuGroupId === section.id ? groupMenuRef : undefined
+                      }
+                    >
+                      <button
+                        className="project-group-menu-button"
+                        data-dialog-return-focus={`group:${section.id}`}
+                        aria-label={t("projects.group.manage", {
+                          name: section.name,
+                        })}
+                        aria-expanded={menuGroupId === section.id}
+                        disabled={movePending}
+                        onClick={() => {
+                          setMenuProjectId(null);
+                          setMenuWorktreeId(null);
+                          setMenuGroupId(
+                            menuGroupId === section.id ? null : section.id,
+                          );
+                        }}
+                      >
+                        <RiMore2Fill size={15} />
+                      </button>
+                      {menuGroupId === section.id && (
+                        <div
+                          className="project-menu project-group-menu"
+                          role="menu"
+                        >
+                          <button
+                            role="menuitem"
+                            onClick={() => {
+                              dialogReturnFocusTargetRef.current = `group:${section.id}`;
+                              setMenuGroupId(null);
+                              setDialog({
+                                type: "rename-group",
+                                group: section.group!,
+                              });
+                            }}
+                          >
+                            {t("projects.group.rename")}
+                          </button>
+                          <button
+                            role="menuitem"
+                            className="danger-text"
+                            onClick={() => {
+                              dialogReturnFocusTargetRef.current = `group:${section.id}`;
+                              setMenuGroupId(null);
+                              setDialog({
+                                type: "delete-group",
+                                group: section.group!,
+                                projectCount: section.projects.length,
+                              });
+                            }}
+                          >
+                            {t("projects.group.delete")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </section>
-          );
-        })}
+                {expanded && (
+                  <SortableContext
+                    items={section.projects.map(({ id }) => projectDragId(id))}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="project-group-projects">
+                      {section.projects.map((project) => (
+                        <SortableProjectEntry
+                          key={project.id}
+                          project={project}
+                          disabled={movePending}
+                          indicator={
+                            dropIndicator?.projectId === project.id
+                              ? dropIndicator.edge
+                              : null
+                          }
+                        >
+                          {(dragHandle) => renderProject(project, dragHandle)}
+                        </SortableProjectEntry>
+                      ))}
+                    </div>
+                  </SortableContext>
+                )}
+              </ProjectDropSection>
+            );
+          })}
+        </div>
+        <DragOverlay>
+          {activeDragProjectId ? (
+            <div className="project-drag-overlay">
+              {displayedProjects.find(({ id }) => id === activeDragProjectId)
+                ?.name ?? ""}
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+      <div className="sr-only" role="status" aria-live="assertive">
+        {dragStatus}
       </div>
       {store.projects.length === 0 && (
         <button className="project-empty" onClick={() => void open()}>

@@ -84,6 +84,16 @@ export const commands = {
       projectId,
       groupId,
     }),
+  projectMove: (
+    projectId: string,
+    targetGroupId: string | null,
+    beforeProjectId: string | null,
+  ) =>
+    command<ProjectCatalog>("project_move", {
+      projectId,
+      targetGroupId,
+      beforeProjectId,
+    }),
 
   settingsLanguageGet: () => command<AppLanguage>("settings_language_get"),
   settingsAgentReadiness: () =>

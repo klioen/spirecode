@@ -47,6 +47,9 @@
     "secrets:check": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@earendil-works/pi-coding-agent": "1.1.0",
     "@mariozechner/clipboard": "0.3.9",
     "@monaco-editor/react": "4.7.0",

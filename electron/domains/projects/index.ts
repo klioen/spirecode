@@ -6,7 +6,7 @@ import { CommandError, toCommandError } from "../../core/errors.js";
 import { gitText } from "../../core/gitProcess.js";
 import { corruptBackupPath, saveAtomic } from "../persistence/index.js";
 
-export const PROJECT_STATE_VERSION = 4;
+export const PROJECT_STATE_VERSION = 5;
 const MAX_GROUP_NAME_BYTES = 48;
 
 export type ProjectKind = "git" | "directory";
@@ -43,6 +43,7 @@ export interface ProjectCatalog {
   version: number;
   groups: ProjectGroupSummary[];
   projects: ProjectSummary[];
+  projectOrder: string[];
   activeWorktreeId: string | null;
 }
 
@@ -57,6 +58,7 @@ export interface ProjectServiceLoadOptions {
 
 type Catalog = ProjectCatalog;
 type ProjectV3 = Omit<ProjectSummary, "groupId">;
+type CatalogV4 = Omit<ProjectCatalog, "projectOrder">;
 type ProjectV2 = Omit<ProjectV3, "kind">;
 
 interface CatalogV3 {
@@ -113,17 +115,7 @@ export class ProjectService {
   }
 
   catalog(): Promise<ProjectCatalog> {
-    return this.queue.run(async () => {
-      const projects = structuredClone(this.catalogValue.projects).sort(
-        (left, right) => right.lastOpenedAt - left.lastOpenedAt,
-      );
-      return {
-        version: PROJECT_STATE_VERSION,
-        groups: structuredClone(this.catalogValue.groups),
-        projects,
-        activeWorktreeId: this.catalogValue.activeWorktreeId,
-      };
-    });
+    return this.queue.run(async () => snapshotCatalog(this.catalogValue));
   }
 
   async list(): Promise<ProjectSummary[]> {
@@ -154,10 +146,21 @@ export class ProjectService {
       const index = catalog.groups.findIndex((group) => group.id === groupId);
       if (index < 0)
         throw new CommandError("NOT_FOUND", "project group not found");
+      const movedIds = catalog.projectOrder.filter(
+        (projectId) =>
+          catalog.projects.find((project) => project.id === projectId)
+            ?.groupId === groupId,
+      );
       catalog.groups.splice(index, 1);
       for (const project of catalog.projects) {
         if (project.groupId === groupId) project.groupId = null;
       }
+      catalog.projectOrder = [
+        ...catalog.projectOrder.filter(
+          (projectId) => !movedIds.includes(projectId),
+        ),
+        ...movedIds,
+      ];
     });
   }
 
@@ -165,16 +168,63 @@ export class ProjectService {
     projectId: string,
     groupId: string | null,
   ): Promise<ProjectCatalog> {
+    return this.moveProject(projectId, groupId, null);
+  }
+
+  moveProject(
+    projectId: string,
+    targetGroupId: string | null,
+    beforeProjectId: string | null,
+  ): Promise<ProjectCatalog> {
     return this.transactCatalog((catalog) => {
       const project = catalog.projects.find((value) => value.id === projectId);
       if (!project) throw new CommandError("NOT_FOUND", "project not found");
       if (
-        groupId !== null &&
-        !catalog.groups.some((group) => group.id === groupId)
+        targetGroupId !== null &&
+        !catalog.groups.some((group) => group.id === targetGroupId)
       ) {
         throw new CommandError("NOT_FOUND", "project group not found");
       }
-      project.groupId = groupId;
+      if (beforeProjectId === projectId) {
+        throw new CommandError(
+          "INVALID_ARGUMENT",
+          "project cannot be positioned before itself",
+        );
+      }
+      const beforeProject =
+        beforeProjectId === null
+          ? null
+          : catalog.projects.find((value) => value.id === beforeProjectId);
+      if (beforeProjectId !== null && !beforeProject) {
+        throw new CommandError("NOT_FOUND", "project anchor not found");
+      }
+      if (beforeProject && beforeProject.groupId !== targetGroupId) {
+        throw new CommandError(
+          "INVALID_ARGUMENT",
+          "project anchor is not in the target group",
+        );
+      }
+
+      const withoutProject = catalog.projectOrder.filter(
+        (value) => value !== projectId,
+      );
+      project.groupId = targetGroupId;
+      let insertAt = withoutProject.length;
+      if (beforeProjectId !== null) {
+        insertAt = withoutProject.indexOf(beforeProjectId);
+      } else {
+        for (let index = withoutProject.length - 1; index >= 0; index -= 1) {
+          const candidate = catalog.projects.find(
+            (value) => value.id === withoutProject[index],
+          );
+          if (candidate?.groupId === targetGroupId) {
+            insertAt = index + 1;
+            break;
+          }
+        }
+      }
+      withoutProject.splice(insertAt, 0, projectId);
+      catalog.projectOrder = withoutProject;
     });
   }
 
@@ -193,6 +243,9 @@ export class ProjectService {
       if (index < 0) throw new CommandError("NOT_FOUND", "project not found");
       const [project] = catalog.projects.splice(index, 1);
       if (!project) throw new CommandError("NOT_FOUND", "project not found");
+      catalog.projectOrder = catalog.projectOrder.filter(
+        (projectId) => projectId !== id,
+      );
       if (
         catalog.activeWorktreeId !== null &&
         project.worktrees.some(
@@ -466,6 +519,9 @@ async function loadCatalog(
   if (version === 3) {
     return { catalog: migrateV3(parseCatalogV3(record)), migrated: true };
   }
+  if (version === 4) {
+    return { catalog: migrateV4(parseCatalogV4(record)), migrated: true };
+  }
   throw new CommandError("INVALID_ARGUMENT", "unsupported state version");
 }
 
@@ -540,30 +596,52 @@ async function migrateV1(old: CatalogV1): Promise<Catalog> {
     version: PROJECT_STATE_VERSION,
     groups: [],
     projects,
+    projectOrder: initialProjectOrder(projects),
     activeWorktreeId,
   };
 }
 
 function migrateV2(old: CatalogV2): Catalog {
+  const projects = old.projects.map((project) => ({
+    ...project,
+    kind: "git" as const,
+    groupId: null,
+  }));
   return {
     version: PROJECT_STATE_VERSION,
     groups: [],
-    projects: old.projects.map((project) => ({
-      ...project,
-      kind: "git",
-      groupId: null,
-    })),
+    projects,
+    projectOrder: initialProjectOrder(projects),
     activeWorktreeId: old.activeWorktreeId,
   };
 }
 
 function migrateV3(old: CatalogV3): Catalog {
+  const projects = old.projects.map((project) => ({
+    ...project,
+    groupId: null,
+  }));
   return {
     version: PROJECT_STATE_VERSION,
     groups: [],
-    projects: old.projects.map((project) => ({ ...project, groupId: null })),
+    projects,
+    projectOrder: initialProjectOrder(projects),
     activeWorktreeId: old.activeWorktreeId,
   };
+}
+
+function migrateV4(old: CatalogV4): Catalog {
+  return {
+    ...old,
+    version: PROJECT_STATE_VERSION,
+    projectOrder: initialProjectOrder(old.projects),
+  };
+}
+
+function initialProjectOrder(projects: ProjectSummary[]): string[] {
+  return [...projects]
+    .sort((left, right) => right.lastOpenedAt - left.lastOpenedAt)
+    .map((project) => project.id);
 }
 
 async function canonicalDirectory(selected: string): Promise<string> {
@@ -730,6 +808,7 @@ async function upsertProject(
     groupId: null,
   };
   catalog.projects.push(project);
+  catalog.projectOrder.unshift(project.id);
   if (activate) catalog.activeWorktreeId = worktreeId;
   return project;
 }
@@ -743,17 +822,22 @@ function emptyCatalog(): Catalog {
     version: PROJECT_STATE_VERSION,
     groups: [],
     projects: [],
+    projectOrder: [],
     activeWorktreeId: null,
   };
 }
 
 function snapshotCatalog(catalog: Catalog): ProjectCatalog {
+  const projectsById = new Map(
+    catalog.projects.map((project) => [project.id, project]),
+  );
   return {
     version: PROJECT_STATE_VERSION,
     groups: structuredClone(catalog.groups),
-    projects: structuredClone(catalog.projects).sort(
-      (left, right) => right.lastOpenedAt - left.lastOpenedAt,
+    projects: catalog.projectOrder.map((id) =>
+      structuredClone(projectsById.get(id)!),
     ),
+    projectOrder: [...catalog.projectOrder],
     activeWorktreeId: catalog.activeWorktreeId,
   };
 }
@@ -810,10 +894,23 @@ function parseCatalog(value: Record<string, unknown>): Catalog {
   ) {
     throw invalid("project.groupId");
   }
+  const projectIds = new Set(projects.map((project) => project.id));
+  if (projectIds.size !== projects.length) throw invalid("project.id");
+  const projectOrder = array(value.projectOrder, "projectOrder").map((item) =>
+    uuid(item, "projectOrder"),
+  );
+  if (
+    projectOrder.length !== projects.length ||
+    new Set(projectOrder).size !== projectOrder.length ||
+    projectOrder.some((projectId) => !projectIds.has(projectId))
+  ) {
+    throw invalid("projectOrder");
+  }
   return {
     version,
     groups,
     projects,
+    projectOrder,
     activeWorktreeId: nullableUuid(value.activeWorktreeId, "activeWorktreeId"),
   };
 }
@@ -878,6 +975,33 @@ function parseEmptyCatalogV0(value: Record<string, unknown>): void {
   if (unsignedInteger(value.version, "version") !== 0) throw invalid("version");
   if (array(value.projects, "projects").length !== 0) throw invalid("projects");
   if (value.activeWorktreeId !== null) throw invalid("activeWorktreeId");
+}
+
+function parseCatalogV4(value: Record<string, unknown>): CatalogV4 {
+  const version = unsignedInteger(value.version, "version");
+  if (version !== 4) throw invalid("version");
+  const groups = array(value.groups, "groups").map(parseGroup);
+  const groupIds = new Set(groups.map((group) => group.id));
+  const groupNames = new Set(groups.map((group) => group.name.toLowerCase()));
+  if (groupIds.size !== groups.length) throw invalid("group.id");
+  if (groupNames.size !== groups.length) throw invalid("group.name");
+  const projects = array(value.projects, "projects").map(parseProject);
+  if (new Set(projects.map((project) => project.id)).size !== projects.length) {
+    throw invalid("project.id");
+  }
+  if (
+    projects.some(
+      (project) => project.groupId !== null && !groupIds.has(project.groupId),
+    )
+  ) {
+    throw invalid("project.groupId");
+  }
+  return {
+    version,
+    groups,
+    projects,
+    activeWorktreeId: nullableUuid(value.activeWorktreeId, "activeWorktreeId"),
+  };
 }
 
 function parseCatalogV3(value: Record<string, unknown>): CatalogV3 {

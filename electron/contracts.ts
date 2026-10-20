@@ -8,6 +8,7 @@ export const COMMANDS = [
   "project_group_rename",
   "project_group_delete",
   "project_group_set_project",
+  "project_move",
   "fs_read_dir",
   "fs_read_file",
   "fs_write_file",

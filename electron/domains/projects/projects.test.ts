@@ -185,9 +185,12 @@ describe("ProjectService", () => {
     const canonicalLater = await import("node:fs/promises").then((fs) =>
       fs.realpath(later),
     );
-    expect(
-      catalog.projects.find((project) => project.path === canonicalLater),
-    ).toMatchObject({ groupId: null, lastOpenedAt: 400 });
+    const laterProject = catalog.projects.find(
+      (project) => project.path === canonicalLater,
+    );
+    expect(laterProject).toMatchObject({ groupId: null, lastOpenedAt: 400 });
+    expect(catalog.projectOrder[0]).toBe(laterProject!.id);
+    expect(catalog.projects.map(({ id }) => id)).toEqual(catalog.projectOrder);
   });
 
   it("re-adds a closed session project as Ungrouped on the next load", async () => {
@@ -342,6 +345,49 @@ describe("ProjectService", () => {
     });
   });
 
+  it("persists project moves across groups without recency reordering", async () => {
+    const root = await tempDir();
+    const firstRoot = path.join(root, "first");
+    const secondRoot = path.join(root, "second");
+    const thirdRoot = path.join(root, "third");
+    await Promise.all([mkdir(firstRoot), mkdir(secondRoot), mkdir(thirdRoot)]);
+    const statePath = path.join(root, "state.json");
+    const service = await ProjectService.load(statePath);
+    const first = await service.openPath(firstRoot);
+    const second = await service.openPath(secondRoot);
+    const third = await service.openPath(thirdRoot);
+    const groupA = (await service.createGroup("A")).groups[0]!.id;
+    const groupB = (await service.createGroup("B")).groups[1]!.id;
+
+    await service.moveProject(first.id, groupA, null);
+    await service.moveProject(second.id, groupA, null);
+    expect(
+      (await service.moveProject(second.id, groupA, first.id)).projects
+        .filter((project) => project.groupId === groupA)
+        .map((project) => project.id),
+    ).toEqual([second.id, first.id]);
+
+    await service.moveProject(third.id, groupB, null);
+    const moved = await service.moveProject(first.id, groupB, third.id);
+    expect(
+      moved.projects
+        .filter((project) => project.groupId === groupB)
+        .map((project) => project.id),
+    ).toEqual([first.id, third.id]);
+    await expect(
+      service.moveProject(second.id, groupA, first.id),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+
+    await service.select(second.worktrees[0]!.id);
+    const reloaded = await ProjectService.load(statePath);
+    const catalog = await reloaded.catalog();
+    expect(catalog.projectOrder).toEqual([second.id, first.id, third.id]);
+    expect(catalog.projects.map((project) => project.id)).toEqual(
+      catalog.projectOrder,
+    );
+    expect(catalog.activeWorktreeId).toBe(second.worktrees[0]!.id);
+  });
+
   it("supports worktree add, select, update and remove semantics", async () => {
     const root = await tempDir();
     await init(root);
@@ -400,9 +446,10 @@ describe("ProjectService", () => {
     const catalog = await (await ProjectService.load(statePath)).catalog();
 
     expect(catalog).toMatchObject({
-      version: 4,
+      version: 5,
       groups: [],
       projects: [{ groupId: null }],
+      projectOrder: [catalog.projects[0]!.id],
     });
     expect(catalog.projects[0]?.worktrees[0]?.id).toBe(oldId);
     expect(catalog.activeWorktreeId).toBe(oldId);
@@ -410,13 +457,14 @@ describe("ProjectService", () => {
       code: "ENOENT",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 4,
+      version: 5,
       groups: [],
       projects: [{ groupId: null }],
+      projectOrder: [catalog.projects[0]!.id],
     });
   });
 
-  it("migrates v2 to v4 as Git without changing ids", async () => {
+  it("migrates v2 to v5 as Git without changing ids", async () => {
     const directory = await tempDir();
     await init(directory);
     const statePath = path.join(directory, "state.json");
@@ -454,17 +502,48 @@ describe("ProjectService", () => {
     const catalog = await (await ProjectService.load(statePath)).catalog();
 
     expect(catalog).toMatchObject({
-      version: 4,
+      version: 5,
       groups: [],
       activeWorktreeId: worktreeId,
       projects: [{ id: projectId, kind: "git", groupId: null }],
+      projectOrder: [projectId],
     });
     expect(catalog.projects[0]?.worktrees[0]?.id).toBe(worktreeId);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 4,
+      version: 5,
       groups: [],
       projects: [{ kind: "git", groupId: null }],
+      projectOrder: [projectId],
     });
+  });
+
+  it("migrates v4 using the previously visible recency order", async () => {
+    const root = await tempDir();
+    const firstRoot = path.join(root, "first");
+    const secondRoot = path.join(root, "second");
+    await Promise.all([mkdir(firstRoot), mkdir(secondRoot)]);
+    const statePath = path.join(root, "state.json");
+    const service = await ProjectService.load(statePath);
+    const first = await service.openPath(firstRoot);
+    const second = await service.openPath(secondRoot);
+    const v5 = JSON.parse(await readFile(statePath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const projects = (v5.projects as Array<Record<string, unknown>>).reverse();
+    projects.find((project) => project.id === first.id)!.lastOpenedAt = 50;
+    projects.find((project) => project.id === second.id)!.lastOpenedAt = 100;
+    delete v5.projectOrder;
+    v5.version = 4;
+    await writeFile(statePath, JSON.stringify(v5));
+
+    const catalog = await (await ProjectService.load(statePath)).catalog();
+    expect(catalog.version).toBe(5);
+    expect(catalog.projectOrder).toEqual([second.id, first.id]);
+    expect(catalog.projects.map((project) => project.id)).toEqual([
+      second.id,
+      first.id,
+    ]);
   });
 
   it("migrates an existing linked checkout as external", async () => {
@@ -502,7 +581,7 @@ describe("ProjectService", () => {
     expect(catalog.activeWorktreeId).toBe(linkedId);
   });
 
-  it("migrates v3 and version 0 catalogs to v4", async () => {
+  it("migrates v3 and version 0 catalogs to v5", async () => {
     const directory = await tempDir();
     const projectId = randomUUID();
     const worktreeId = randomUUID();
@@ -540,9 +619,10 @@ describe("ProjectService", () => {
     await expect(
       (await ProjectService.load(statePath)).catalog(),
     ).resolves.toMatchObject({
-      version: 4,
+      version: 5,
       groups: [],
       projects: [{ id: projectId, groupId: null }],
+      projectOrder: [projectId],
     });
 
     const emptyPath = path.join(directory, "empty.json");
@@ -553,9 +633,10 @@ describe("ProjectService", () => {
     await expect(
       (await ProjectService.load(emptyPath)).catalog(),
     ).resolves.toEqual({
-      version: 4,
+      version: 5,
       groups: [],
       projects: [],
+      projectOrder: [],
       activeWorktreeId: null,
     });
   });
@@ -591,6 +672,33 @@ describe("ProjectService", () => {
     const deleted = await service.deleteGroup(groupId);
     expect(deleted.groups).toEqual([]);
     expect(deleted.projects[0]?.groupId).toBeNull();
+  });
+
+  it("appends a deleted group's projects after existing Ungrouped projects", async () => {
+    const root = await tempDir();
+    const ungroupedRoot = path.join(root, "ungrouped");
+    const firstRoot = path.join(root, "first");
+    const secondRoot = path.join(root, "second");
+    await Promise.all([
+      mkdir(ungroupedRoot),
+      mkdir(firstRoot),
+      mkdir(secondRoot),
+    ]);
+    const service = await ProjectService.load(path.join(root, "state.json"));
+    const ungrouped = await service.openPath(ungroupedRoot);
+    const first = await service.openPath(firstRoot);
+    const second = await service.openPath(secondRoot);
+    const groupId = (await service.createGroup("Temporary")).groups[0]!.id;
+    await service.moveProject(first.id, groupId, null);
+    await service.moveProject(second.id, groupId, null);
+
+    const deleted = await service.deleteGroup(groupId);
+    expect(deleted.projectOrder).toEqual([ungrouped.id, first.id, second.id]);
+    expect(deleted.projects.map(({ groupId: value }) => value)).toEqual([
+      null,
+      null,
+      null,
+    ]);
   });
 
   it("strictly validates group names, uniqueness, and references", async () => {
@@ -680,6 +788,26 @@ describe("ProjectService", () => {
     });
   });
 
+  it("rejects invalid project order permutations", async () => {
+    const root = await tempDir();
+    const projectRoot = path.join(root, "folder");
+    await mkdir(projectRoot);
+    const statePath = path.join(root, "state.json");
+    const service = await ProjectService.load(statePath);
+    const project = await service.openPath(projectRoot);
+    const catalog = JSON.parse(await readFile(statePath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+
+    for (const projectOrder of [[], [project.id, project.id], [randomUUID()]]) {
+      await writeFile(statePath, JSON.stringify({ ...catalog, projectOrder }));
+      await expect(ProjectService.load(statePath)).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+      });
+    }
+  });
+
   it("backs up corrupt state but rejects unsupported or structurally invalid state", async () => {
     const directory = await tempDir();
     const corruptPath = path.join(directory, "corrupt.json");
@@ -696,7 +824,7 @@ describe("ProjectService", () => {
     const unsupportedPath = path.join(directory, "unsupported.json");
     await writeFile(
       unsupportedPath,
-      JSON.stringify({ version: 5, projects: [], activeWorktreeId: null }),
+      JSON.stringify({ version: 6, projects: [], activeWorktreeId: null }),
     );
     await expect(ProjectService.load(unsupportedPath)).rejects.toMatchObject({
       code: "INVALID_ARGUMENT",
@@ -707,9 +835,10 @@ describe("ProjectService", () => {
     await writeFile(
       invalidPath,
       JSON.stringify({
-        version: 4,
+        version: 5,
         groups: [],
         projects: [],
+        projectOrder: [],
         activeWorktreeId: null,
       }),
     );

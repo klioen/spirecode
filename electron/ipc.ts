@@ -162,6 +162,12 @@ async function invoke(
         text(args, "projectId"),
         nullableText(args, "groupId"),
       );
+    case "project_move":
+      return state.projects.moveProject(
+        text(args, "projectId"),
+        nullableText(args, "targetGroupId"),
+        nullableText(args, "beforeProjectId"),
+      );
     case "fs_read_dir":
       return state.filesystem.readDir(
         text(args, "worktreeId"),
@@ -479,6 +485,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   project_group_rename: ["groupId", "name"],
   project_group_delete: ["groupId"],
   project_group_set_project: ["projectId", "groupId"],
+  project_move: ["projectId", "targetGroupId", "beforeProjectId"],
   fs_read_dir: ["worktreeId", "relativePath"],
   fs_read_file: ["worktreeId", "relativePath"],
   fs_write_file: ["worktreeId", "relativePath", "content", "expectedVersion"],
@@ -603,7 +610,11 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     if (key === "cols" || key === "rows" || key === "page") number(args, key);
     else if (key === "force" || key === "enabled" || key === "untracked")
       boolean(args, key);
-    else if (command === "project_group_set_project" && key === "groupId")
+    else if (
+      (command === "project_group_set_project" && key === "groupId") ||
+      (command === "project_move" &&
+        (key === "targetGroupId" || key === "beforeProjectId"))
+    )
       nullableText(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
     else if (key === "language") appLanguage(args);
