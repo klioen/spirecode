@@ -1,3 +1,4 @@
+import type { SortingStrategy } from "@dnd-kit/sortable";
 import type { ProjectSummary } from "../../bindings";
 
 const PROJECT_PREFIX = "project:";
@@ -13,6 +14,8 @@ export interface ProjectMoveIntent {
 export type ProjectDropTarget =
   | { type: "project"; projectId: string }
   | { type: "group"; groupId: string | null };
+
+export const staticProjectSortingStrategy: SortingStrategy = () => null;
 
 export const projectDragId = (projectId: string) =>
   `${PROJECT_PREFIX}${projectId}`;

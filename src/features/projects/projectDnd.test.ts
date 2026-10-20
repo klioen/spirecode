@@ -6,6 +6,7 @@ import {
   projectDragId,
   projectMoveIntent,
   resolveProjectDropTarget,
+  staticProjectSortingStrategy,
 } from "./projectDnd";
 
 const project = (id: string, groupId: string | null): ProjectSummary => ({
@@ -20,6 +21,10 @@ const project = (id: string, groupId: string | null): ProjectSummary => ({
 });
 
 describe("projectDnd", () => {
+  it("keeps non-dragged project rows stationary while the overlay moves", () => {
+    expect(staticProjectSortingStrategy({} as never)).toBeNull();
+  });
+
   it("uses stable project and group identifiers", () => {
     expect(resolveProjectDropTarget(projectDragId("p1"))).toEqual({
       type: "project",

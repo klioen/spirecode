@@ -16,7 +16,6 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -50,6 +49,7 @@ import {
   projectDragId,
   projectMoveIntent,
   resolveProjectDropTarget,
+  staticProjectSortingStrategy,
 } from "./projectDnd";
 import {
   CreateProjectGroupDialog,
@@ -894,7 +894,7 @@ export function ProjectRail({
                 {expanded && (
                   <SortableContext
                     items={section.projects.map(({ id }) => projectDragId(id))}
-                    strategy={verticalListSortingStrategy}
+                    strategy={staticProjectSortingStrategy}
                   >
                     <div className="project-group-projects">
                       {section.projects.map((project) => (
