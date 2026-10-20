@@ -1,18 +1,13 @@
 import type { ChatTimelineItem } from "./types";
 
-export type ChatProcessStep = Extract<
-  ChatTimelineItem,
-  { type: "thinking" | "tool" }
->;
+export type ChatProcessStep = Extract<ChatTimelineItem, { type: "tool" }>;
 
 export type ChatDisplayItem =
   | Exclude<ChatTimelineItem, { type: "thinking" | "tool" }>
   | { type: "process"; id: string; steps: ChatProcessStep[] };
 
 function stepKey(step: ChatProcessStep): string {
-  return step.type === "thinking"
-    ? `thinking:${step.id}`
-    : `tool:${step.toolCallId}`;
+  return `tool:${step.toolCallId}`;
 }
 
 function isInvisibleAssistantPlaceholder(
@@ -57,20 +52,13 @@ export function projectChatTimeline(
       steps.push(item);
       continue;
     }
+    if (item.type === "thinking") continue;
     if (steps.length > 0 && isInvisibleAssistantPlaceholder(item)) {
       pendingPlaceholder = item;
       continue;
     }
     flush();
-    if (item.type === "thinking") {
-      projected.push({
-        type: "process",
-        id: stepKey(item),
-        steps: [item],
-      });
-    } else {
-      projected.push(item);
-    }
+    projected.push(item);
   }
   flush();
   return projected;

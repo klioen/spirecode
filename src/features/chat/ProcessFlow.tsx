@@ -1,7 +1,6 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { formatList, useTranslation } from "../../i18n";
 import { ProcessGroupIcon, toolPresentation } from "./ProcessIcon";
-import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCard } from "./ToolCard";
 import type { ChatProcessStep } from "./chatDisplayItems";
 
@@ -10,36 +9,23 @@ export interface ProcessFlowProps {
 }
 
 function stepKey(step: ChatProcessStep): string {
-  return step.type === "thinking" ? step.id : step.toolCallId;
-}
-
-function ProcessStep({ step }: { step: ChatProcessStep }) {
-  return step.type === "thinking" ? (
-    <ThinkingBlock thinking={step} />
-  ) : (
-    <ToolCard tool={step} />
-  );
+  return step.toolCallId;
 }
 
 export function ProcessFlow({ steps }: ProcessFlowProps) {
   const { t } = useTranslation();
-  if (steps.length === 1) return <ProcessStep step={steps[0]} />;
+  if (steps.length === 1) return <ToolCard tool={steps[0]} />;
 
   const runningTool = [...steps]
     .reverse()
-    .find(
-      (step): step is Extract<ChatProcessStep, { type: "tool" }> =>
-        step.type === "tool" && step.status === "running",
-    );
-  const failed = steps.filter(
-    (step) => step.type === "tool" && step.status === "error",
-  ).length;
+    .find((step) => step.status === "running");
+  const failed = steps.filter((step) => step.status === "error").length;
   const runningPresentation = runningTool
     ? toolPresentation(runningTool)
     : undefined;
   const ActiveIcon = runningPresentation?.icon;
   const actions = steps.flatMap((step) => {
-    if (step.type !== "tool" || step.status === "error") return [];
+    if (step.status === "error") return [];
     const presentation = toolPresentation(step);
     return [
       t(presentation.actionKey, {
@@ -56,8 +42,7 @@ export function ProcessFlow({ steps }: ProcessFlowProps) {
         });
   const label = runningPresentation
     ? t(runningPresentation.activeActionKey, { name: runningTool?.name ?? "" })
-    : failed === steps.filter((step) => step.type === "tool").length &&
-        failed > 0
+    : failed === steps.length && failed > 0
       ? t("chat.process.analyzing")
       : completedLabel;
 
@@ -83,7 +68,7 @@ export function ProcessFlow({ steps }: ProcessFlowProps) {
       </summary>
       <div className="chat-process-list">
         {steps.map((step) => (
-          <ProcessStep key={stepKey(step)} step={step} />
+          <ToolCard key={stepKey(step)} tool={step} />
         ))}
       </div>
     </details>

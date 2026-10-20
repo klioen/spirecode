@@ -170,10 +170,8 @@ describe("ChatView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("safe").tagName).toBe("STRONG");
 
-    const thinking = screen.getByText("Thinking").closest("details");
-    expect(thinking).not.toHaveAttribute("open");
-    expect(screen.getByText("Thinking")).toBeVisible();
-    expect(screen.getByText("reasoning")).not.toBeVisible();
+    expect(screen.queryByText("Thinking")).toBeNull();
+    expect(screen.queryByText("reasoning")).toBeNull();
 
     const processGroup = screen
       .getByText("Read file and Run command and other operations")
