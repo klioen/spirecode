@@ -211,6 +211,7 @@ export const zhCN = {
   "projects.sessions.empty": "没有 Pi 会话",
   "projects.sessions.expand": "展开 {name} 的 Pi 会话",
   "projects.sessions.collapse": "折叠 {name} 的 Pi 会话",
+  "projects.sessions.delete": "删除",
   "projects.createWorktreeFor": "为 {name} 创建工作树",
   "projects.manage": "管理 {name}",
   "projects.revealFinder": "在访达中显示",

@@ -312,11 +312,16 @@ describe("ProjectRail", () => {
     );
     expect(await screen.findByText("Main chat")).toBeInTheDocument();
 
-    const deleteButton = screen.getByRole("button", {
+    const sessionButton = screen.getByRole("button", { name: "Main chat" });
+    expect(
+      screen.queryByRole("menuitem", { name: "Delete Main chat" }),
+    ).not.toBeInTheDocument();
+    fireEvent.contextMenu(sessionButton);
+    const deleteMenuItem = screen.getByRole("menuitem", {
       name: "Delete Main chat",
     });
-    fireEvent.click(deleteButton);
-    fireEvent.click(deleteButton);
+    fireEvent.click(deleteMenuItem);
+    fireEvent.contextMenu(sessionButton);
 
     expect(hostChatApi.delete).toHaveBeenCalledOnce();
     expect(hostChatApi.delete).toHaveBeenCalledWith("main", "main-chat");
@@ -345,8 +350,11 @@ describe("ProjectRail", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Expand Pi sessions for main" }),
     );
-    await screen.findByText("Main chat");
-    fireEvent.click(screen.getByRole("button", { name: "Delete Main chat" }));
+    const sessionButton = await screen.findByRole("button", {
+      name: "Main chat",
+    });
+    fireEvent.contextMenu(sessionButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Main chat" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
     expect(screen.getByText("Main chat")).toBeInTheDocument();

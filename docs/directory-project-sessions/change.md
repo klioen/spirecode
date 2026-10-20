@@ -15,7 +15,7 @@ Risk: standard change. It changes user-visible Renderer behavior across Projects
 - Sessions are ordered by most recent `updatedAt`, then `createdAt`; missing titles use the existing localized Untitled label.
 - Loading, empty, and failure states render inside the expanded project without hiding project actions.
 - Clicking a session first selects the owning workspace, then opens or activates the matching Chat tab through `editorStore.openChat`; a selection generation guard prevents late async responses from overriding newer navigation intent.
-- Every session row has a hover/focus-visible delete button. It directly calls the existing `chat_session_delete` boundary, which moves the session file to the operating-system Trash; pending rows cannot be opened or deleted twice.
+- Session rows do not show a persistent delete control. Right-clicking a row opens a compact menu with Delete; keyboard users can open the same menu with the Context Menu key or Shift+F10. Delete calls the existing `chat_session_delete` boundary, which moves the session file to the operating-system Trash; pending rows cannot be opened or deleted twice.
 - Successful deletion removes the row, closes its Editor Chat tab, and detaches it from `chatRuntime`. Failure keeps the session visible and shows an inline alert.
 - Session listing does not persist transcripts or session bodies in Zustand and does not introduce a new Main/Renderer capability.
 
@@ -26,7 +26,7 @@ Out of scope: creating sessions from the Projects rail, transcript previews, per
 1. Extend ProjectRail regression tests for directory and Git-worktree session expansion, reverse-order selection completion, fast deletion success, and deletion failure.
 2. Generalize the session-list child component to use `hostChatApi.list/delete`, localized labels, and editor/project/runtime stores.
 3. Keep directory select-and-toggle behavior; add independent Git worktree session chevrons so existing worktree selection semantics remain intact.
-4. Add compact session-row/delete styles and missing localized copy.
+4. Add compact session-row/context-menu styles and missing localized copy.
 5. Run focused tests and `pnpm check`, then update the open directory-project-sessions PR.
 
 ## Verification result
