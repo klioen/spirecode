@@ -369,6 +369,11 @@ body.panel-resizing-vertical * {
   font-weight: 700;
   letter-spacing: 0.12em;
 }
+.project-rail-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .project-add {
   width: 24px;
   height: 24px;
@@ -395,8 +400,73 @@ body.panel-resizing-vertical * {
   gap: 2px;
   overflow-y: auto;
 }
-.project-group {
+.project-section,
+.project-entry,
+.project-group-projects {
   min-width: 0;
+}
+.project-group-heading {
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  color: var(--text-subtle);
+}
+.project-group-heading:hover {
+  background: var(--control-hover);
+  border-radius: 5px;
+  color: var(--text-default);
+}
+.project-group-name {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0 4px;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.project-group-name > span:not(.project-session-spinner) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.project-group-projects {
+  padding-left: 10px;
+}
+.project-group-menu-button {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.project-group-heading:hover .project-group-menu-button,
+.project-group-menu-button:focus {
+  opacity: 1;
+}
+.project-group-menu-button:hover {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.project-group-menu {
+  min-width: 166px;
 }
 .project-heading,
 .worktree-row {

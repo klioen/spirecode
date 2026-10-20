@@ -66,6 +66,62 @@ describe("IPC command argument validation", () => {
     ).toThrow("untracked must be a boolean");
   });
 
+  it("validates narrow project group arguments and nullable groupId", () => {
+    expect(
+      validateCommandArgs("project_group_create", { name: "Platform" }),
+    ).toEqual({ name: "Platform" });
+    expect(
+      validateCommandArgs("project_group_rename", {
+        groupId: "group-1",
+        name: "Infrastructure",
+      }),
+    ).toEqual({ groupId: "group-1", name: "Infrastructure" });
+    expect(
+      validateCommandArgs("project_group_delete", { groupId: "group-1" }),
+    ).toEqual({ groupId: "group-1" });
+    expect(
+      validateCommandArgs("project_group_set_project", {
+        projectId: "project-1",
+        groupId: "group-1",
+      }),
+    ).toEqual({ projectId: "project-1", groupId: "group-1" });
+    expect(
+      validateCommandArgs("project_group_set_project", {
+        projectId: "project-1",
+        groupId: null,
+      }),
+    ).toEqual({ projectId: "project-1", groupId: null });
+
+    expect(() =>
+      validateCommandArgs("project_group_set_project", {
+        projectId: "project-1",
+      }),
+    ).toThrow("groupId must be a string or null");
+    expect(() =>
+      validateCommandArgs("project_group_rename", {
+        groupId: null,
+        name: "Infrastructure",
+      }),
+    ).toThrow("groupId must be a string");
+    expect(() =>
+      validateCommandArgs("project_group_set_project", {
+        projectId: "project-1",
+        groupId: 42,
+      }),
+    ).toThrow("groupId must be a string or null");
+    expect(() =>
+      validateCommandArgs("project_group_create", {
+        name: "Platform",
+        catalog: {},
+      }),
+    ).toThrow("Unexpected argument: catalog");
+    expect(() =>
+      validateCommandArgs("project_group_delete", {
+        groupId: "x".repeat(129),
+      }),
+    ).toThrow("groupId is empty or too large");
+  });
+
   it("allows chat deletion IDs without accepting renderer paths", () => {
     expect(
       validateCommandArgs("chat_session_delete", {

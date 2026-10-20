@@ -30,6 +30,7 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     name: 48,
     baseRef: 1024,
     projectId: 128,
+    groupId: 128,
     worktreeId: 128,
     terminalId: 128,
     sessionId: 256,
@@ -51,6 +52,12 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
   )
     throw new TypeError(`${key} is empty or too large`);
   return value;
+};
+const nullableText = (args: Args, key: string): string | null => {
+  if (args[key] === null) return null;
+  if (typeof args[key] !== "string")
+    throw new TypeError(`${key} must be a string or null`);
+  return text(args, key);
 };
 const fileContent = (args: Args): string => {
   const value = args.content;
@@ -141,6 +148,20 @@ async function invoke(
       return state.closeProject(text(args, "projectId"));
     case "project_reveal":
       return state.revealProject(text(args, "projectId"));
+    case "project_group_create":
+      return state.projects.createGroup(text(args, "name"));
+    case "project_group_rename":
+      return state.projects.renameGroup(
+        text(args, "groupId"),
+        text(args, "name"),
+      );
+    case "project_group_delete":
+      return state.projects.deleteGroup(text(args, "groupId"));
+    case "project_group_set_project":
+      return state.projects.setProjectGroup(
+        text(args, "projectId"),
+        nullableText(args, "groupId"),
+      );
     case "fs_read_dir":
       return state.filesystem.readDir(
         text(args, "worktreeId"),
@@ -454,6 +475,10 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   project_open_dialog: [],
   project_close: ["projectId"],
   project_reveal: ["projectId"],
+  project_group_create: ["name"],
+  project_group_rename: ["groupId", "name"],
+  project_group_delete: ["groupId"],
+  project_group_set_project: ["projectId", "groupId"],
   fs_read_dir: ["worktreeId", "relativePath"],
   fs_read_file: ["worktreeId", "relativePath"],
   fs_write_file: ["worktreeId", "relativePath", "content", "expectedVersion"],
@@ -578,6 +603,8 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     if (key === "cols" || key === "rows" || key === "page") number(args, key);
     else if (key === "force" || key === "enabled" || key === "untracked")
       boolean(args, key);
+    else if (command === "project_group_set_project" && key === "groupId")
+      nullableText(args, key);
     else if (key === "thinkingLevel") thinkingLevel(args);
     else if (key === "language") appLanguage(args);
     else if (key === "document") memoryDocument(args);

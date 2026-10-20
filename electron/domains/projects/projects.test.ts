@@ -255,18 +255,24 @@ describe("ProjectService", () => {
 
     const catalog = await (await ProjectService.load(statePath)).catalog();
 
-    expect(catalog.version).toBe(3);
+    expect(catalog).toMatchObject({
+      version: 4,
+      groups: [],
+      projects: [{ groupId: null }],
+    });
     expect(catalog.projects[0]?.worktrees[0]?.id).toBe(oldId);
     expect(catalog.activeWorktreeId).toBe(oldId);
     await expect(readFile(corruptBackupPath(statePath))).rejects.toMatchObject({
       code: "ENOENT",
     });
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 3,
+      version: 4,
+      groups: [],
+      projects: [{ groupId: null }],
     });
   });
 
-  it("migrates v2 to v3 as Git without changing ids", async () => {
+  it("migrates v2 to v4 as Git without changing ids", async () => {
     const directory = await tempDir();
     await init(directory);
     const statePath = path.join(directory, "state.json");
@@ -304,14 +310,16 @@ describe("ProjectService", () => {
     const catalog = await (await ProjectService.load(statePath)).catalog();
 
     expect(catalog).toMatchObject({
-      version: 3,
+      version: 4,
+      groups: [],
       activeWorktreeId: worktreeId,
-      projects: [{ id: projectId, kind: "git" }],
+      projects: [{ id: projectId, kind: "git", groupId: null }],
     });
     expect(catalog.projects[0]?.worktrees[0]?.id).toBe(worktreeId);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      version: 3,
-      projects: [{ kind: "git" }],
+      version: 4,
+      groups: [],
+      projects: [{ kind: "git", groupId: null }],
     });
   });
 
@@ -350,6 +358,184 @@ describe("ProjectService", () => {
     expect(catalog.activeWorktreeId).toBe(linkedId);
   });
 
+  it("migrates v3 and version 0 catalogs to v4", async () => {
+    const directory = await tempDir();
+    const projectId = randomUUID();
+    const worktreeId = randomUUID();
+    const statePath = path.join(directory, "state.json");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 3,
+        projects: [
+          {
+            id: projectId,
+            kind: "directory",
+            name: "folder",
+            path: directory,
+            lastOpenedAt: 7,
+            worktrees: [
+              {
+                id: worktreeId,
+                projectId,
+                name: "folder",
+                path: directory,
+                branch: "",
+                baseRef: "",
+                kind: "main",
+                lastOpenedAt: 7,
+              },
+            ],
+            nextWorktreeSequence: 1,
+          },
+        ],
+        activeWorktreeId: worktreeId,
+      }),
+    );
+
+    await expect(
+      (await ProjectService.load(statePath)).catalog(),
+    ).resolves.toMatchObject({
+      version: 4,
+      groups: [],
+      projects: [{ id: projectId, groupId: null }],
+    });
+
+    const emptyPath = path.join(directory, "empty.json");
+    await writeFile(
+      emptyPath,
+      JSON.stringify({ version: 0, projects: [], activeWorktreeId: null }),
+    );
+    await expect(
+      (await ProjectService.load(emptyPath)).catalog(),
+    ).resolves.toEqual({
+      version: 4,
+      groups: [],
+      projects: [],
+      activeWorktreeId: null,
+    });
+  });
+
+  it("creates, renames, assigns, persists, and deletes groups", async () => {
+    const root = await tempDir();
+    const projectRoot = path.join(root, "folder");
+    await mkdir(projectRoot);
+    const statePath = path.join(root, "state.json");
+    const service = await ProjectService.load(statePath);
+    const project = await service.openPath(projectRoot);
+
+    const created = await service.createGroup("  Frontend  ");
+    expect(created.groups).toEqual([
+      { id: expect.any(String), name: "Frontend" },
+    ]);
+    expect(created.projects[0]?.groupId).toBeNull();
+    const groupId = created.groups[0]!.id;
+
+    expect(
+      (await service.setProjectGroup(project.id, groupId)).projects[0]?.groupId,
+    ).toBe(groupId);
+    expect((await service.renameGroup(groupId, " Platform ")).groups).toEqual([
+      { id: groupId, name: "Platform" },
+    ]);
+    await expect(
+      (await ProjectService.load(statePath)).catalog(),
+    ).resolves.toMatchObject({
+      groups: [{ id: groupId, name: "Platform" }],
+      projects: [{ id: project.id, groupId }],
+    });
+
+    const deleted = await service.deleteGroup(groupId);
+    expect(deleted.groups).toEqual([]);
+    expect(deleted.projects[0]?.groupId).toBeNull();
+  });
+
+  it("strictly validates group names, uniqueness, and references", async () => {
+    const root = await tempDir();
+    const projectRoot = path.join(root, "folder");
+    await mkdir(projectRoot);
+    const service = await ProjectService.load(path.join(root, "state.json"));
+    const project = await service.openPath(projectRoot);
+
+    await expect(service.createGroup("   ")).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    await expect(service.createGroup("x".repeat(49))).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    const created = await service.createGroup("Frontend");
+    const groupId = created.groups[0]!.id;
+    await expect(service.createGroup(" frontend ")).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    await expect(
+      service.renameGroup(groupId, "FRONTEND"),
+    ).resolves.toMatchObject({ groups: [{ id: groupId, name: "FRONTEND" }] });
+    await expect(
+      service.setProjectGroup(project.id, randomUUID()),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      service.setProjectGroup(randomUUID(), null),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("rejects duplicate and dangling group data", async () => {
+    const directory = await tempDir();
+    const statePath = path.join(directory, "state.json");
+    const groupId = randomUUID();
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 4,
+        groups: [
+          { id: groupId, name: "Frontend" },
+          { id: randomUUID(), name: "frontend" },
+        ],
+        projects: [],
+        activeWorktreeId: null,
+      }),
+    );
+    await expect(ProjectService.load(statePath)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+
+    const projectId = randomUUID();
+    const worktreeId = randomUUID();
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 4,
+        groups: [{ id: groupId, name: "Frontend" }],
+        projects: [
+          {
+            id: projectId,
+            kind: "directory",
+            name: "folder",
+            path: directory,
+            lastOpenedAt: 1,
+            worktrees: [
+              {
+                id: worktreeId,
+                projectId,
+                name: "folder",
+                path: directory,
+                branch: "",
+                baseRef: "",
+                kind: "main",
+                lastOpenedAt: 1,
+              },
+            ],
+            nextWorktreeSequence: 1,
+            groupId: randomUUID(),
+          },
+        ],
+        activeWorktreeId: worktreeId,
+      }),
+    );
+    await expect(ProjectService.load(statePath)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+
   it("backs up corrupt state but rejects unsupported or structurally invalid state", async () => {
     const directory = await tempDir();
     const corruptPath = path.join(directory, "corrupt.json");
@@ -366,7 +552,7 @@ describe("ProjectService", () => {
     const unsupportedPath = path.join(directory, "unsupported.json");
     await writeFile(
       unsupportedPath,
-      JSON.stringify({ version: 4, projects: [], activeWorktreeId: null }),
+      JSON.stringify({ version: 5, projects: [], activeWorktreeId: null }),
     );
     await expect(ProjectService.load(unsupportedPath)).rejects.toMatchObject({
       code: "INVALID_ARGUMENT",
@@ -376,7 +562,12 @@ describe("ProjectService", () => {
     const invalidPath = path.join(directory, "invalid.json");
     await writeFile(
       invalidPath,
-      JSON.stringify({ version: 3, projects: [], activeWorktreeId: null }),
+      JSON.stringify({
+        version: 4,
+        groups: [],
+        projects: [],
+        activeWorktreeId: null,
+      }),
     );
     await expect(ProjectService.load(invalidPath)).resolves.toBeDefined();
 
@@ -405,8 +596,9 @@ describe("ProjectService", () => {
     await writeFile(
       invalidPath,
       JSON.stringify({
-        version: 3,
-        projects: [invalidProject],
+        version: 4,
+        groups: [],
+        projects: [{ ...invalidProject, groupId: null }],
         activeWorktreeId: worktreeId,
       }),
     );
@@ -417,8 +609,9 @@ describe("ProjectService", () => {
     await writeFile(
       invalidPath,
       JSON.stringify({
-        version: 3,
-        projects: [invalidProject],
+        version: 4,
+        groups: [],
+        projects: [{ ...invalidProject, groupId: null }],
         activeWorktreeId: worktreeId,
       }),
     );

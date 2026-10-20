@@ -73,6 +73,17 @@ export const commands = {
   projectReveal: (projectId: string) =>
     command<void>("project_reveal", { projectId }),
   projectCatalog: () => command<ProjectCatalog>("project_catalog"),
+  projectGroupCreate: (name: string) =>
+    command<ProjectCatalog>("project_group_create", { name }),
+  projectGroupRename: (groupId: string, name: string) =>
+    command<ProjectCatalog>("project_group_rename", { groupId, name }),
+  projectGroupDelete: (groupId: string) =>
+    command<ProjectCatalog>("project_group_delete", { groupId }),
+  projectGroupSetProject: (projectId: string, groupId: string | null) =>
+    command<ProjectCatalog>("project_group_set_project", {
+      projectId,
+      groupId,
+    }),
 
   settingsLanguageGet: () => command<AppLanguage>("settings_language_get"),
   settingsAgentReadiness: () =>

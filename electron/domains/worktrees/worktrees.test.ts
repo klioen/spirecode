@@ -66,6 +66,7 @@ async function fixture(): Promise<{
     lastOpenedAt: 1,
     worktrees: [],
     nextWorktreeSequence: 1,
+    groupId: null,
   };
   const worktrees: WorktreeSummary[] = project.worktrees;
   const projects: ProjectStore = {

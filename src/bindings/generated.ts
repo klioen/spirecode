@@ -29,18 +29,25 @@ export interface CommandError {
   details?: unknown;
 }
 
+export interface ProjectGroupSummary {
+  id: string;
+  name: string;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
   path: string;
   kind: "git" | "directory";
   lastOpenedAt: number;
+  groupId: string | null;
   worktrees: WorktreeSummary[];
   nextWorktreeSequence?: number;
 }
 
 export interface ProjectCatalog {
   version: number;
+  groups: ProjectGroupSummary[];
   projects: ProjectSummary[];
   activeWorktreeId: string | null;
 }

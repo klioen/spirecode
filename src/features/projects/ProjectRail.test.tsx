@@ -11,6 +11,10 @@ vi.mock("./projectsApi", () => ({
     selectWorktree: vi.fn().mockResolvedValue(undefined),
     reveal: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
+    createGroup: vi.fn(),
+    renameGroup: vi.fn(),
+    deleteGroup: vi.fn(),
+    setProjectGroup: vi.fn(),
     revealWorktree: vi.fn().mockResolvedValue(undefined),
     listOriginBranches: vi.fn(),
     renameWorktree: vi.fn(),
@@ -25,9 +29,11 @@ beforeEach(() => {
   chatRuntime.remove("active-feature");
   chatRuntime.remove("active-directory");
   useProjectsStore.setState({
+    groups: [],
     projects: [
       {
         id: "project-1",
+        groupId: null,
         name: "spirecode-client",
         path: "/repo",
         kind: "git",
@@ -114,13 +120,13 @@ describe("ProjectRail", () => {
 
     expect(
       screen.getByRole("button", { name: "Expand spirecode-client" }),
-    ).toContainElement(screen.getByLabelText("Pi session active"));
+    ).toContainElement(screen.getAllByLabelText("Pi session active")[1]);
 
     fireEvent.click(
       screen.getByRole("button", { name: "Expand spirecode-client" }),
     );
     expect(screen.getByRole("button", { name: "feature" })).toContainElement(
-      screen.getAllByLabelText("Pi session active")[1],
+      screen.getAllByLabelText("Pi session active")[2],
     );
     expect(
       screen
@@ -178,6 +184,7 @@ describe("ProjectRail", () => {
       projects: [
         {
           id: "directory-1",
+          groupId: null,
           name: "notes",
           path: "/notes",
           kind: "directory",
@@ -202,7 +209,7 @@ describe("ProjectRail", () => {
     chatRuntime.ensure("active-directory", "directory-main", "streaming");
     render(<ProjectRail />);
 
-    expect(screen.getByLabelText("Pi session active")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Pi session active")).toHaveLength(2);
     expect(
       screen.queryByRole("button", { name: "Expand notes" }),
     ).not.toBeInTheDocument();
@@ -215,6 +222,80 @@ describe("ProjectRail", () => {
       expect(projectsApi.selectWorktree).toHaveBeenCalledWith("directory-main"),
     );
     expect(useProjectsStore.getState().activeWorktreeId).toBe("directory-main");
+  });
+
+  it("groups projects, collapses groups, and keeps ungrouped projects visible", () => {
+    const grouped = useProjectsStore.getState().projects[0]!;
+    useProjectsStore.setState({
+      groups: [{ id: "group-1", name: "Client" }],
+      projects: [
+        { ...grouped, groupId: "group-1" },
+        {
+          ...grouped,
+          id: "project-2",
+          groupId: null,
+          name: "playground",
+          worktrees: grouped.worktrees.map((worktree) => ({
+            ...worktree,
+            id: `other-${worktree.id}`,
+            projectId: "project-2",
+          })),
+        },
+      ],
+    });
+
+    render(<ProjectRail />);
+
+    expect(
+      screen.getByRole("button", { name: "Collapse group Client" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collapse group Ungrouped" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("spirecode-client")).toBeInTheDocument();
+    expect(screen.getByText("playground")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse group Client" }),
+    );
+    expect(screen.queryByText("spirecode-client")).not.toBeInTheDocument();
+    expect(screen.getByText("playground")).toBeInTheDocument();
+  });
+
+  it("moves a project to a group using the authoritative returned catalog", async () => {
+    const project = useProjectsStore.getState().projects[0]!;
+    useProjectsStore.setState({ groups: [{ id: "group-1", name: "Client" }] });
+    vi.mocked(projectsApi.setProjectGroup).mockResolvedValue({
+      version: 4,
+      groups: [{ id: "group-1", name: "Client" }],
+      projects: [{ ...project, groupId: "group-1" }],
+      activeWorktreeId: "main",
+    });
+    render(<ProjectRail />);
+
+    const manage = screen.getByRole("button", {
+      name: "Manage spirecode-client",
+    });
+    manage.focus();
+    fireEvent.click(manage);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to group…" }));
+    fireEvent.change(screen.getByLabelText("Group"), {
+      target: { value: "group-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move to group…" }));
+
+    await vi.waitFor(() =>
+      expect(projectsApi.setProjectGroup).toHaveBeenCalledWith(
+        "project-1",
+        "group-1",
+      ),
+    );
+    expect(useProjectsStore.getState().projects[0]?.groupId).toBe("group-1");
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Manage spirecode-client" }),
+      ).toHaveFocus(),
+    );
   });
 
   it("manages a project with reveal and close actions", async () => {

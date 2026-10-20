@@ -314,7 +314,7 @@ export function ExtensionsSettings({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              npm
+                              {t("settings.extensions.npm")}
                             </a>
                           )}
                           {item.repositoryUrl && (

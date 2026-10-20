@@ -88,9 +88,11 @@ beforeEach(() => {
   });
   useChangesStore.setState({ byWorktree: {} });
   useProjectsStore.setState({
+    groups: [],
     projects: [
       {
         id: "p1",
+        groupId: null,
         name: "Project",
         path: "/repo",
         kind: "git",
@@ -155,6 +157,7 @@ describe("Workbench panel handles", () => {
       projects: [
         {
           id: "directory",
+          groupId: null,
           name: "Notes",
           path: "/notes",
           kind: "directory",
@@ -195,6 +198,7 @@ describe("Workbench panel handles", () => {
     useWorkbenchStore.getState().setRightView("changes");
     const directoryProject = {
       id: "directory",
+      groupId: null,
       name: "Notes",
       path: "/notes",
       kind: "directory" as const,
