@@ -1,9 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { WorktreeSummary } from "../../bindings";
+import { hostChatApi } from "../chat/hostChatApi";
 import { chatRuntime } from "../chat/chatRuntime";
+import { chatResourceId, useEditorStore } from "../editor/editorStore";
 import { ProjectRail } from "./ProjectRail";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
+
+vi.mock("../chat/hostChatApi", () => ({
+  hostChatApi: { list: vi.fn() },
+}));
 
 vi.mock("./projectsApi", () => ({
   projectsApi: {
@@ -23,11 +30,21 @@ vi.mock("./projectsApi", () => ({
   },
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   chatRuntime.remove("active-main");
   chatRuntime.remove("active-feature");
   chatRuntime.remove("active-directory");
+  vi.mocked(hostChatApi.list).mockReset();
+  useEditorStore.setState({ views: {} });
   useProjectsStore.setState({
     groups: [],
     projects: [
@@ -179,7 +196,7 @@ describe("ProjectRail", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("selects a directory project's primary workspace without exposing worktree controls", async () => {
+  it("expands a directory project and opens Pi sessions by title", async () => {
     useProjectsStore.setState({
       projects: [
         {
@@ -205,23 +222,112 @@ describe("ProjectRail", () => {
       ],
       activeWorktreeId: null,
     });
+    vi.mocked(hostChatApi.list).mockResolvedValue([
+      {
+        sessionId: "older",
+        worktreeId: "directory-main",
+        title: "Older session",
+        updatedAt: 10,
+      },
+      {
+        sessionId: "latest",
+        worktreeId: "directory-main",
+        title: "Latest session",
+        updatedAt: 20,
+      },
+    ]);
 
     chatRuntime.ensure("active-directory", "directory-main", "streaming");
     render(<ProjectRail />);
 
     expect(screen.getAllByLabelText("Pi session active")).toHaveLength(2);
     expect(
-      screen.queryByRole("button", { name: "Expand notes" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Expand notes" }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(
       screen.queryByRole("button", { name: "Create worktree for notes" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand notes" }));
 
     await vi.waitFor(() =>
-      expect(projectsApi.selectWorktree).toHaveBeenCalledWith("directory-main"),
+      expect(hostChatApi.list).toHaveBeenCalledWith("directory-main"),
+    );
+    expect(projectsApi.selectWorktree).toHaveBeenCalledWith("directory-main");
+    const sessionButtons = await screen.findAllByRole("button", {
+      name: /session$/,
+    });
+    expect(sessionButtons.map((button) => button.textContent)).toEqual([
+      "Latest session",
+      "Older session",
+    ]);
+
+    const olderSelection = deferred<WorktreeSummary>();
+    const latestSelection = deferred<WorktreeSummary>();
+    const selectedWorkspace =
+      useProjectsStore.getState().projects[0]!.worktrees[0]!;
+    vi.mocked(projectsApi.selectWorktree)
+      .mockReset()
+      .mockImplementationOnce(() => olderSelection.promise)
+      .mockImplementationOnce(() => latestSelection.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Older session" }));
+    fireEvent.click(screen.getByRole("button", { name: "Latest session" }));
+
+    latestSelection.resolve(selectedWorkspace);
+    await vi.waitFor(() =>
+      expect(
+        useEditorStore.getState().views["directory-main"]?.activeTabId,
+      ).toBe(chatResourceId("directory-main", "latest")),
+    );
+    olderSelection.resolve(selectedWorkspace);
+    await vi.waitFor(() =>
+      expect(
+        useEditorStore.getState().views["directory-main"]?.activeTabId,
+      ).toBe(chatResourceId("directory-main", "latest")),
     );
     expect(useProjectsStore.getState().activeWorktreeId).toBe("directory-main");
+  });
+
+  it("shows the directory session empty state", async () => {
+    const project = useProjectsStore.getState().projects[0]!;
+    useProjectsStore.setState({
+      projects: [
+        {
+          ...project,
+          kind: "directory",
+          worktrees: [{ ...project.worktrees[0]!, branch: "", baseRef: "" }],
+        },
+      ],
+    });
+    vi.mocked(hostChatApi.list).mockResolvedValue([]);
+
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+
+    expect(await screen.findByText("No Pi sessions")).toBeInTheDocument();
+  });
+
+  it("shows a directory session loading failure without hiding the project", async () => {
+    const project = useProjectsStore.getState().projects[0]!;
+    useProjectsStore.setState({
+      projects: [
+        {
+          ...project,
+          kind: "directory",
+          worktrees: [{ ...project.worktrees[0]!, branch: "", baseRef: "" }],
+        },
+      ],
+    });
+    vi.mocked(hostChatApi.list).mockRejectedValue(new Error("list failed"));
+
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("list failed");
+    expect(screen.getByText("spirecode-client")).toBeInTheDocument();
   });
 
   it("groups projects, collapses groups, and keeps ungrouped projects visible", () => {
