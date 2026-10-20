@@ -9,7 +9,7 @@ import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
 
 vi.mock("../chat/hostChatApi", () => ({
-  hostChatApi: { list: vi.fn() },
+  hostChatApi: { list: vi.fn(), delete: vi.fn() },
 }));
 
 vi.mock("./projectsApi", () => ({
@@ -43,7 +43,9 @@ beforeEach(() => {
   chatRuntime.remove("active-main");
   chatRuntime.remove("active-feature");
   chatRuntime.remove("active-directory");
+  chatRuntime.remove("main-chat");
   vi.mocked(hostChatApi.list).mockReset();
+  vi.mocked(hostChatApi.delete).mockReset();
   useEditorStore.setState({ views: {} });
   useProjectsStore.setState({
     groups: [],
@@ -253,13 +255,13 @@ describe("ProjectRail", () => {
       expect(hostChatApi.list).toHaveBeenCalledWith("directory-main"),
     );
     expect(projectsApi.selectWorktree).toHaveBeenCalledWith("directory-main");
-    const sessionButtons = await screen.findAllByRole("button", {
-      name: /session$/,
+    const latestButton = await screen.findByRole("button", {
+      name: "Latest session",
     });
-    expect(sessionButtons.map((button) => button.textContent)).toEqual([
-      "Latest session",
-      "Older session",
-    ]);
+    const olderButton = screen.getByRole("button", { name: "Older session" });
+    expect(latestButton.compareDocumentPosition(olderButton)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
 
     const olderSelection = deferred<WorktreeSummary>();
     const latestSelection = deferred<WorktreeSummary>();
@@ -285,6 +287,69 @@ describe("ProjectRail", () => {
       ).toBe(chatResourceId("directory-main", "latest")),
     );
     expect(useProjectsStore.getState().activeWorktreeId).toBe("directory-main");
+  });
+
+  it("expands Git worktree sessions and quickly moves a session to Trash", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValue([
+      {
+        sessionId: "main-chat",
+        worktreeId: "main",
+        title: "Main chat",
+        updatedAt: 20,
+      },
+    ]);
+    const deletion = deferred<void>();
+    vi.mocked(hostChatApi.delete).mockImplementation(() => deletion.promise);
+    useEditorStore.getState().openChat("main", "main-chat", "Main chat");
+    chatRuntime.ensure("main-chat", "main", "idle");
+    render(<ProjectRail />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Pi sessions for main" }),
+    );
+    expect(await screen.findByText("Main chat")).toBeInTheDocument();
+
+    const deleteButton = screen.getByRole("button", {
+      name: "Delete Main chat",
+    });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
+
+    expect(hostChatApi.delete).toHaveBeenCalledOnce();
+    expect(hostChatApi.delete).toHaveBeenCalledWith("main", "main-chat");
+    deletion.resolve();
+    await vi.waitFor(() =>
+      expect(screen.queryByText("Main chat")).not.toBeInTheDocument(),
+    );
+    expect(useEditorStore.getState().views.main?.tabs).toEqual([]);
+    expect(() => chatRuntime.getSnapshot("main-chat")).toThrow();
+  });
+
+  it("keeps a Git session visible when quick deletion fails", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValue([
+      {
+        sessionId: "main-chat",
+        worktreeId: "main",
+        title: "Main chat",
+      },
+    ]);
+    vi.mocked(hostChatApi.delete).mockRejectedValue(new Error("delete failed"));
+    render(<ProjectRail />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Pi sessions for main" }),
+    );
+    await screen.findByText("Main chat");
+    fireEvent.click(screen.getByRole("button", { name: "Delete Main chat" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
+    expect(screen.getByText("Main chat")).toBeInTheDocument();
   });
 
   it("shows the directory session empty state", async () => {

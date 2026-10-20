@@ -508,8 +508,28 @@ body.panel-resizing-vertical * {
 .project-chevron.expanded {
   transform: rotate(90deg);
 }
+.worktree-entry {
+  min-width: 0;
+}
+.worktree-session-toggle {
+  width: 22px;
+  height: 26px;
+  flex: 0 0 22px;
+  padding: 0;
+  border: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+}
+.worktree-session-toggle:hover,
+.worktree-session-toggle:focus-visible {
+  color: var(--text-default);
+  outline: none;
+}
 .worktree-name {
-  padding-left: 24px;
+  padding-left: 2px;
   cursor: pointer;
   font-weight: 400;
 }
@@ -518,10 +538,17 @@ body.panel-resizing-vertical * {
   min-width: 0;
   flex-direction: column;
 }
+.project-session-item {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
 .project-session-row {
-  width: 100%;
+  width: auto;
   min-width: 0;
   height: 28px;
+  flex: 1;
   padding: 0 8px 0 24px;
   border: 0;
   border-radius: 5px;
@@ -541,6 +568,35 @@ body.panel-resizing-vertical * {
 }
 .project-session-row svg {
   flex: 0 0 auto;
+}
+.project-session-delete {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  opacity: 0;
+}
+.project-session-item:hover .project-session-delete,
+.project-session-delete:focus-visible {
+  opacity: 1;
+}
+.project-session-delete:hover,
+.project-session-delete:focus-visible {
+  background: var(--control-hover);
+  color: var(--danger);
+  outline: none;
+}
+.project-session-delete:disabled,
+.project-session-row:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 .project-session-row span {
   min-width: 0;

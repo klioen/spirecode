@@ -216,6 +216,8 @@ export const en = {
   "projects.sessionActive": "Pi session active",
   "projects.sessions.loading": "Loading Pi sessions…",
   "projects.sessions.empty": "No Pi sessions",
+  "projects.sessions.expand": "Expand Pi sessions for {name}",
+  "projects.sessions.collapse": "Collapse Pi sessions for {name}",
   "projects.createWorktreeFor": "Create worktree for {name}",
   "projects.manage": "Manage {name}",
   "projects.revealFinder": "Reveal in Finder",
