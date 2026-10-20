@@ -91,6 +91,17 @@ describe("IPC command argument validation", () => {
         groupId: null,
       }),
     ).toEqual({ projectId: "project-1", groupId: null });
+    expect(
+      validateCommandArgs("project_move", {
+        projectId: "project-1",
+        targetGroupId: null,
+        beforeProjectId: "project-2",
+      }),
+    ).toEqual({
+      projectId: "project-1",
+      targetGroupId: null,
+      beforeProjectId: "project-2",
+    });
 
     expect(() =>
       validateCommandArgs("project_group_set_project", {
@@ -109,6 +120,13 @@ describe("IPC command argument validation", () => {
         groupId: 42,
       }),
     ).toThrow("groupId must be a string or null");
+    expect(() =>
+      validateCommandArgs("project_move", {
+        projectId: "project-1",
+        targetGroupId: null,
+        beforeProjectId: 42,
+      }),
+    ).toThrow("beforeProjectId must be a string or null");
     expect(() =>
       validateCommandArgs("project_group_create", {
         name: "Platform",

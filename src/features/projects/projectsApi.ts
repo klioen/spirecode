@@ -9,6 +9,7 @@ export const projectsApi = {
   renameGroup: commands.projectGroupRename,
   deleteGroup: commands.projectGroupDelete,
   setProjectGroup: commands.projectGroupSetProject,
+  moveProject: commands.projectMove,
   listOriginBranches: commands.gitListOriginBranches,
   createWorktree: commands.worktreeCreate,
   selectWorktree: commands.worktreeSelect,

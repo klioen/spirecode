@@ -49,6 +49,7 @@ export interface ProjectCatalog {
   version: number;
   groups: ProjectGroupSummary[];
   projects: ProjectSummary[];
+  projectOrder: string[];
   activeWorktreeId: string | null;
 }
 

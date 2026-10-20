@@ -243,7 +243,7 @@ export function MoveProjectDialog({
     setError(null);
     try {
       setCatalog(
-        await projectsApi.setProjectGroup(project.id, groupId || null),
+        await projectsApi.moveProject(project.id, groupId || null, null),
       );
       onClose();
     } catch (failure) {

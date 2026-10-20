@@ -22,6 +22,7 @@ vi.mock("./projectsApi", () => ({
     renameGroup: vi.fn(),
     deleteGroup: vi.fn(),
     setProjectGroup: vi.fn(),
+    moveProject: vi.fn(),
     revealWorktree: vi.fn().mockResolvedValue(undefined),
     listOriginBranches: vi.fn(),
     renameWorktree: vi.fn(),
@@ -101,9 +102,25 @@ describe("ProjectRail", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders the shared SpireCode brand mark", () => {
+  it("renders the shared SpireCode brand mark and keyboard drag handle", () => {
     render(<ProjectRail />);
     expect(screen.getByTestId("spirecode-mark")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Move spirecode-client" }),
+    ).toBeInTheDocument();
+  });
+
+  it("cancels a keyboard drag without moving the project", () => {
+    render(<ProjectRail />);
+    const handle = screen.getByRole("button", {
+      name: "Move spirecode-client",
+    });
+    handle.focus();
+    fireEvent.keyDown(handle, { key: " ", code: "Space" });
+    fireEvent.keyDown(handle, { key: "Escape", code: "Escape" });
+
+    expect(projectsApi.moveProject).not.toHaveBeenCalled();
+    expect(handle).toHaveFocus();
   });
 
   it("places panel and Settings controls at the top and bottom edges", () => {
@@ -444,10 +461,11 @@ describe("ProjectRail", () => {
   it("moves a project to a group using the authoritative returned catalog", async () => {
     const project = useProjectsStore.getState().projects[0]!;
     useProjectsStore.setState({ groups: [{ id: "group-1", name: "Client" }] });
-    vi.mocked(projectsApi.setProjectGroup).mockResolvedValue({
-      version: 4,
+    vi.mocked(projectsApi.moveProject).mockResolvedValue({
+      version: 5,
       groups: [{ id: "group-1", name: "Client" }],
       projects: [{ ...project, groupId: "group-1" }],
+      projectOrder: [project.id],
       activeWorktreeId: "main",
     });
     render(<ProjectRail />);
@@ -464,9 +482,10 @@ describe("ProjectRail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Move to group…" }));
 
     await vi.waitFor(() =>
-      expect(projectsApi.setProjectGroup).toHaveBeenCalledWith(
+      expect(projectsApi.moveProject).toHaveBeenCalledWith(
         "project-1",
         "group-1",
+        null,
       ),
     );
     expect(useProjectsStore.getState().projects[0]?.groupId).toBe("group-1");
