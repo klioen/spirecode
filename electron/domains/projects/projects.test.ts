@@ -119,6 +119,150 @@ describe("ProjectService", () => {
     expect(await service.list()).toHaveLength(1);
   });
 
+  it("syncs Pi session projects on every load without replacing catalog metadata", async () => {
+    const root = await tempDir();
+    const repository = path.join(root, "repository");
+    const nested = path.join(repository, "src");
+    const directory = path.join(root, "notes");
+    const later = path.join(root, "later");
+    const missing = path.join(root, "missing");
+    await init(repository);
+    await mkdir(nested);
+    await mkdir(directory);
+    await mkdir(later);
+    const statePath = path.join(root, "app", "state.json");
+    const discoverSessionProjects = vi.fn().mockResolvedValue([
+      { path: nested, lastOpenedAt: 100 },
+      { path: repository, lastOpenedAt: 200 },
+      { path: directory, lastOpenedAt: 300 },
+      { path: missing, lastOpenedAt: 400 },
+      { path: "", lastOpenedAt: 500 },
+    ]);
+
+    const service = await ProjectService.load(statePath, {
+      discoverSessionProjects,
+    });
+    const initial = await service.catalog();
+    expect(discoverSessionProjects).toHaveBeenCalledOnce();
+    expect(initial.activeWorktreeId).toBeNull();
+    expect(initial.projects).toHaveLength(2);
+    const notes = initial.projects.find(
+      (project) => project.kind === "directory",
+    )!;
+    const repositoryProject = initial.projects.find(
+      (project) => project.kind === "git",
+    )!;
+    const groupId = (await service.createGroup("Saved")).groups[0]!.id;
+    await service.setProjectGroup(notes.id, groupId);
+    await service.select(repositoryProject.worktrees[0]!.id);
+    const beforeReload = await service.catalog();
+    const selectedWorktreeTimestamp = beforeReload.projects.find(
+      (project) => project.id === repositoryProject.id,
+    )!.worktrees[0]!.lastOpenedAt;
+
+    const rediscover = vi.fn().mockResolvedValue([
+      { path: directory, lastOpenedAt: 50 },
+      { path: repository, lastOpenedAt: 250 },
+      { path: later, lastOpenedAt: 400 },
+    ]);
+    const reloaded = await ProjectService.load(statePath, {
+      discoverSessionProjects: rediscover,
+    });
+    const catalog = await reloaded.catalog();
+
+    expect(rediscover).toHaveBeenCalledOnce();
+    expect(catalog.activeWorktreeId).toBe(repositoryProject.worktrees[0]!.id);
+    expect(catalog.projects).toHaveLength(3);
+    expect(
+      catalog.projects.find((project) => project.id === notes.id),
+    ).toMatchObject({ groupId, lastOpenedAt: 300 });
+    expect(
+      catalog.projects.find((project) => project.id === repositoryProject.id),
+    ).toMatchObject({
+      lastOpenedAt: 250,
+      worktrees: [{ lastOpenedAt: selectedWorktreeTimestamp }],
+    });
+    const canonicalLater = await import("node:fs/promises").then((fs) =>
+      fs.realpath(later),
+    );
+    expect(
+      catalog.projects.find((project) => project.path === canonicalLater),
+    ).toMatchObject({ groupId: null, lastOpenedAt: 400 });
+  });
+
+  it("re-adds a closed session project as Ungrouped on the next load", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "notes");
+    const statePath = path.join(root, "state.json");
+    await mkdir(directory);
+    const service = await ProjectService.load(statePath, {
+      discoverSessionProjects: async () => [
+        { path: directory, lastOpenedAt: 100 },
+      ],
+    });
+    const original = (await service.catalog()).projects[0]!;
+    await service.close(original.id);
+
+    const reloaded = await ProjectService.load(statePath, {
+      discoverSessionProjects: async () => [
+        { path: directory, lastOpenedAt: 200 },
+      ],
+    });
+    const projects = (await reloaded.catalog()).projects;
+    expect(projects).toHaveLength(1);
+    expect(projects[0]).toMatchObject({
+      path: await import("node:fs/promises").then((fs) =>
+        fs.realpath(directory),
+      ),
+      groupId: null,
+      lastOpenedAt: 200,
+    });
+    expect(projects[0]?.id).not.toBe(original.id);
+  });
+
+  it("preserves existing projects when Pi session discovery fails", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "notes");
+    const statePath = path.join(root, "state.json");
+    await mkdir(directory);
+    const service = await ProjectService.load(statePath);
+    const project = await service.openPath(directory);
+
+    const reloaded = await ProjectService.load(statePath, {
+      discoverSessionProjects: vi
+        .fn()
+        .mockRejectedValue(new Error("session discovery failed")),
+    });
+    expect((await reloaded.catalog()).projects).toEqual([
+      expect.objectContaining({
+        id: project.id,
+        path: await import("node:fs/promises").then((fs) =>
+          fs.realpath(directory),
+        ),
+      }),
+    ]);
+  });
+
+  it("syncs Pi session projects while recovering corrupt state", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "notes");
+    const statePath = path.join(root, "state.json");
+    await mkdir(directory);
+    await writeFile(statePath, "not json");
+    const discoverSessionProjects = vi
+      .fn()
+      .mockResolvedValue([{ path: directory, lastOpenedAt: 100 }]);
+
+    const service = await ProjectService.load(statePath, {
+      discoverSessionProjects,
+    });
+    expect(discoverSessionProjects).toHaveBeenCalledOnce();
+    expect((await service.catalog()).projects).toHaveLength(1);
+    await expect(readFile(corruptBackupPath(statePath), "utf8")).resolves.toBe(
+      "not json",
+    );
+  });
+
   it("rejects files and missing paths without mutating the catalog", async () => {
     const root = await tempDir();
     const file = path.join(root, "file.txt");
