@@ -6,7 +6,8 @@ import { CommandError, toCommandError } from "../../core/errors.js";
 import { gitText } from "../../core/gitProcess.js";
 import { corruptBackupPath, saveAtomic } from "../persistence/index.js";
 
-export const PROJECT_STATE_VERSION = 3;
+export const PROJECT_STATE_VERSION = 4;
+const MAX_GROUP_NAME_BYTES = 48;
 
 export type ProjectKind = "git" | "directory";
 export type WorktreeKind = "main" | "managed" | "external";
@@ -30,17 +31,30 @@ export interface ProjectSummary {
   lastOpenedAt: number;
   worktrees: WorktreeSummary[];
   nextWorktreeSequence: number;
+  groupId: string | null;
+}
+
+export interface ProjectGroupSummary {
+  id: string;
+  name: string;
 }
 
 export interface ProjectCatalog {
   version: number;
+  groups: ProjectGroupSummary[];
   projects: ProjectSummary[];
   activeWorktreeId: string | null;
 }
 
 type Catalog = ProjectCatalog;
+type ProjectV3 = Omit<ProjectSummary, "groupId">;
+type ProjectV2 = Omit<ProjectV3, "kind">;
 
-type ProjectV2 = Omit<ProjectSummary, "kind">;
+interface CatalogV3 {
+  version: number;
+  projects: ProjectV3[];
+  activeWorktreeId: string | null;
+}
 
 interface CatalogV2 {
   version: number;
@@ -83,6 +97,7 @@ export class ProjectService {
       );
       return {
         version: PROJECT_STATE_VERSION,
+        groups: structuredClone(this.catalogValue.groups),
         projects,
         activeWorktreeId: this.catalogValue.activeWorktreeId,
       };
@@ -91,6 +106,54 @@ export class ProjectService {
 
   async list(): Promise<ProjectSummary[]> {
     return (await this.catalog()).projects;
+  }
+
+  async createGroup(name: string): Promise<ProjectCatalog> {
+    const normalized = normalizeGroupName(name);
+    return this.transactCatalog((catalog) => {
+      assertUniqueGroupName(catalog.groups, normalized);
+      catalog.groups.push({ id: randomUUID(), name: normalized });
+    });
+  }
+
+  async renameGroup(groupId: string, name: string): Promise<ProjectCatalog> {
+    const normalized = normalizeGroupName(name);
+    return this.transactCatalog((catalog) => {
+      const group = catalog.groups.find((value) => value.id === groupId);
+      if (!group)
+        throw new CommandError("NOT_FOUND", "project group not found");
+      assertUniqueGroupName(catalog.groups, normalized, groupId);
+      group.name = normalized;
+    });
+  }
+
+  deleteGroup(groupId: string): Promise<ProjectCatalog> {
+    return this.transactCatalog((catalog) => {
+      const index = catalog.groups.findIndex((group) => group.id === groupId);
+      if (index < 0)
+        throw new CommandError("NOT_FOUND", "project group not found");
+      catalog.groups.splice(index, 1);
+      for (const project of catalog.projects) {
+        if (project.groupId === groupId) project.groupId = null;
+      }
+    });
+  }
+
+  setProjectGroup(
+    projectId: string,
+    groupId: string | null,
+  ): Promise<ProjectCatalog> {
+    return this.transactCatalog((catalog) => {
+      const project = catalog.projects.find((value) => value.id === projectId);
+      if (!project) throw new CommandError("NOT_FOUND", "project not found");
+      if (
+        groupId !== null &&
+        !catalog.groups.some((group) => group.id === groupId)
+      ) {
+        throw new CommandError("NOT_FOUND", "project group not found");
+      }
+      project.groupId = groupId;
+    });
   }
 
   async openPath(selected: string): Promise<ProjectSummary> {
@@ -297,6 +360,7 @@ export class ProjectService {
           lastOpenedAt: openedAt,
           worktrees: [main],
           nextWorktreeSequence: 1,
+          groupId: null,
         };
         candidate.projects.push(project);
         candidate.activeWorktreeId = worktreeId;
@@ -305,6 +369,15 @@ export class ProjectService {
       await saveAtomic(this.statePath, candidate);
       this.catalogValue = candidate;
       return result;
+    });
+  }
+
+  private transactCatalog(
+    operation: (catalog: Catalog) => void,
+  ): Promise<ProjectCatalog> {
+    return this.transact((catalog) => {
+      operation(catalog);
+      return snapshotCatalog(catalog);
     });
   }
 
@@ -351,14 +424,21 @@ async function loadCatalog(
 
   const record = asRecord(value);
   const version = typeof record.version === "number" ? record.version : 0;
-  if (version === 0 || version === PROJECT_STATE_VERSION) {
+  if (version === PROJECT_STATE_VERSION) {
     return { catalog: parseCatalog(record), migrated: false };
+  }
+  if (version === 0) {
+    parseEmptyCatalogV0(record);
+    return { catalog: emptyCatalog(), migrated: true };
   }
   if (version === 1) {
     return { catalog: await migrateV1(parseCatalogV1(record)), migrated: true };
   }
   if (version === 2) {
     return { catalog: migrateV2(parseCatalogV2(record)), migrated: true };
+  }
+  if (version === 3) {
+    return { catalog: migrateV3(parseCatalogV3(record)), migrated: true };
   }
   throw new CommandError("INVALID_ARGUMENT", "unsupported state version");
 }
@@ -427,15 +507,35 @@ async function migrateV1(old: CatalogV1): Promise<Catalog> {
       lastOpenedAt: main.lastOpenedAt,
       worktrees,
       nextWorktreeSequence: 1,
+      groupId: null,
     });
   }
-  return { version: PROJECT_STATE_VERSION, projects, activeWorktreeId };
+  return {
+    version: PROJECT_STATE_VERSION,
+    groups: [],
+    projects,
+    activeWorktreeId,
+  };
 }
 
 function migrateV2(old: CatalogV2): Catalog {
   return {
     version: PROJECT_STATE_VERSION,
-    projects: old.projects.map((project) => ({ ...project, kind: "git" })),
+    groups: [],
+    projects: old.projects.map((project) => ({
+      ...project,
+      kind: "git",
+      groupId: null,
+    })),
+    activeWorktreeId: old.activeWorktreeId,
+  };
+}
+
+function migrateV3(old: CatalogV3): Catalog {
+  return {
+    version: PROJECT_STATE_VERSION,
+    groups: [],
+    projects: old.projects.map((project) => ({ ...project, groupId: null })),
     activeWorktreeId: old.activeWorktreeId,
   };
 }
@@ -543,7 +643,50 @@ function findProjectByWorktree(catalog: Catalog, id: string): ProjectSummary {
 }
 
 function emptyCatalog(): Catalog {
-  return { version: 0, projects: [], activeWorktreeId: null };
+  return {
+    version: PROJECT_STATE_VERSION,
+    groups: [],
+    projects: [],
+    activeWorktreeId: null,
+  };
+}
+
+function snapshotCatalog(catalog: Catalog): ProjectCatalog {
+  return {
+    version: PROJECT_STATE_VERSION,
+    groups: structuredClone(catalog.groups),
+    projects: structuredClone(catalog.projects).sort(
+      (left, right) => right.lastOpenedAt - left.lastOpenedAt,
+    ),
+    activeWorktreeId: catalog.activeWorktreeId,
+  };
+}
+
+function normalizeGroupName(name: string): string {
+  if (typeof name !== "string") throw invalid("group.name");
+  const normalized = name.trim();
+  if (
+    normalized.length === 0 ||
+    Buffer.byteLength(normalized, "utf8") > MAX_GROUP_NAME_BYTES
+  ) {
+    throw invalid("group.name");
+  }
+  return normalized;
+}
+
+function assertUniqueGroupName(
+  groups: ProjectGroupSummary[],
+  name: string,
+  excludedId?: string,
+): void {
+  const key = name.toLowerCase();
+  if (
+    groups.some(
+      (group) => group.id !== excludedId && group.name.toLowerCase() === key,
+    )
+  ) {
+    throw invalid("group.name");
+  }
 }
 
 function now(): number {
@@ -551,11 +694,39 @@ function now(): number {
 }
 
 function parseCatalog(value: Record<string, unknown>): Catalog {
+  const version = unsignedInteger(value.version, "version");
+  if (version !== PROJECT_STATE_VERSION) throw invalid("version");
+  const groups = array(value.groups, "groups").map(parseGroup);
+  const groupIds = new Set<string>();
+  const groupNames = new Set<string>();
+  for (const group of groups) {
+    const nameKey = group.name.toLowerCase();
+    if (groupIds.has(group.id)) throw invalid("group.id");
+    if (groupNames.has(nameKey)) throw invalid("group.name");
+    groupIds.add(group.id);
+    groupNames.add(nameKey);
+  }
+  const projects = array(value.projects, "projects").map(parseProject);
+  if (
+    projects.some(
+      (project) => project.groupId !== null && !groupIds.has(project.groupId),
+    )
+  ) {
+    throw invalid("project.groupId");
+  }
   return {
-    version: unsignedInteger(value.version, "version"),
-    projects: array(value.projects, "projects").map(parseProject),
+    version,
+    groups,
+    projects,
     activeWorktreeId: nullableUuid(value.activeWorktreeId, "activeWorktreeId"),
   };
+}
+
+function parseGroup(value: unknown): ProjectGroupSummary {
+  const record = asRecord(value);
+  const name = normalizeGroupName(string(record.name, "group.name"));
+  if (name !== record.name) throw invalid("group.name");
+  return { id: uuid(record.id, "group.id"), name };
 }
 
 function parseProject(value: unknown): ProjectSummary {
@@ -585,6 +756,7 @@ function parseProject(value: unknown): ProjectSummary {
       record.nextWorktreeSequence,
       "project.nextWorktreeSequence",
     ),
+    groupId: nullableUuid(record.groupId, "project.groupId"),
   };
 }
 
@@ -603,6 +775,32 @@ function parseWorktree(value: unknown): WorktreeSummary {
     baseRef: string(record.baseRef, "worktree.baseRef"),
     kind,
     lastOpenedAt: unsignedInteger(record.lastOpenedAt, "worktree.lastOpenedAt"),
+  };
+}
+
+function parseEmptyCatalogV0(value: Record<string, unknown>): void {
+  if (unsignedInteger(value.version, "version") !== 0) throw invalid("version");
+  if (array(value.projects, "projects").length !== 0) throw invalid("projects");
+  if (value.activeWorktreeId !== null) throw invalid("activeWorktreeId");
+}
+
+function parseCatalogV3(value: Record<string, unknown>): CatalogV3 {
+  return {
+    version: unsignedInteger(value.version, "version"),
+    projects: array(value.projects, "projects").map((item) => {
+      const record = asRecord(item);
+      const project = parseProject({ ...record, groupId: null });
+      return {
+        id: project.id,
+        kind: project.kind,
+        name: project.name,
+        path: project.path,
+        lastOpenedAt: project.lastOpenedAt,
+        worktrees: project.worktrees,
+        nextWorktreeSequence: project.nextWorktreeSequence,
+      };
+    }),
+    activeWorktreeId: nullableUuid(value.activeWorktreeId, "activeWorktreeId"),
   };
 }
 

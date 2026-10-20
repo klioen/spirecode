@@ -42,6 +42,7 @@ const fallbackWorktree: WorktreeSummary = {
 const projects: ProjectSummary[] = [
   {
     id: "p-one",
+    groupId: null,
     name: "Alpha Project",
     path: "/one",
     kind: "git",
@@ -50,6 +51,7 @@ const projects: ProjectSummary[] = [
   },
   {
     id: "p-two",
+    groupId: null,
     name: "Beta Project",
     path: "/two",
     kind: "git",
@@ -58,6 +60,7 @@ const projects: ProjectSummary[] = [
   },
   {
     id: "p-empty",
+    groupId: null,
     name: "Empty Project",
     path: "/empty",
     kind: "git",
@@ -80,6 +83,7 @@ beforeEach(() => {
   setLanguage("en");
   vi.clearAllMocks();
   useProjectsStore.setState({
+    groups: [],
     projects,
     activeWorktreeId: mainWorktree.id,
     loading: false,
@@ -131,6 +135,7 @@ describe("BreadcrumbSwitcher", () => {
     };
     const directoryProject: ProjectSummary = {
       id: "p-directory",
+      groupId: null,
       name: "Notes",
       path: "/notes",
       kind: "directory",

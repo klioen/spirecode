@@ -39,9 +39,11 @@ beforeEach(() => {
   vi.mocked(projectsApi.deleteWorktree).mockReset();
   vi.mocked(projectsApi.renameWorktree).mockReset();
   useProjectsStore.setState({
+    groups: [],
     projects: [
       {
         id: "project-id",
+        groupId: null,
         kind: "git",
         name: "Project",
         path: "/repo",

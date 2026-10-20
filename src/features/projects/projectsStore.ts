@@ -2,11 +2,13 @@ import { create } from "zustand";
 import type {
   CommandError,
   ProjectCatalog,
+  ProjectGroupSummary,
   ProjectSummary,
   WorktreeSummary,
 } from "../../bindings";
 
 interface ProjectsState {
+  groups: ProjectGroupSummary[];
   projects: ProjectSummary[];
   activeWorktreeId: string | null;
   loading: boolean;
@@ -36,6 +38,7 @@ const firstWorktreeId = (projects: ProjectSummary[]) =>
   null;
 
 export const useProjectsStore = create<ProjectsState>((set) => ({
+  groups: [],
   projects: [],
   activeWorktreeId: null,
   loading: false,
@@ -55,6 +58,7 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
     })),
   hydrateCatalog: (catalog) =>
     set({
+      groups: catalog.groups,
       projects: catalog.projects,
       activeWorktreeId:
         catalog.activeWorktreeId &&
@@ -64,6 +68,7 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
     }),
   setCatalog: (catalog) =>
     set({
+      groups: catalog.groups,
       projects: catalog.projects,
       activeWorktreeId:
         catalog.activeWorktreeId &&

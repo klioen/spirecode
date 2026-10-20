@@ -21,6 +21,7 @@ const project = (
   ...worktrees: WorktreeSummary[]
 ): ProjectSummary => ({
   id,
+  groupId: null,
   kind: "git",
   name: id,
   path: `/tmp/${id}`,
@@ -30,6 +31,7 @@ const project = (
 
 beforeEach(() =>
   useProjectsStore.setState({
+    groups: [],
     projects: [],
     activeWorktreeId: null,
     loading: false,
@@ -43,18 +45,23 @@ describe("nested project worktree state", () => {
     const main = worktree("one", "one-main");
     const feature = worktree("one", "feature", "managed");
     useProjectsStore.getState().hydrateCatalog({
-      version: 2,
-      projects: [project("one", main, feature)],
+      version: 4,
+      groups: [{ id: "group-1", name: "Core" }],
+      projects: [{ ...project("one", main, feature), groupId: "group-1" }],
       activeWorktreeId: "feature",
     });
 
-    expect(useProjectsStore.getState().projects).toHaveLength(1);
+    expect(useProjectsStore.getState().groups).toEqual([
+      { id: "group-1", name: "Core" },
+    ]);
+    expect(useProjectsStore.getState().projects[0]?.groupId).toBe("group-1");
     expect(useProjectsStore.getState().activeWorktreeId).toBe("feature");
   });
 
   it("restores an active worktree when startup catalog has multiple projects", () => {
     useProjectsStore.getState().hydrateCatalog({
-      version: 2,
+      version: 4,
+      groups: [],
       projects: [project("one"), project("two")],
       activeWorktreeId: "one-main",
     });
@@ -64,7 +71,8 @@ describe("nested project worktree state", () => {
 
   it("falls back to the first main worktree when persisted selection is invalid", () => {
     useProjectsStore.getState().hydrateCatalog({
-      version: 2,
+      version: 4,
+      groups: [],
       projects: [project("one"), project("two")],
       activeWorktreeId: "missing",
     });
