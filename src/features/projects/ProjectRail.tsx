@@ -21,6 +21,7 @@ import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
+import { DirectoryProjectSessions } from "./DirectoryProjectSessions";
 import { projectsApi } from "./projectsApi";
 import {
   CreateProjectGroupDialog,
@@ -68,11 +69,19 @@ export function ProjectRail({
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const groupMenuRef = useRef<HTMLDivElement | null>(null);
   const dialogReturnFocusTargetRef = useRef<string | null>(null);
+  const selectionGenerationRef = useRef(0);
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
     () => new Set(),
   );
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
     () => new Set(),
+  );
+
+  useEffect(
+    () => () => {
+      selectionGenerationRef.current += 1;
+    },
+    [],
   );
 
   useEffect(() => {
@@ -144,12 +153,18 @@ export function ProjectRail({
       store.setLoading(false);
     }
   };
-  const select = async (worktreeId: string) => {
+  const select = async (worktreeId: string): Promise<boolean> => {
+    const generation = selectionGenerationRef.current + 1;
+    selectionGenerationRef.current = generation;
     try {
       await projectsApi.selectWorktree(worktreeId);
+      if (selectionGenerationRef.current !== generation) return false;
       store.selectWorktree(worktreeId);
+      return true;
     } catch (error) {
-      store.setError(commandError(error));
+      if (selectionGenerationRef.current === generation)
+        store.setError(commandError(error));
+      return false;
     }
   };
   const reveal = async (worktreeId: string) => {
@@ -188,7 +203,7 @@ export function ProjectRail({
 
   const renderProject = (project: ProjectSummary) => {
     const directory = project.kind === "directory";
-    const expanded = !directory && expandedProjectIds.has(project.id);
+    const expanded = expandedProjectIds.has(project.id);
     const primaryWorkspace =
       project.worktrees.find(({ kind }) => kind === "main") ??
       project.worktrees[0];
@@ -201,29 +216,20 @@ export function ProjectRail({
           <button
             className="project-name"
             title={project.path}
-            aria-label={t(
-              directory
-                ? "projects.open"
-                : expanded
-                  ? "projects.collapse"
-                  : "projects.expand",
-              { name: project.name },
-            )}
-            aria-expanded={directory ? undefined : expanded}
+            aria-label={t(expanded ? "projects.collapse" : "projects.expand", {
+              name: project.name,
+            })}
+            aria-expanded={expanded}
             onClick={() => {
-              if (directory) {
-                if (primaryWorkspace) void select(primaryWorkspace.id);
-                return;
-              }
+              if (directory && primaryWorkspace)
+                void select(primaryWorkspace.id);
               toggleProject(project.id);
             }}
           >
-            {!directory && (
-              <RiArrowRightSLine
-                className={`project-chevron ${expanded ? "expanded" : ""}`}
-                size={15}
-              />
-            )}
+            <RiArrowRightSLine
+              className={`project-chevron ${expanded ? "expanded" : ""}`}
+              size={15}
+            />
             {directory ? (
               <RiFolderLine size={15} />
             ) : (
@@ -307,91 +313,102 @@ export function ProjectRail({
             )}
           </div>
         </div>
-        {expanded && (
-          <div className="worktree-list">
-            {project.worktrees.map((worktree) => {
-              const active = worktree.id === store.activeWorktreeId;
-              const managed = worktree.kind === "managed";
-              return (
-                <div
-                  className={`worktree-row ${active ? "active" : ""}`}
-                  key={worktree.id}
-                  ref={
-                    menuWorktreeId === worktree.id ? openMenuRowRef : undefined
-                  }
-                  onContextMenu={(event) => {
-                    if (!managed) return;
-                    event.preventDefault();
-                    setMenuWorktreeId(worktree.id);
-                  }}
-                >
-                  <button
-                    className="worktree-name"
-                    aria-current={active ? "page" : undefined}
-                    aria-label={worktree.name}
-                    title={t("projects.worktree.revealTitle", {
-                      path: worktree.path,
-                      branch: worktree.branch,
-                    })}
-                    onClick={() => void select(worktree.id)}
-                    onDoubleClick={() => void reveal(worktree.id)}
+        {expanded &&
+          primaryWorkspace &&
+          (directory ? (
+            <DirectoryProjectSessions
+              worktreeId={primaryWorkspace.id}
+              onSelectWorktree={select}
+            />
+          ) : (
+            <div className="worktree-list">
+              {project.worktrees.map((worktree) => {
+                const active = worktree.id === store.activeWorktreeId;
+                const managed = worktree.kind === "managed";
+                return (
+                  <div
+                    className={`worktree-row ${active ? "active" : ""}`}
+                    key={worktree.id}
+                    ref={
+                      menuWorktreeId === worktree.id
+                        ? openMenuRowRef
+                        : undefined
+                    }
+                    onContextMenu={(event) => {
+                      if (!managed) return;
+                      event.preventDefault();
+                      setMenuWorktreeId(worktree.id);
+                    }}
                   >
-                    <RiGitBranchLine size={14} />
-                    <span>{worktree.name}</span>
-                    {activeChatWorktrees.has(worktree.id) && (
-                      <span
-                        className="spinner project-session-spinner"
-                        aria-label={t("projects.sessionActive")}
-                      />
-                    )}
-                  </button>
-                  {managed && (
                     <button
-                      className="worktree-menu-button"
-                      aria-label={t("projects.manage", { name: worktree.name })}
-                      onClick={() =>
-                        setMenuWorktreeId(
-                          menuWorktreeId === worktree.id ? null : worktree.id,
-                        )
-                      }
+                      className="worktree-name"
+                      aria-current={active ? "page" : undefined}
+                      aria-label={worktree.name}
+                      title={t("projects.worktree.revealTitle", {
+                        path: worktree.path,
+                        branch: worktree.branch,
+                      })}
+                      onClick={() => void select(worktree.id)}
+                      onDoubleClick={() => void reveal(worktree.id)}
                     >
-                      <RiMore2Fill size={15} />
+                      <RiGitBranchLine size={14} />
+                      <span>{worktree.name}</span>
+                      {activeChatWorktrees.has(worktree.id) && (
+                        <span
+                          className="spinner project-session-spinner"
+                          aria-label={t("projects.sessionActive")}
+                        />
+                      )}
                     </button>
-                  )}
-                  {menuWorktreeId === worktree.id && (
-                    <div className="worktree-menu" role="menu">
+                    {managed && (
                       <button
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuWorktreeId(null);
-                          setDialog({ type: "rename-worktree", worktree });
-                        }}
+                        className="worktree-menu-button"
+                        aria-label={t("projects.manage", {
+                          name: worktree.name,
+                        })}
+                        onClick={() =>
+                          setMenuWorktreeId(
+                            menuWorktreeId === worktree.id ? null : worktree.id,
+                          )
+                        }
                       >
-                        {t("projects.worktree.rename")}
+                        <RiMore2Fill size={15} />
                       </button>
-                      <button
-                        role="menuitem"
-                        className="danger-text"
-                        onClick={() => {
-                          setMenuWorktreeId(null);
-                          setDialog({ type: "delete-worktree", worktree });
-                        }}
-                      >
-                        {t("projects.worktree.delete")}
-                      </button>
-                    </div>
-                  )}
+                    )}
+                    {menuWorktreeId === worktree.id && (
+                      <div className="worktree-menu" role="menu">
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setMenuWorktreeId(null);
+                            setDialog({ type: "rename-worktree", worktree });
+                          }}
+                        >
+                          {t("projects.worktree.rename")}
+                        </button>
+                        <button
+                          role="menuitem"
+                          className="danger-text"
+                          onClick={() => {
+                            setMenuWorktreeId(null);
+                            setDialog({ type: "delete-worktree", worktree });
+                          }}
+                        >
+                          {t("projects.worktree.delete")}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {store.creatingProjectId === project.id && (
+                <div className="worktree-progress">
+                  <span className="spinner" />
+                  {t("projects.worktree.creating")}
                 </div>
-              );
-            })}
-            {store.creatingProjectId === project.id && (
-              <div className="worktree-progress">
-                <span className="spinner" />
-                {t("projects.worktree.creating")}
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          ))}
       </section>
     );
   };
