@@ -46,6 +46,15 @@ export interface ProjectCatalog {
   activeWorktreeId: string | null;
 }
 
+export interface SessionProjectCandidate {
+  path: string;
+  lastOpenedAt: number;
+}
+
+export interface ProjectServiceLoadOptions {
+  discoverSessionProjects?: () => Promise<SessionProjectCandidate[]>;
+}
+
 type Catalog = ProjectCatalog;
 type ProjectV3 = Omit<ProjectSummary, "groupId">;
 type ProjectV2 = Omit<ProjectV3, "kind">;
@@ -83,10 +92,23 @@ export class ProjectService {
     private catalogValue: Catalog,
   ) {}
 
-  static async load(statePath: string): Promise<ProjectService> {
+  static async load(
+    statePath: string,
+    options: ProjectServiceLoadOptions = {},
+  ): Promise<ProjectService> {
     const { catalog, migrated } = await loadCatalog(statePath);
     const service = new ProjectService(statePath, catalog);
     if (migrated) await saveAtomic(statePath, catalog);
+    if (options.discoverSessionProjects) {
+      let sessionProjects: SessionProjectCandidate[];
+      try {
+        sessionProjects = await options.discoverSessionProjects();
+      } catch (error) {
+        console.warn("Unable to discover Pi session projects", error);
+        return service;
+      }
+      await service.syncSessionProjects(sessionProjects);
+    }
     return service;
   }
 
@@ -307,68 +329,72 @@ export class ProjectService {
     canonical: string,
     kind: ProjectKind,
   ): Promise<ProjectSummary> {
-    const name = path.basename(canonical) || canonical;
     const openedAt = now();
-
     return this.queue.run(async () => {
       const candidate = structuredClone(this.catalogValue);
       candidate.version = PROJECT_STATE_VERSION;
-      const existing = candidate.projects.find(
-        (project) => project.path === canonical,
+      const result = await upsertProject(
+        candidate,
+        canonical,
+        kind,
+        openedAt,
+        true,
       );
-      let result: ProjectSummary;
-      if (existing) {
-        existing.lastOpenedAt = openedAt;
-        const main = existing.worktrees.find(
-          (worktree) => worktree.kind === "main",
-        );
-        if (!main)
-          throw new CommandError(
-            "INVALID_ARGUMENT",
-            "project has no main worktree",
-          );
-        if (existing.kind === "directory" && kind === "git") {
-          const branch = (await currentBranch(canonical)) ?? "HEAD";
-          existing.kind = "git";
-          main.name = branch;
-          main.branch = branch;
-          main.baseRef = branch;
-        }
-        main.lastOpenedAt = openedAt;
-        candidate.activeWorktreeId = main.id;
-        result = structuredClone(existing);
-      } else {
-        const branch =
-          kind === "git" ? ((await currentBranch(canonical)) ?? "HEAD") : "";
-        const projectId = randomUUID();
-        const worktreeId = randomUUID();
-        const main: WorktreeSummary = {
-          id: worktreeId,
-          projectId,
-          name: kind === "git" ? branch : name,
-          path: canonical,
-          branch,
-          baseRef: branch,
-          kind: "main",
-          lastOpenedAt: openedAt,
-        };
-        const project: ProjectSummary = {
-          id: projectId,
-          kind,
-          name,
-          path: canonical,
-          lastOpenedAt: openedAt,
-          worktrees: [main],
-          nextWorktreeSequence: 1,
-          groupId: null,
-        };
-        candidate.projects.push(project);
-        candidate.activeWorktreeId = worktreeId;
-        result = structuredClone(project);
-      }
       await saveAtomic(this.statePath, candidate);
       this.catalogValue = candidate;
-      return result;
+      return structuredClone(result);
+    });
+  }
+
+  private async syncSessionProjects(
+    candidates: SessionProjectCandidate[],
+  ): Promise<void> {
+    const roots = new Map<
+      string,
+      { path: string; kind: ProjectKind; lastOpenedAt: number }
+    >();
+    for (const candidate of candidates) {
+      if (!candidate.path) continue;
+      try {
+        const canonical = await canonicalDirectory(candidate.path);
+        const repositoryRoot = await discoverRepositoryRoot(canonical);
+        const projectPath = repositoryRoot ?? canonical;
+        const lastOpenedAt = normalizeSessionTimestamp(candidate.lastOpenedAt);
+        const existing = roots.get(projectPath);
+        if (!existing || lastOpenedAt > existing.lastOpenedAt) {
+          roots.set(projectPath, {
+            path: projectPath,
+            kind: repositoryRoot ? "git" : "directory",
+            lastOpenedAt,
+          });
+        }
+      } catch (error) {
+        console.warn(
+          `Skipping unavailable Pi session project: ${candidate.path}`,
+          error,
+        );
+      }
+    }
+
+    await this.queue.run(async () => {
+      const catalog = structuredClone(this.catalogValue);
+      catalog.version = PROJECT_STATE_VERSION;
+      const before = JSON.stringify(catalog);
+      const ordered = [...roots.values()].sort(
+        (left, right) => left.lastOpenedAt - right.lastOpenedAt,
+      );
+      for (const root of ordered) {
+        await upsertProject(
+          catalog,
+          root.path,
+          root.kind,
+          root.lastOpenedAt,
+          false,
+        );
+      }
+      if (JSON.stringify(catalog) === before) return;
+      await saveAtomic(this.statePath, catalog);
+      this.catalogValue = catalog;
     });
   }
 
@@ -640,6 +666,76 @@ function findProjectByWorktree(catalog: Catalog, id: string): ProjectSummary {
   );
   if (!project) throw new CommandError("NOT_FOUND", "worktree not found");
   return project;
+}
+
+async function upsertProject(
+  catalog: Catalog,
+  canonical: string,
+  kind: ProjectKind,
+  openedAt: number,
+  activate: boolean,
+): Promise<ProjectSummary> {
+  const existing = catalog.projects.find(
+    (project) => project.path === canonical,
+  );
+  if (existing) {
+    existing.lastOpenedAt = activate
+      ? openedAt
+      : Math.max(existing.lastOpenedAt, openedAt);
+    const main = existing.worktrees.find(
+      (worktree) => worktree.kind === "main",
+    );
+    if (!main)
+      throw new CommandError(
+        "INVALID_ARGUMENT",
+        "project has no main worktree",
+      );
+    if (existing.kind === "directory" && kind === "git") {
+      const branch = (await currentBranch(canonical)) ?? "HEAD";
+      existing.kind = "git";
+      main.name = branch;
+      main.branch = branch;
+      main.baseRef = branch;
+    }
+    main.lastOpenedAt = activate
+      ? openedAt
+      : Math.max(main.lastOpenedAt, openedAt);
+    if (activate) catalog.activeWorktreeId = main.id;
+    return existing;
+  }
+
+  const name = path.basename(canonical) || canonical;
+  const branch =
+    kind === "git" ? ((await currentBranch(canonical)) ?? "HEAD") : "";
+  const projectId = randomUUID();
+  const worktreeId = randomUUID();
+  const main: WorktreeSummary = {
+    id: worktreeId,
+    projectId,
+    name: kind === "git" ? branch : name,
+    path: canonical,
+    branch,
+    baseRef: branch,
+    kind: "main",
+    lastOpenedAt: openedAt,
+  };
+  const project: ProjectSummary = {
+    id: projectId,
+    kind,
+    name,
+    path: canonical,
+    lastOpenedAt: openedAt,
+    worktrees: [main],
+    nextWorktreeSequence: 1,
+    groupId: null,
+  };
+  catalog.projects.push(project);
+  if (activate) catalog.activeWorktreeId = worktreeId;
+  return project;
+}
+
+function normalizeSessionTimestamp(value: number): number {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
 function emptyCatalog(): Catalog {

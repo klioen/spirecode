@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Persistent custom project groups in the Projects rail, including create, rename, delete, move-to-group, and Ungrouped workflows; directory projects and Git worktrees can expand to show, open, and quickly move Pi sessions to Trash.
+- Persistent custom project groups in the Projects rail, including create, rename, delete, move-to-group, and Ungrouped workflows; every startup syncs Pi session working directories into Ungrouped, and directory projects plus Git worktrees can expand to show, open, and move sessions to Trash.
 - Pi Extension Marketplace in Settings for browsing community catalog packages and safely installing, updating, or uninstalling user-scoped npm extensions through Pi's package manager.
 - Complete Files CRUD with inline file/folder creation and rename, duplication, cut/copy/paste moves, system Trash deletion, file-manager reveal, active-file reveal, and secure worktree-relative Main-process operations.
 - Public contribution, security, support, conduct, issue, and pull request guidance.

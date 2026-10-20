@@ -25,6 +25,7 @@ import { DiagnosticsService } from "./domains/diagnostics/service.js";
 import { resolveSpireResources } from "./domains/chat/spireSettings.js";
 import {
   DefaultPackageManager,
+  SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { ExtensionCatalogService } from "./domains/extensions/catalog.js";
@@ -101,7 +102,13 @@ export class AppState {
     window: BrowserWindow,
   ): Promise<AppState> {
     const [projects, settings] = await Promise.all([
-      ProjectService.load(path.join(dataDirectory, "state.json")),
+      ProjectService.load(path.join(dataDirectory, "state.json"), {
+        discoverSessionProjects: async () =>
+          (await SessionManager.listAll()).map((session) => ({
+            path: session.cwd,
+            lastOpenedAt: Math.floor(session.modified.getTime() / 1000),
+          })),
+      }),
       SettingsService.load(path.join(dataDirectory, "extension-settings.json")),
     ]);
     applyMemoryConfig(await settings.memoryConfig());
