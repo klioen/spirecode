@@ -576,31 +576,6 @@ body.panel-resizing-vertical * {
 .project-session-row svg {
   flex: 0 0 auto;
 }
-.project-session-delete {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  color: var(--text-subtle);
-  cursor: pointer;
-  opacity: 0;
-}
-.project-session-item:hover .project-session-delete,
-.project-session-delete:focus-visible {
-  opacity: 1;
-}
-.project-session-delete:hover,
-.project-session-delete:focus-visible {
-  background: var(--control-hover);
-  color: var(--danger);
-  outline: none;
-}
-.project-session-delete:disabled,
 .project-session-row:disabled {
   cursor: wait;
   opacity: 0.6;
@@ -702,8 +677,22 @@ body.panel-resizing-vertical * {
   box-shadow: 0 8px 24px var(--shadow);
   color: var(--text-default);
 }
+.project-session-menu {
+  position: absolute;
+  right: 2px;
+  top: 26px;
+  z-index: 20;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-popover);
+  box-shadow: 0 8px 24px var(--shadow);
+  color: var(--text-default);
+}
 .project-menu button,
-.worktree-menu button {
+.worktree-menu button,
+.project-session-menu button {
   width: 100%;
   min-height: 27px;
   padding: 0 8px;
@@ -721,7 +710,9 @@ body.panel-resizing-vertical * {
 .project-menu button:hover,
 .project-menu button:focus-visible,
 .worktree-menu button:hover,
-.worktree-menu button:focus-visible {
+.worktree-menu button:focus-visible,
+.project-session-menu button:hover,
+.project-session-menu button:focus-visible {
   background: var(--interactive-hover);
 }
 .project-menu button:disabled {

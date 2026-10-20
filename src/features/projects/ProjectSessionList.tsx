@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { RiChat3Line, RiDeleteBinLine } from "@remixicon/react";
+import { RiChat3Line } from "@remixicon/react";
 import { hostChatApi } from "../chat/hostChatApi";
 import type { ChatSessionSummary } from "../chat/types";
 import { chatRuntime } from "../chat/chatRuntime";
@@ -19,13 +19,17 @@ export function ProjectSessionList({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
+  const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
   const deletingIdsRef = useRef(new Set<string>());
+  const menuRef = useRef<HTMLDivElement>(null);
+  const sessionButtonRefs = useRef(new Map<string, HTMLButtonElement>());
 
   useEffect(() => {
     let active = true;
     setSessions(null);
     setLoadError(null);
     setDeleteError(null);
+    setMenuSessionId(null);
     void hostChatApi.list(worktreeId).then(
       (next) => {
         if (!active) return;
@@ -46,6 +50,27 @@ export function ProjectSessionList({
     };
   }, [worktreeId]);
 
+  useEffect(() => {
+    if (!menuSessionId) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node))
+        setMenuSessionId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const sessionId = menuSessionId;
+      setMenuSessionId(null);
+      sessionButtonRefs.current.get(sessionId)?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuSessionId]);
+
   const openSession = async (session: ChatSessionSummary) => {
     try {
       if (!(await onSelectWorktree(worktreeId))) return;
@@ -61,6 +86,7 @@ export function ProjectSessionList({
     if (deletingIdsRef.current.has(session.sessionId)) return;
     deletingIdsRef.current.add(session.sessionId);
     setDeletingIds((current) => new Set(current).add(session.sessionId));
+    setMenuSessionId(null);
     setDeleteError(null);
     try {
       await hostChatApi.delete(worktreeId, session.sessionId);
@@ -116,32 +142,58 @@ export function ProjectSessionList({
         const title = session.title || t("chat.history.untitled");
         const deleting = deletingIds.has(session.sessionId);
         return (
-          <div className="project-session-item" key={session.sessionId}>
+          <div
+            className="project-session-item"
+            key={session.sessionId}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              if (!deleting) setMenuSessionId(session.sessionId);
+            }}
+          >
             <button
               type="button"
               className="project-session-row"
               aria-label={title}
               title={title}
               disabled={deleting}
+              ref={(button) => {
+                if (button)
+                  sessionButtonRefs.current.set(session.sessionId, button);
+                else sessionButtonRefs.current.delete(session.sessionId);
+              }}
               onClick={() => void openSession(session)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "ContextMenu" ||
+                  (event.shiftKey && event.key === "F10")
+                ) {
+                  event.preventDefault();
+                  setMenuSessionId(session.sessionId);
+                }
+              }}
             >
               <RiChat3Line size={14} />
               <span>{title}</span>
-            </button>
-            <button
-              type="button"
-              className="project-session-delete"
-              aria-label={t("chat.history.delete", { title })}
-              title={t("chat.history.delete", { title })}
-              disabled={deleting}
-              onClick={() => void deleteSession(session)}
-            >
-              {deleting ? (
-                <span className="spinner" />
-              ) : (
-                <RiDeleteBinLine size={14} />
+              {deleting && (
+                <span
+                  className="spinner project-session-spinner"
+                  aria-label={t("chat.history.movingToTrash")}
+                />
               )}
             </button>
+            {menuSessionId === session.sessionId && (
+              <div className="project-session-menu" role="menu" ref={menuRef}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger-text"
+                  aria-label={t("chat.history.delete", { title })}
+                  onClick={() => void deleteSession(session)}
+                >
+                  {t("projects.sessions.delete")}
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
