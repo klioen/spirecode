@@ -1,8 +1,16 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLanguage } from "../../i18n";
 import { useChangesStore } from "../changes/changesStore";
 import { refreshChanges } from "../changes/changesRefresh";
+import { useEditorStore } from "../editor/editorStore";
+import { projectsApi } from "../projects/projectsApi";
 import { useProjectsStore } from "../projects/projectsStore";
 import { Workbench } from "./Workbench";
 import { settingsApi } from "../settings/settingsApi";
@@ -40,7 +48,18 @@ vi.mock("../editor/EditorPane", () => ({
   EditorPane: () => <main>Editor</main>,
 }));
 vi.mock("../tasks/TaskPage", () => ({
-  TaskPage: () => <main>Task page</main>,
+  TaskPage: ({
+    onOpenSession,
+  }: {
+    onOpenSession?: (worktreeId: string, sessionId: string) => void;
+  }) => (
+    <main>
+      Task page
+      <button onClick={() => onOpenSession?.("task-worktree", "task-session")}>
+        Task session
+      </button>
+    </main>
+  ),
 }));
 vi.mock("./BreadcrumbSwitcher", () => ({
   BreadcrumbSwitcher: ({
@@ -65,9 +84,20 @@ vi.mock("./BreadcrumbSwitcher", () => ({
     </div>
   ),
 }));
+vi.mock("../projects/projectsApi", () => ({
+  projectsApi: { selectWorktree: vi.fn() },
+}));
 vi.mock("../settings/settingsApi", () => ({
   settingsApi: { getAgentReadiness: vi.fn() },
 }));
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+};
+
 vi.mock("../settings/SettingsPage", () => ({
   SettingsPage: ({
     onBack,
@@ -88,6 +118,16 @@ beforeEach(() => {
   localStorage.clear();
   resetWorkbenchStore();
   vi.mocked(refreshChanges).mockClear();
+  vi.mocked(projectsApi.selectWorktree).mockResolvedValue({
+    id: "task-worktree",
+    projectId: "p1",
+    name: "task-fix",
+    path: "/task-fix",
+    branch: "task-fix",
+    baseRef: "origin/main",
+    kind: "managed",
+    lastOpenedAt: 2,
+  });
   vi.mocked(settingsApi.getAgentReadiness).mockResolvedValue({
     piAgentDirectoryExists: true,
     authenticatedModelCount: 1,
@@ -96,6 +136,7 @@ beforeEach(() => {
     resourcesHealthy: true,
   });
   useChangesStore.setState({ byWorktree: {} });
+  useEditorStore.setState({ views: {} });
   useProjectsStore.setState({
     groups: [],
     projects: [
@@ -397,6 +438,105 @@ describe("Workbench panel handles", () => {
     fireEvent.click(screen.getByRole("button", { name: "Project session" }));
     expect(screen.queryByText("Task page")).not.toBeInTheDocument();
     expect(screen.getByText("Editor")).toBeInTheDocument();
+  });
+
+  it("hydrates a Task managed worktree before opening its session", async () => {
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Task session" }));
+
+    await waitFor(() =>
+      expect(projectsApi.selectWorktree).toHaveBeenCalledWith("task-worktree"),
+    );
+    await waitFor(() =>
+      expect(useProjectsStore.getState().activeWorktreeId).toBe(
+        "task-worktree",
+      ),
+    );
+    expect(
+      useProjectsStore
+        .getState()
+        .projects[0]?.worktrees.some(({ id }) => id === "task-worktree"),
+    ).toBe(true);
+    expect(screen.queryByText("Task page")).not.toBeInTheDocument();
+    expect(screen.getByText("Editor")).toBeInTheDocument();
+    expect(useEditorStore.getState().views["task-worktree"]).toMatchObject({
+      activeTabId: "chat:task-worktree:task-session",
+      tabs: [
+        expect.objectContaining({
+          type: "chat",
+          worktreeId: "task-worktree",
+          sessionId: "task-session",
+        }),
+      ],
+    });
+  });
+
+  it("ignores a stale Task session selection after another worktree opens", async () => {
+    const selection =
+      deferred<Awaited<ReturnType<typeof projectsApi.selectWorktree>>>();
+    vi.mocked(projectsApi.selectWorktree).mockReturnValueOnce(
+      selection.promise,
+    );
+    useProjectsStore.setState((state) => ({
+      projects: state.projects.map((project) => ({
+        ...project,
+        worktrees: [
+          ...project.worktrees,
+          {
+            id: "w2",
+            projectId: "p1",
+            name: "feature",
+            path: "/repo-feature",
+            branch: "feature",
+            baseRef: "origin/main",
+            kind: "managed" as const,
+            lastOpenedAt: 2,
+          },
+        ],
+      })),
+    }));
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Task session" }));
+    await act(async () => {
+      useProjectsStore.getState().selectWorktree("w2");
+      selection.resolve({
+        id: "task-worktree",
+        projectId: "p1",
+        name: "task-fix",
+        path: "/task-fix",
+        branch: "task-fix",
+        baseRef: "origin/main",
+        kind: "managed",
+        lastOpenedAt: 2,
+      });
+      await selection.promise;
+    });
+
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("w2");
+    expect(useEditorStore.getState().views["task-worktree"]).toBeUndefined();
+    expect(screen.getByText("Task page")).toBeInTheDocument();
+  });
+
+  it("keeps Tasks open when a Task worktree cannot be selected", async () => {
+    vi.mocked(projectsApi.selectWorktree).mockRejectedValueOnce(
+      new Error("Worktree missing"),
+    );
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Task session" }));
+
+    await waitFor(() =>
+      expect(useProjectsStore.getState().error?.message).toBe(
+        "Worktree missing",
+      ),
+    );
+    expect(screen.getByText("Task page")).toBeInTheDocument();
+    expect(useEditorStore.getState().views["task-worktree"]).toBeUndefined();
   });
 
   it("hides the projects panel and separator when collapsed", () => {

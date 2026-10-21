@@ -102,6 +102,23 @@ describe("nested project worktree state", () => {
     expect(useProjectsStore.getState().activeWorktreeId).toBe("one-main");
   });
 
+  it("hydrates an existing worktree in place without changing its order", () => {
+    const main = worktree("one", "one-main");
+    const feature = worktree("one", "feature", "managed");
+    useProjectsStore.getState().setProjects([project("one", main, feature)]);
+
+    useProjectsStore
+      .getState()
+      .addWorktree({ ...main, name: "Refreshed main" });
+
+    expect(
+      useProjectsStore.getState().projects[0]?.worktrees.map(({ id }) => id),
+    ).toEqual(["one-main", "feature"]);
+    expect(useProjectsStore.getState().projects[0]?.worktrees[0]?.name).toBe(
+      "Refreshed main",
+    );
+  });
+
   it("updates a managed worktree without changing its selection", () => {
     const main = worktree("one", "one-main");
     const feature = worktree("one", "feature", "managed");
