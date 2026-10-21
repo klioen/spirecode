@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
-import {
-  RiChat3Line,
-  RiCloseLine,
-  RiDeleteBinLine,
-  RiSearchLine,
-} from "@remixicon/react";
+import { RiChat3Line, RiCloseLine, RiSearchLine } from "@remixicon/react";
 import { formatNumber, useTranslation, type TranslationKey } from "../../i18n";
 import type { ChatApi } from "./chatApi";
+import { SessionRenameDialog } from "./SessionRenameDialog";
 import { toChatError } from "./sessionReducer";
 import type { ChatError, ChatSessionSummary } from "./types";
 
@@ -24,9 +19,10 @@ export interface ChatHistoryProps {
   api: ChatApi;
   onOpen: (session: ChatSessionSummary) => void;
   onClose?: () => void;
+  onRename?: (session: ChatSessionSummary) => void;
   onDelete?: (session: ChatSessionSummary) => void;
   onDeleteError?: (error: ChatError) => void;
-  onConfirmOpenChange?: (open: boolean) => void;
+  onDialogOpenChange?: (open: boolean) => void;
   activeSessionId?: string;
   emptyLabel?: string;
 }
@@ -42,9 +38,10 @@ export function ChatHistory({
   api,
   onOpen,
   onClose,
+  onRename,
   onDelete,
   onDeleteError,
-  onConfirmOpenChange,
+  onDialogOpenChange,
   activeSessionId,
   emptyLabel,
 }: ChatHistoryProps) {
@@ -55,12 +52,16 @@ export function ChatHistory({
   const [error, setError] = useState<ChatError | null>(null);
   const [retryToken, setRetryToken] = useState(0);
   const [query, setQuery] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<ChatSessionSummary | null>(
+  const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ChatSessionSummary | null>(
     null,
   );
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<ChatError | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
+  const [mutationError, setMutationError] = useState<ChatError | null>(null);
+  const deletingIdsRef = useRef(new Set<string>());
   const searchRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 
   useEffect(() => {
     searchRef.current?.focus();
@@ -71,8 +72,9 @@ export function ChatHistory({
     setSessions(null);
     setError(null);
     setQuery("");
-    setDeleteTarget(null);
-    setDeleteError(null);
+    setMenuSessionId(null);
+    setRenameTarget(null);
+    setMutationError(null);
     void api
       .list(worktreeId)
       .then((next) => {
@@ -86,27 +88,57 @@ export function ChatHistory({
     };
   }, [api, retryToken, worktreeId]);
 
-  const confirmDelete = async () => {
-    if (!deleteTarget || deleting) return;
-    setDeleting(true);
-    setDeleteError(null);
+  useEffect(() => {
+    if (!menuSessionId) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node))
+        setMenuSessionId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const sessionId = menuSessionId;
+      setMenuSessionId(null);
+      rowRefs.current.get(sessionId)?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuSessionId]);
+
+  const deleteSession = async (session: ChatSessionSummary) => {
+    if (deletingIdsRef.current.has(session.sessionId)) return;
+    deletingIdsRef.current.add(session.sessionId);
+    setDeletingIds((current) => new Set(current).add(session.sessionId));
+    setMenuSessionId(null);
+    setMutationError(null);
     try {
-      await api.delete(worktreeId, deleteTarget.sessionId);
+      await api.delete(worktreeId, session.sessionId);
       setSessions(
         (current) =>
-          current?.filter(
-            (session) => session.sessionId !== deleteTarget.sessionId,
-          ) ?? null,
+          current?.filter(({ sessionId }) => sessionId !== session.sessionId) ??
+          null,
       );
-      onDelete?.(deleteTarget);
-      setDeleteTarget(null);
-      onConfirmOpenChange?.(false);
+      onDelete?.(session);
     } catch (caught: unknown) {
-      const error = toChatError(caught);
-      setDeleteError(error);
-      onDeleteError?.(error);
+      const nextError = toChatError(caught);
+      setMutationError(nextError);
+      onDeleteError?.(nextError);
+      requestAnimationFrame(() =>
+        rowRefs.current.get(session.sessionId)?.focus(),
+      );
     } finally {
-      setDeleting(false);
+      deletingIdsRef.current.delete(session.sessionId);
+      setDeletingIds((current) => {
+        const next = new Set(current);
+        next.delete(session.sessionId);
+        return next;
+      });
     }
   };
 
@@ -205,6 +237,11 @@ export function ChatHistory({
             </button>
           </div>
         )}
+        {mutationError && (
+          <div className="chat-history-mutation-error" role="alert">
+            {mutationError.message}
+          </div>
+        )}
         {sessions && filtered.length === 0 && (
           <div className="chat-history-state" role="status">
             <RiChat3Line size={24} aria-hidden="true" />
@@ -230,23 +267,52 @@ export function ChatHistory({
                 <ul aria-label={groupLabel}>
                   {items.map(({ session, date }) => {
                     const title = session.title || untitled;
+                    const deleting = deletingIds.has(session.sessionId);
                     return (
-                      <li className="chat-history-row" key={session.sessionId}>
+                      <li
+                        className="chat-history-row"
+                        key={session.sessionId}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          if (!deleting) setMenuSessionId(session.sessionId);
+                        }}
+                      >
                         <button
                           type="button"
                           className="chat-history-item"
+                          aria-label={title}
                           aria-current={
                             session.sessionId === activeSessionId
                               ? "true"
                               : undefined
                           }
+                          disabled={deleting}
+                          ref={(button) => {
+                            if (button)
+                              rowRefs.current.set(session.sessionId, button);
+                            else rowRefs.current.delete(session.sessionId);
+                          }}
                           onClick={() => onOpen(session)}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "ContextMenu" ||
+                              (event.shiftKey && event.key === "F10")
+                            ) {
+                              event.preventDefault();
+                              setMenuSessionId(session.sessionId);
+                            }
+                          }}
                         >
                           <RiChat3Line size={15} aria-hidden="true" />
                           <span className="chat-history-title" title={title}>
                             {title}
                           </span>
-                          {session.sessionId === activeSessionId ? (
+                          {deleting ? (
+                            <span
+                              className="spinner"
+                              aria-label={t("chat.history.movingToTrash")}
+                            />
+                          ) : session.sessionId === activeSessionId ? (
                             <span className="chat-history-current">
                               {t("chat.history.current")}
                             </span>
@@ -273,19 +339,35 @@ export function ChatHistory({
                             )
                           )}
                         </button>
-                        <button
-                          type="button"
-                          className="chat-history-delete"
-                          aria-label={t("chat.history.delete", { title })}
-                          title={t("chat.history.delete", { title })}
-                          onClick={() => {
-                            setDeleteError(null);
-                            setDeleteTarget(session);
-                            onConfirmOpenChange?.(true);
-                          }}
-                        >
-                          <RiDeleteBinLine size={15} aria-hidden="true" />
-                        </button>
+                        {menuSessionId === session.sessionId && (
+                          <div
+                            className="chat-history-menu"
+                            role="menu"
+                            ref={menuRef}
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              aria-label={t("chat.rename.menuLabel", { title })}
+                              onClick={() => {
+                                setMenuSessionId(null);
+                                setRenameTarget(session);
+                                onDialogOpenChange?.(true);
+                              }}
+                            >
+                              {t("chat.rename.menu")}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="danger-text"
+                              aria-label={t("chat.history.delete", { title })}
+                              onClick={() => void deleteSession(session)}
+                            >
+                              {t("projects.sessions.delete")}
+                            </button>
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -294,52 +376,29 @@ export function ChatHistory({
             );
           })}
       </div>
-      <Dialog.Root
-        open={deleteTarget !== null}
-        onOpenChange={(open) => {
-          onConfirmOpenChange?.(open);
-          if (!open && !deleting) {
-            setDeleteTarget(null);
-            setDeleteError(null);
-          }
+      <SessionRenameDialog
+        session={renameTarget}
+        api={api}
+        onRenamed={(renamed) => {
+          setSessions(
+            (current) =>
+              current?.map((session) =>
+                session.sessionId === renamed.sessionId ? renamed : session,
+              ) ?? null,
+          );
+          onRename?.(renamed);
         }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay className="chat-delete-overlay" />
-          <Dialog.Content className="chat-delete-dialog">
-            <Dialog.Title>{t("chat.history.deleteTitle")}</Dialog.Title>
-            <Dialog.Description>
-              {t("chat.history.deleteDescription", {
-                title: deleteTarget?.title || untitled,
-              })}
-            </Dialog.Description>
-            {deleteError && (
-              <div className="chat-delete-error" role="alert">
-                {deleteError.message}
-              </div>
-            )}
-            <div className="chat-delete-actions">
-              <Dialog.Close asChild>
-                <button type="button" disabled={deleting}>
-                  {t("common.cancel")}
-                </button>
-              </Dialog.Close>
-              <button
-                type="button"
-                className="danger"
-                disabled={deleting}
-                onClick={() => void confirmDelete()}
-              >
-                {t(
-                  deleting
-                    ? "chat.history.movingToTrash"
-                    : "chat.history.moveToTrash",
-                )}
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+        onOpenChange={(open) => {
+          onDialogOpenChange?.(open);
+          if (open) return;
+          const sessionId = renameTarget?.sessionId;
+          setRenameTarget(null);
+          if (sessionId)
+            requestAnimationFrame(() =>
+              rowRefs.current.get(sessionId)?.focus(),
+            );
+        }}
+      />
     </section>
   );
 }

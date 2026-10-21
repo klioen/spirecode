@@ -49,6 +49,7 @@ export const COMMANDS = [
   "chat_session_set_thinking_level",
   "chat_session_send",
   "chat_session_abort",
+  "chat_session_rename",
   "chat_session_delete",
   "settings_extensions_list",
   "settings_extension_catalog_list",

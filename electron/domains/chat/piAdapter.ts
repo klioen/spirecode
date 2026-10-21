@@ -34,6 +34,7 @@ export interface PiSession {
   getConfig(): Promise<ChatSessionConfig>;
   setModel(provider: string, modelId: string): Promise<ChatSessionConfig>;
   setThinkingLevel(level: ChatThinkingLevel): Promise<ChatSessionConfig>;
+  setSessionName(title: string): void;
   send(text: string): Promise<void>;
   followUp(text: string): Promise<void>;
   clearQueue(): { steering?: readonly string[]; followUp?: readonly string[] };
@@ -48,6 +49,7 @@ export interface PiSessionRecord {
   title: string;
   createdAt: number;
   updatedAt: number;
+  path?: string;
 }
 
 export interface PiSessionInfo {
@@ -66,6 +68,7 @@ export interface PiAdapter {
     cwd: string,
     sessionId: string,
   ): Promise<{ info: PiSessionInfo; sessionRoot: string } | undefined>;
+  rename(info: PiSessionInfo, cwd: string, title: string): Promise<void>;
   open(info: PiSessionInfo, cwd: string): Promise<PiSessionRecord>;
 }
 
@@ -91,6 +94,8 @@ interface PiSessionManager {
   buildSessionContext(): { messages: unknown[] };
   getBranch(): unknown[];
   getSessionDir(): string;
+  getSessionFile(): string | undefined;
+  appendSessionInfo(name: string): string;
 }
 
 interface PiServices {
@@ -321,6 +326,7 @@ export async function createPiAdapter(
         session.setThinkingLevel(level);
         return getConfig();
       },
+      setSessionName: (title) => session.setSessionName(title),
       send: (text) =>
         acceptPrompt(
           session,
@@ -401,6 +407,7 @@ export async function createPiAdapter(
       title: session.sessionName ?? metadata.title ?? "",
       createdAt: metadata.createdAt ?? now,
       updatedAt: metadata.updatedAt ?? now,
+      path: sessionManager.getSessionFile(),
     };
   };
 
@@ -447,6 +454,12 @@ export async function createPiAdapter(
         },
         sessionRoot: sdk.SessionManager.create(cwd).getSessionDir(),
       };
+    },
+    async rename(info, cwd, title) {
+      if (!info.path) throw new Error("Session path is unavailable");
+      sdk.SessionManager.open(info.path, undefined, cwd).appendSessionInfo(
+        title,
+      );
     },
     async open(info, cwd) {
       if (!info.path) throw new Error("Session path is unavailable");

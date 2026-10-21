@@ -87,6 +87,7 @@ vi.mock("../chat", async (importOriginal) => {
       ...actual.hostChatApi,
       create: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
+      rename: vi.fn(),
       delete: vi.fn().mockResolvedValue(undefined),
     },
     ChatView: ({ sessionId }: { sessionId: string }) => (
@@ -113,6 +114,7 @@ beforeEach(() => {
   vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
   vi.mocked(hostChatApi.create).mockReset();
+  vi.mocked(hostChatApi.rename).mockReset();
   vi.mocked(hostChatApi.delete).mockReset().mockResolvedValue(undefined);
   vi.mocked(commands.terminalAttach).mockReset();
   vi.mocked(commands.terminalClose).mockReset();
@@ -752,6 +754,26 @@ describe("Chat history popover", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("closes only the context menu on Escape and restores row focus", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValueOnce([
+      { sessionId: "s1", worktreeId: "p1", title: "Keep history open" },
+    ]);
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    const row = await screen.findByRole("button", {
+      name: "Keep history open",
+    });
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menu")).toBeVisible();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Chat history" })).toBeVisible();
+    expect(row).toHaveFocus();
+  });
+
   it("closes on worktree changes and resets the search when reopened", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<EditorPane worktreeId="p1" />);
@@ -779,11 +801,14 @@ describe("Chat history popover", () => {
     render(<EditorPane worktreeId="p1" />);
 
     await user.click(screen.getByRole("button", { name: "Chat history" }));
+    const sessionRow = await screen.findByRole("button", {
+      name: "Disposable session",
+    });
+    fireEvent.contextMenu(sessionRow);
     await user.click(
-      await screen.findByRole("button", { name: "Delete Disposable session" }),
+      screen.getByRole("menuitem", { name: "Delete Disposable session" }),
     );
     expect(document.querySelector(".chat-history")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
 
     await waitFor(() =>
       expect(screen.queryByText("chat body s1")).not.toBeInTheDocument(),
@@ -792,6 +817,43 @@ describe("Chat history popover", () => {
     expect(
       screen.getByRole("region", { name: "Chat history" }),
     ).toBeInTheDocument();
+  });
+
+  it("renames an opened chat from history and updates its tab", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValueOnce([
+      { sessionId: "s1", worktreeId: "p1", title: "Before" },
+    ]);
+    vi.mocked(hostChatApi.rename).mockResolvedValueOnce({
+      sessionId: "s1",
+      worktreeId: "p1",
+      title: "After",
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    useEditorStore.getState().openChat("p1", "s1", "Before");
+    const user = userEvent.setup();
+    render(<EditorPane worktreeId="p1" />);
+
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    fireEvent.contextMenu(
+      await screen.findByRole("button", { name: "Before" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Rename Before" }));
+    const input = screen.getByRole("textbox", { name: "Session name" });
+    await user.clear(input);
+    await user.type(input, "After");
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+
+    await waitFor(() =>
+      expect(useEditorStore.getState().views.p1.tabs[0]).toMatchObject({
+        type: "chat",
+        title: "After",
+      }),
+    );
+    expect(
+      within(screen.getByRole("tablist")).getByText("After"),
+    ).toBeVisible();
+    expect(screen.getByRole("region", { name: "Chat history" })).toBeVisible();
   });
 
   it("renders the localized new-chat fallback for an empty external title", async () => {

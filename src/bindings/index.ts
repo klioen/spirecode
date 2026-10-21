@@ -380,6 +380,12 @@ export const commands = {
     }),
   chatSessionAbort: (worktreeId: string, sessionId: string) =>
     command<ChatAccepted>("chat_session_abort", { worktreeId, sessionId }),
+  chatSessionRename: (worktreeId: string, sessionId: string, title: string) =>
+    command<ChatSessionSummary>("chat_session_rename", {
+      worktreeId,
+      sessionId,
+      title,
+    }),
   chatSessionDelete: async (worktreeId: string, sessionId: string) => {
     const attached = chatSubscriptions.get(sessionId);
     await command<void>("chat_session_delete", { worktreeId, sessionId });

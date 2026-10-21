@@ -59,6 +59,8 @@ export const hostChatApi: ChatApi = {
     commands.chatSessionSend(worktreeId, sessionId, text),
   abort: (worktreeId, sessionId) =>
     commands.chatSessionAbort(worktreeId, sessionId),
+  rename: async (worktreeId, sessionId, title) =>
+    summary(await commands.chatSessionRename(worktreeId, sessionId, title)),
   delete: (worktreeId, sessionId) =>
     commands.chatSessionDelete(worktreeId, sessionId),
 };

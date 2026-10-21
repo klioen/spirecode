@@ -20,6 +20,7 @@ function historyApi(): ChatApi {
     setThinkingLevel: vi.fn(),
     send: vi.fn(),
     abort: vi.fn(),
+    rename: vi.fn(),
     delete: vi.fn(),
   };
 }
@@ -171,6 +172,77 @@ describe("ChatHistory", () => {
 
     expect(await screen.findByText("Recovered chat")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renames and deletes sessions from the context menu without hover actions", async () => {
+    const api = historyApi();
+    vi.mocked(api.rename).mockResolvedValue({
+      sessionId: "session-1",
+      worktreeId: "worktree-1",
+      title: "Renamed session",
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const onRename = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <ChatHistory
+        worktreeId="worktree-1"
+        api={api}
+        onOpen={vi.fn()}
+        onRename={onRename}
+        onDelete={onDelete}
+      />,
+    );
+
+    const row = await screen.findByRole("button", { name: "Fix tests" });
+    expect(
+      screen.queryByRole("button", { name: "Delete Fix tests" }),
+    ).not.toBeInTheDocument();
+    fireEvent.contextMenu(row);
+    const renameAction = screen.getByRole("menuitem", {
+      name: "Rename Fix tests",
+    });
+    expect(renameAction).toHaveFocus();
+    fireEvent.click(renameAction);
+    fireEvent.change(screen.getByRole("textbox", { name: "Session name" }), {
+      target: { value: "Renamed session" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+
+    expect(await screen.findByText("Renamed session")).toBeVisible();
+    expect(onRename).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Renamed session" }),
+    );
+
+    const renamedRow = screen.getByRole("button", { name: "Renamed session" });
+    fireEvent.keyDown(renamedRow, { key: "F10", shiftKey: true });
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Delete Renamed session" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(screen.queryByText("Renamed session")).not.toBeInTheDocument(),
+    );
+    expect(api.delete).toHaveBeenCalledWith("worktree-1", "session-1");
+    expect(onDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Renamed session" }),
+    );
+    expect(screen.queryByText("Delete chat?")).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed deletion visible and restores row focus", async () => {
+    const api = historyApi();
+    vi.mocked(api.delete).mockRejectedValue(new Error("delete failed"));
+    render(<ChatHistory worktreeId="worktree-1" api={api} onOpen={vi.fn()} />);
+
+    const row = await screen.findByRole("button", { name: "Fix tests" });
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Fix tests" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
+    expect(row).toBeInTheDocument();
+    await vi.waitFor(() => expect(row).toHaveFocus());
   });
 
   it("lists worktree sessions and returns the selected session to its parent", async () => {

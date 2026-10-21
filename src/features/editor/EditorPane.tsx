@@ -574,7 +574,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
   const { t } = useTranslation();
   const view = useEditorStore((state) => state.views[worktreeId]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyConfirmOpen, setHistoryConfirmOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const historyId = useId();
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -585,11 +585,11 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
 
   useEffect(() => {
     setHistoryOpen(false);
-    setHistoryConfirmOpen(false);
+    setHistoryDialogOpen(false);
   }, [worktreeId]);
 
   useEffect(() => {
-    if (!historyOpen || historyConfirmOpen) return;
+    if (!historyOpen || historyDialogOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
       if (
@@ -600,6 +600,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (historyRef.current?.querySelector('[role="menu"]')) return;
       event.preventDefault();
       setHistoryOpen(false);
       historyTriggerRef.current?.focus();
@@ -610,7 +611,7 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [historyConfirmOpen, historyOpen]);
+  }, [historyDialogOpen, historyOpen]);
 
   const createChat = async () => {
     const navigation = useEditorStore.getState().beginNavigation();
@@ -825,7 +826,12 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 active?.type === "chat" ? active.sessionId : undefined
               }
               onClose={closeHistoryWithFocus}
-              onConfirmOpenChange={setHistoryConfirmOpen}
+              onDialogOpenChange={setHistoryDialogOpen}
+              onRename={(session) =>
+                useEditorStore
+                  .getState()
+                  .renameChat(worktreeId, session.sessionId, session.title)
+              }
               onDeleteError={(error) =>
                 useProjectsStore.getState().setError(error)
               }

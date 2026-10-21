@@ -176,6 +176,30 @@ describe("preview and keep tabs", () => {
     expect(useEditorStore.getState().views.p1.activeTabId).toBe(first.id);
   });
 
+  it("renames an open chat tab and persists the authoritative title", () => {
+    useEditorStore.getState().openChat("p1", "session-a", "Before");
+
+    useEditorStore.getState().renameChat("p1", "session-a", "After");
+
+    expect(useEditorStore.getState().views.p1.tabs[0]).toMatchObject({
+      type: "chat",
+      sessionId: "session-a",
+      title: "After",
+    });
+    expect(
+      JSON.parse(localStorage.getItem("spirecode.editor-tabs.v1")!),
+    ).toMatchObject({
+      p1: { tabs: [expect.objectContaining({ title: "After" })] },
+    });
+  });
+
+  it("does not create an editor view when a renamed chat is not open", () => {
+    useEditorStore.getState().renameChat("p1", "session-a", "After");
+
+    expect(useEditorStore.getState().views).toEqual({});
+    expect(localStorage.getItem("spirecode.editor-tabs.v1")).toBeNull();
+  });
+
   it("persists file, diff, and chat metadata but never terminal tabs", () => {
     useEditorStore.getState().open(tab("a.ts"), true);
     useEditorStore.getState().open(

@@ -304,6 +304,73 @@ export class ChatService {
     }
   }
 
+  rename(
+    worktreeId: string,
+    sessionId: string,
+    title: string,
+  ): Promise<ChatSessionSummary> {
+    return this.runLifecycle(sessionId, () =>
+      this.renameUnlocked(worktreeId, sessionId, title),
+    );
+  }
+
+  private async renameUnlocked(
+    worktreeId: string,
+    sessionId: string,
+    title: string,
+  ): Promise<ChatSessionSummary> {
+    const cwd = await this.root(worktreeId);
+    const normalizedTitle = validateSessionTitle(title);
+    const loaded = this.sessions.get(sessionId);
+    try {
+      if (loaded) this.assertOwner(loaded, worktreeId);
+      const adapter = await this.adapter();
+      const target = await adapter.resolveDeleteTarget(cwd, sessionId);
+      if (!target?.info.path) throw notFound();
+      let targetCwd: string;
+      try {
+        targetCwd = await realpath(target.info.cwd);
+      } catch {
+        throw notFound();
+      }
+      if (targetCwd !== cwd) throw notFound();
+      const [sessionPath, sessionRoot] = await Promise.all([
+        realpath(target.info.path),
+        realpath(target.sessionRoot),
+      ]);
+      if (
+        !(await stat(sessionRoot)).isDirectory() ||
+        !(await stat(sessionPath)).isFile() ||
+        !isWithin(sessionRoot, sessionPath)
+      )
+        throw notFound();
+
+      if (loaded) {
+        if (!loaded.path || (await realpath(loaded.path)) !== sessionPath)
+          throw notFound();
+        loaded.session.setSessionName(normalizedTitle);
+        loaded.title = normalizedTitle;
+        return this.summary(loaded);
+      }
+
+      await adapter.rename(
+        { ...target.info, cwd, path: sessionPath },
+        cwd,
+        normalizedTitle,
+      );
+      this.establishOwnership(sessionId, worktreeId);
+      return {
+        sessionId,
+        worktreeId,
+        title: normalizedTitle,
+        createdAt: target.info.createdAt,
+        updatedAt: target.info.updatedAt,
+      };
+    } catch (error) {
+      throw mapChatError(error, "Unable to rename chat session");
+    }
+  }
+
   delete(worktreeId: string, sessionId: string): Promise<void> {
     return this.runLifecycle(sessionId, () =>
       this.deleteUnlocked(worktreeId, sessionId),
@@ -670,6 +737,20 @@ function parseNativeCommand(text: string): NativeCommand | undefined {
     return { kind: "thinking", level: argument as ChatThinkingLevel };
   }
   return undefined;
+}
+
+function validateSessionTitle(title: string): string {
+  const normalized = title.trim();
+  if (
+    normalized.length === 0 ||
+    Array.from(normalized).length > 200 ||
+    /\p{Cc}/u.test(normalized)
+  )
+    throw new ChatError(
+      "CHAT_FAILED",
+      "Session title must be 1 to 200 characters without control characters",
+    );
+  return normalized;
 }
 
 function validateText(text: string): void {

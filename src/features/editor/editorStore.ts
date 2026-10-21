@@ -212,6 +212,7 @@ interface EditorState {
     sessionId: string,
     title: string,
   ) => ResourceTab;
+  renameChat: (worktreeId: string, sessionId: string, title: string) => void;
   setTerminalStatus: (
     worktreeId: string,
     terminalId: string,
@@ -321,6 +322,29 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().open(chat, true);
     return chat;
   },
+  renameChat: (worktreeId, sessionId, title) =>
+    set((state) => {
+      const view = state.views[worktreeId];
+      if (
+        !view?.tabs.some(
+          (tab) => tab.type === "chat" && tab.sessionId === sessionId,
+        )
+      )
+        return state;
+      const views = {
+        ...state.views,
+        [worktreeId]: {
+          ...view,
+          tabs: view.tabs.map((tab) =>
+            tab.type === "chat" && tab.sessionId === sessionId
+              ? { ...tab, title }
+              : tab,
+          ),
+        },
+      };
+      persistEditorViews(views);
+      return { views };
+    }),
   setTerminalStatus: (worktreeId, terminalId, status) =>
     set((state) => {
       const view = state.views[worktreeId] ?? emptyView();
