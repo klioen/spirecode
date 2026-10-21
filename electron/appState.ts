@@ -44,6 +44,7 @@ import {
   type TaskDetail,
   type TaskSessionIntegration,
 } from "./domains/tasks/service.js";
+import { taskSessionName } from "./domains/tasks/prompt.js";
 import {
   createDefaultTaskRewriteService,
   TaskRewriteError,
@@ -206,6 +207,11 @@ export class AppState {
                 integration.onEvent({ type: event.type });
             },
           });
+          await this.chat.nameLoadedSession(
+            worktreeId,
+            summary.sessionId,
+            taskSessionName(integration.sessionId),
+          );
           return { sessionId: summary.sessionId, sessionPath: null };
         },
         findSession: async (worktreeId, name, sessionId) => {

@@ -100,6 +100,29 @@ export class ChatService {
     }
   }
 
+  nameLoadedSession(
+    worktreeId: string,
+    sessionId: string,
+    title: string,
+  ): Promise<ChatSessionSummary> {
+    return this.runLifecycle(sessionId, async () => {
+      const cwd = await this.root(worktreeId);
+      const record = this.requireUsable(worktreeId, sessionId);
+      if (record.cwd !== cwd)
+        throw protocolError(
+          "Agent SDK returned a session for another worktree",
+        );
+      const normalizedTitle = validateSessionTitle(title);
+      try {
+        record.session.setSessionName(normalizedTitle);
+        record.title = normalizedTitle;
+        return this.summary(record);
+      } catch (error) {
+        throw mapChatError(error, "Unable to name agent session");
+      }
+    });
+  }
+
   ensureLoaded(
     worktreeId: string,
     sessionId: string,
