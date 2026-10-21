@@ -382,6 +382,12 @@ async function invoke(
         text(args, "worktreeId"),
         text(args, "sessionId"),
       );
+    case "chat_session_rename":
+      return state.chat.rename(
+        text(args, "worktreeId"),
+        text(args, "sessionId"),
+        text(args, "title"),
+      );
     case "chat_session_delete": {
       const worktreeId = text(args, "worktreeId");
       const sessionId = text(args, "sessionId");
@@ -526,6 +532,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_set_thinking_level: ["worktreeId", "sessionId", "thinkingLevel"],
   chat_session_send: ["worktreeId", "sessionId", "text"],
   chat_session_abort: ["worktreeId", "sessionId"],
+  chat_session_rename: ["worktreeId", "sessionId", "title"],
   chat_session_delete: ["worktreeId", "sessionId"],
   settings_extensions_list: ["worktreeId"],
   settings_extension_catalog_list: ["query", "sort", "page"],

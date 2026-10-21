@@ -156,6 +156,28 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: path");
   });
 
+  it("allows only IDs and a title for chat rename", () => {
+    expect(
+      validateCommandArgs("chat_session_rename", {
+        worktreeId: "w1",
+        sessionId: "s1",
+        title: "Release notes",
+      }),
+    ).toEqual({
+      worktreeId: "w1",
+      sessionId: "s1",
+      title: "Release notes",
+    });
+    expect(() =>
+      validateCommandArgs("chat_session_rename", {
+        worktreeId: "w1",
+        sessionId: "s1",
+        title: "Release notes",
+        path: "/tmp/session.jsonl",
+      }),
+    ).toThrow("Unexpected argument: path");
+  });
+
   it("validates narrow chat configuration arguments", () => {
     expect(
       validateCommandArgs("chat_session_set_model", {

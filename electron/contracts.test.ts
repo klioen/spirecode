@@ -20,6 +20,7 @@ describe("Electron host allowlists", () => {
         "chat_session_config",
         "chat_session_set_model",
         "chat_session_set_thinking_level",
+        "chat_session_rename",
         "settings_memory_read",
         "settings_memory_models_list",
         "settings_memory_config_get",

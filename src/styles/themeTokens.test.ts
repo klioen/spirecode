@@ -116,7 +116,7 @@ describe("theme tokens", () => {
     ]);
   });
 
-  it("keeps long chat history titles from displacing row actions", () => {
+  it("keeps long chat history titles compact beside context menus", () => {
     expectDeclarations(".chat-history-popover", [
       "width: min(420px, calc(100% - 16px))",
     ]);
@@ -124,7 +124,11 @@ describe("theme tokens", () => {
     expect(item).toContain("flex: 1");
     expect(item).toContain("min-width: 0");
     expect(item).not.toContain("width: 100%");
-    expectDeclarations(".chat-history-delete", ["flex-shrink: 0"]);
+    expect(css).not.toContain(".chat-history-delete");
+    expectDeclarations(".chat-history-menu", [
+      "position: absolute",
+      "background: var(--surface-popover)",
+    ]);
   });
 
   it("aligns Projects dialogs with the Files confirmation surface", () => {
@@ -136,7 +140,7 @@ describe("theme tokens", () => {
       "background: var(--elevated-bg)",
       "box-shadow: 0 18px 55px var(--shadow)",
     ];
-    expectDeclarations(".chat-delete-dialog", dialogSurface);
+    expectDeclarations(".chat-session-dialog", dialogSurface);
     expectDeclarations(".worktree-dialog", dialogSurface);
   });
 });

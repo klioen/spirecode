@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Added persistent Pi session renaming from Projects and Chat History, and aligned both surfaces on accessible context menus for Rename and direct Move to Trash actions.
 - Simplified Chat transcripts to show final answers directly while folding thinking, tool calls, todos, and intermediate updates into a Codex-style `Working for…` / `Worked for…` summary.
 - Made Installed the first and default Extensions tab, loading the remote Marketplace only when opened.
 - Added safe `Remove from Pi` actions for user-configured local extension packages; this removes only their settings reference and never deletes local source files.
@@ -29,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Fixed `Remove from Pi` for relative local package sources by resolving the configured package path before asking Pi's PackageManager to remove the settings reference.
 - Restored Marketplace extension installation for desktop-launched apps by locating the user's Node.js/npm runtime before invoking Pi's package manager.
-- Widened Chat history and kept delete actions visible when session titles are too long for the popover row.
+- Widened Chat history so long session titles have more room in the popover row.
 
 ### Removed
 

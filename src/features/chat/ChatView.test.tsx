@@ -131,6 +131,7 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
     }),
     send: vi.fn().mockResolvedValue({ accepted: true }),
     abort: vi.fn().mockResolvedValue({ accepted: true }),
+    rename: vi.fn(),
     delete: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };

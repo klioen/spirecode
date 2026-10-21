@@ -18,10 +18,13 @@ function sessionFixture() {
     reasoning: true,
   };
   let thinkingLevel = "medium";
+  let sessionName: string | undefined;
   const calls: unknown[] = [];
   const session = {
     sessionId: "s1",
-    sessionName: undefined,
+    get sessionName() {
+      return sessionName;
+    },
     get isStreaming() {
       return streaming;
     },
@@ -52,6 +55,10 @@ function sessionFixture() {
     setThinkingLevel: (level: string) => {
       calls.push(["setThinkingLevel", level]);
       thinkingLevel = level === "max" ? "high" : level;
+    },
+    setSessionName: (title: string) => {
+      calls.push(["setSessionName", title]);
+      sessionName = title;
     },
     messages: [],
     subscribe: () => () => undefined,
@@ -119,6 +126,11 @@ function sdkFixture(options: {
   const manager = {
     buildSessionContext: () => ({ messages: options.existingMessages ?? [] }),
     getSessionDir: () => "/sessions/current",
+    getSessionFile: () => "/sessions/current/session.jsonl",
+    appendSessionInfo: (title: string) => {
+      calls.push(["appendSessionInfo", title]);
+      return "entry-1";
+    },
     getBranch: () => [
       {
         type: "custom",
@@ -595,6 +607,43 @@ describe("piAdapter", () => {
     });
     expect(fixture.calls).toContainEqual(["setModel", nextModel]);
     expect(fixture.calls).toContainEqual(["setThinkingLevel", "max"]);
+  });
+
+  it("renames loaded and unloaded sessions through Pi metadata APIs", async () => {
+    const loadedFixture = sdkFixture({});
+    const loadedAdapter = await createPiAdapter(loadedFixture.sdk, {
+      loadResources: loadedFixture.loadResources,
+    });
+    const created = await loadedAdapter.create("/repo");
+    created.session.setSessionName("Loaded title");
+    expect(loadedFixture.fixture.calls).toContainEqual([
+      "setSessionName",
+      "Loaded title",
+    ]);
+
+    const unloadedFixture = sdkFixture({});
+    const unloadedAdapter = await createPiAdapter(unloadedFixture.sdk, {
+      loadResources: unloadedFixture.loadResources,
+    });
+    await unloadedAdapter.rename(
+      {
+        sessionId: "s1",
+        cwd: "/repo",
+        title: "Before",
+        path: "/sessions/s1.jsonl",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      "/repo",
+      "Unloaded title",
+    );
+    expect(unloadedFixture.calls).toContainEqual([
+      "appendSessionInfo",
+      "Unloaded title",
+    ]);
+    expect(unloadedFixture.calls).not.toContainEqual(
+      expect.arrayContaining(["services"]),
+    );
   });
 
   it("exposes active branch entries for trusted Main projection", async () => {

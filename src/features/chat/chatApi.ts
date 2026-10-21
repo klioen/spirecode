@@ -44,6 +44,11 @@ export interface ChatApi {
     text: string,
   ): Promise<ChatAccepted>;
   abort(worktreeId: string, sessionId: string): Promise<ChatAccepted>;
+  rename(
+    worktreeId: string,
+    sessionId: string,
+    title: string,
+  ): Promise<ChatSessionSummary>;
   delete(worktreeId: string, sessionId: string): Promise<void>;
 }
 
@@ -60,5 +65,6 @@ export const unavailableChatApi: ChatApi = {
   setThinkingLevel: async () => unavailable(),
   send: async () => unavailable(),
   abort: async () => unavailable(),
+  rename: async () => unavailable(),
   delete: async () => unavailable(),
 };

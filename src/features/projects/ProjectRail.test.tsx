@@ -9,7 +9,7 @@ import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
 
 vi.mock("../chat/hostChatApi", () => ({
-  hostChatApi: { list: vi.fn(), delete: vi.fn() },
+  hostChatApi: { list: vi.fn(), rename: vi.fn(), delete: vi.fn() },
 }));
 
 vi.mock("./projectsApi", () => ({
@@ -46,6 +46,7 @@ beforeEach(() => {
   chatRuntime.remove("active-directory");
   chatRuntime.remove("main-chat");
   vi.mocked(hostChatApi.list).mockReset();
+  vi.mocked(hostChatApi.rename).mockReset();
   vi.mocked(hostChatApi.delete).mockReset();
   useEditorStore.setState({ views: {} });
   useProjectsStore.setState({
@@ -350,6 +351,53 @@ describe("ProjectRail", () => {
     expect(() => chatRuntime.getSnapshot("main-chat")).toThrow();
   });
 
+  it("renames a Git session from its context menu and updates an open tab", async () => {
+    vi.mocked(hostChatApi.list).mockResolvedValue([
+      {
+        sessionId: "main-chat",
+        worktreeId: "main",
+        title: "Main chat",
+        updatedAt: 20,
+      },
+    ]);
+    vi.mocked(hostChatApi.rename).mockResolvedValue({
+      sessionId: "main-chat",
+      worktreeId: "main",
+      title: "Renamed chat",
+      createdAt: 10,
+      updatedAt: 30,
+    });
+    useEditorStore.getState().openChat("main", "main-chat", "Main chat");
+    render(<ProjectRail />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Pi sessions for main" }),
+    );
+    const sessionButton = await screen.findByRole("button", {
+      name: "Main chat",
+    });
+    fireEvent.contextMenu(sessionButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename Main chat" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Session name" }), {
+      target: { value: "Renamed chat" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+
+    expect(await screen.findByText("Renamed chat")).toBeVisible();
+    expect(hostChatApi.rename).toHaveBeenCalledWith(
+      "main",
+      "main-chat",
+      "Renamed chat",
+    );
+    expect(useEditorStore.getState().views.main.tabs[0]).toMatchObject({
+      type: "chat",
+      title: "Renamed chat",
+    });
+  });
+
   it("keeps a Git session visible when quick deletion fails", async () => {
     vi.mocked(hostChatApi.list).mockResolvedValue([
       {
@@ -375,6 +423,7 @@ describe("ProjectRail", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
     expect(screen.getByText("Main chat")).toBeInTheDocument();
+    await vi.waitFor(() => expect(sessionButton).toHaveFocus());
   });
 
   it("shows the directory session empty state", async () => {

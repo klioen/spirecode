@@ -79,6 +79,10 @@ class FakeSession implements PiSession {
     return this.getConfig();
   }
 
+  setSessionName(title: string): void {
+    this.calls.push(["setSessionName", title]);
+  }
+
   async send(text: string): Promise<void> {
     this.calls.push(["send", text]);
   }
@@ -125,21 +129,25 @@ async function fixture(): Promise<{
         title: "Chat",
         createdAt: now,
         updatedAt: now,
+        path: path.join(sessionRoot, `${session.sessionId}.jsonl`),
       };
+      await writeFile(record.path, "{}\n");
       records.set(record.sessionId, record);
       return record;
     },
     async list(cwd) {
       return [...records.values()]
         .filter((record) => record.cwd === cwd)
-        .map(({ sessionId, title, createdAt, updatedAt }) => ({
-          sessionId,
-          cwd,
-          title,
-          createdAt,
-          updatedAt,
-          path: `/sessions/${sessionId}`,
-        }));
+        .map(
+          ({ sessionId, title, createdAt, updatedAt, path: sessionPath }) => ({
+            sessionId,
+            cwd,
+            title,
+            createdAt,
+            updatedAt,
+            path: sessionPath ?? path.join(sessionRoot, `${sessionId}.jsonl`),
+          }),
+        );
     },
     async resolveDeleteTarget(cwd, sessionId) {
       const info = (await this.list(cwd)).find(
@@ -147,6 +155,12 @@ async function fixture(): Promise<{
       );
       if (!info) throw new Error("missing");
       return { info, sessionRoot };
+    },
+    async rename(info, cwd, title) {
+      const record = records.get(info.sessionId);
+      if (!record || record.cwd !== cwd) throw new Error("missing");
+      record.title = title;
+      record.updatedAt = Date.now();
     },
     async open(info, cwd) {
       const record = records.get(info.sessionId);
@@ -164,6 +178,148 @@ afterEach(async () => {
 });
 
 describe("ChatService", () => {
+  it("renames a loaded session through the active Pi session", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1");
+    const renamed = await service.rename(
+      "w1",
+      created.sessionId,
+      "  Release notes  ",
+    );
+
+    expect(renamed).toMatchObject({
+      title: "Release notes",
+      updatedAt: created.updatedAt,
+    });
+    expect(records.get(created.sessionId)?.session).toMatchObject({
+      calls: expect.arrayContaining([["setSessionName", "Release notes"]]),
+    });
+  });
+
+  it("accepts titles up to 200 Unicode code points", async () => {
+    const { root, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1");
+    const title = "😀".repeat(200);
+
+    await expect(
+      service.rename("w1", created.sessionId, title),
+    ).resolves.toMatchObject({ title });
+  });
+
+  it("renames an unloaded session without creating an Agent session", async () => {
+    const { root, records, adapter } = await fixture();
+    const sessionPath = path.join(root, "sessions", "existing.jsonl");
+    await writeFile(sessionPath, "{}\n");
+    records.set("existing", {
+      session: new FakeSession("existing"),
+      sessionId: "existing",
+      cwd: root,
+      title: "Before",
+      createdAt: 10,
+      updatedAt: 20,
+    });
+    vi.spyOn(adapter, "list").mockResolvedValueOnce([
+      {
+        sessionId: "existing",
+        cwd: root,
+        title: "Before",
+        path: sessionPath,
+        createdAt: 10,
+        updatedAt: 20,
+      },
+    ]);
+    const rename = vi.spyOn(adapter, "rename");
+    const service = new ChatService(() => root, { adapter });
+
+    const renamed = await service.rename("w1", "existing", "After");
+
+    expect(rename).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "existing", path: sessionPath }),
+      root,
+      "After",
+    );
+    expect(renamed).toMatchObject({
+      sessionId: "existing",
+      title: "After",
+      createdAt: 10,
+      updatedAt: 20,
+    });
+  });
+
+  it("rejects loaded sessions owned by another worktree", async () => {
+    const { root, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1");
+
+    await expect(
+      service.rename("w2", created.sessionId, "Other"),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_NOT_FOUND" });
+  });
+
+  it("rejects a loaded session when its resolved file no longer matches", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1");
+    const replacementPath = path.join(root, "sessions", "replacement.jsonl");
+    await writeFile(replacementPath, "{}\n");
+    records.get(created.sessionId)!.path = replacementPath;
+
+    await expect(
+      service.rename("w1", created.sessionId, "Other"),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_NOT_FOUND" });
+  });
+
+  it("rejects unloaded session paths outside the Pi session root", async () => {
+    const { root, records, adapter } = await fixture();
+    const outside = path.join(
+      os.tmpdir(),
+      `outside-session-${Date.now()}.jsonl`,
+    );
+    await writeFile(outside, "{}\n");
+    cleanup.push(outside);
+    records.set("outside-rename", {
+      session: new FakeSession("outside-rename"),
+      sessionId: "outside-rename",
+      cwd: root,
+      title: "Before",
+      createdAt: 10,
+      updatedAt: 20,
+    });
+    vi.spyOn(adapter, "list").mockResolvedValueOnce([
+      {
+        sessionId: "outside-rename",
+        cwd: root,
+        title: "Before",
+        path: outside,
+        createdAt: 10,
+        updatedAt: 20,
+      },
+    ]);
+    const rename = vi.spyOn(adapter, "rename");
+    const service = new ChatService(() => root, { adapter });
+
+    await expect(
+      service.rename("w1", "outside-rename", "After"),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_NOT_FOUND" });
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "   ", "bad\nname", "bad\u0085name", "x".repeat(201)])(
+    "rejects an invalid session title %j",
+    async (title) => {
+      const { root, adapter } = await fixture();
+      const service = new ChatService(() => root, { adapter });
+      const created = await service.create("w1");
+      await expect(
+        service.rename("w1", created.sessionId, title),
+      ).rejects.toMatchObject({
+        code: "CHAT_FAILED",
+      });
+    },
+  );
+
   it("moves an idle session to trash and disposes a loaded runtime", async () => {
     const { root, records, adapter } = await fixture();
     const trashed: string[] = [];
