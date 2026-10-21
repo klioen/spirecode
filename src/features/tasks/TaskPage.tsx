@@ -1,3 +1,4 @@
+import { RiAddLine, RiNotification3Line, RiTaskLine } from "@remixicon/react";
 import { useEffect, useState } from "react";
 import {
   formatDateTime,
@@ -148,24 +149,41 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
 
   return (
     <main className="task-page">
-      <header>
-        <h1>{t("tasks.heading")}</h1>
-        <button type="button" onClick={() => setCreating(true)}>
-          {t("tasks.new")}
-        </button>
-        <button
-          type="button"
-          aria-expanded={showNotifications}
-          onClick={() => setShowNotifications((value) => !value)}
-        >
-          {t("tasks.notifications", {
-            count: notifications.filter(({ appReadAt }) => appReadAt === null)
-              .length,
-          })}
-        </button>
+      <header className="task-page-header">
+        <div className="task-page-heading">
+          <span className="task-page-heading-icon" aria-hidden="true">
+            <RiTaskLine size={18} />
+          </span>
+          <h1>{t("tasks.heading")}</h1>
+        </div>
+        <div className="task-page-actions">
+          <button
+            className="task-button task-button-secondary"
+            type="button"
+            aria-expanded={showNotifications}
+            onClick={() => setShowNotifications((value) => !value)}
+          >
+            <RiNotification3Line size={15} aria-hidden="true" />
+            {t("tasks.notifications", {
+              count: notifications.filter(({ appReadAt }) => appReadAt === null)
+                .length,
+            })}
+          </button>
+          <button
+            className="task-button task-button-primary"
+            type="button"
+            onClick={() => setCreating(true)}
+          >
+            <RiAddLine size={16} aria-hidden="true" />
+            {t("tasks.new")}
+          </button>
+        </div>
       </header>
       {showNotifications ? (
-        <section aria-label={t("tasks.notificationsHeading")}>
+        <section
+          className="task-notifications"
+          aria-label={t("tasks.notificationsHeading")}
+        >
           {notifications.length === 0 ? (
             <p>{t("tasks.notificationsEmpty")}</p>
           ) : (
@@ -208,6 +226,7 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
           )}
           {notificationCursor ? (
             <button
+              className="task-button task-button-secondary"
               type="button"
               disabled={loadingNotifications}
               onClick={() => {
@@ -242,7 +261,7 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
           ) : null}
         </section>
       ) : null}
-      <fieldset>
+      <fieldset className="task-filters">
         <legend>{t("tasks.showStatuses")}</legend>
         {optionalStatuses.map((status) => (
           <label key={status}>
@@ -263,23 +282,53 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
           </label>
         ))}
       </fieldset>
-      {store.loading ? <p role="status">{t("tasks.loading")}</p> : null}
-      {store.error ? <p role="alert">{store.error}</p> : null}
-      {detailError ? <p role="alert">{detailError}</p> : null}
-      {!store.loading && store.items.length === 0 ? (
-        <p>{t("tasks.empty")}</p>
+      {store.loading ? (
+        <p className="task-page-message" role="status">
+          {t("tasks.loading")}
+        </p>
       ) : null}
-      <ul>
+      {store.error ? (
+        <p className="task-page-message task-page-error" role="alert">
+          {store.error}
+        </p>
+      ) : null}
+      {detailError ? (
+        <p className="task-page-message task-page-error" role="alert">
+          {detailError}
+        </p>
+      ) : null}
+      {!store.loading && store.items.length === 0 ? (
+        <div className="task-empty-state">
+          <RiTaskLine size={24} aria-hidden="true" />
+          <p>{t("tasks.empty")}</p>
+        </div>
+      ) : null}
+      <ul className="task-list">
         {store.items.map((task) => (
           <li key={task.id}>
-            <button type="button" onClick={() => void open(task.id)}>
-              <strong>{task.title}</strong>
-              <span>{t(taskStatusKeys[task.status])}</span>
-              <span>{task.projectName ?? task.projectId}</span>
-              <span>
-                {task.workspace.mode === "new_managed"
-                  ? task.workspace.baseRef
-                  : task.workspace.worktreeId}
+            <button
+              className="task-list-item"
+              type="button"
+              onClick={() => void open(task.id)}
+            >
+              <span
+                className={`task-status-dot task-status-${task.status}`}
+                aria-hidden="true"
+              />
+              <span className="task-list-content">
+                <strong>{task.title}</strong>
+                <span className="task-list-meta">
+                  <span>{task.projectName ?? task.projectId}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="task-list-workspace">
+                    {task.workspace.mode === "new_managed"
+                      ? task.workspace.baseRef
+                      : task.workspace.worktreeId}
+                  </span>
+                </span>
+              </span>
+              <span className={`task-status-badge task-status-${task.status}`}>
+                {t(taskStatusKeys[task.status])}
               </span>
               <time dateTime={new Date(task.updatedAt).toISOString()}>
                 {formatDateTime(task.updatedAt)}
@@ -290,6 +339,7 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
       </ul>
       {store.nextCursor ? (
         <button
+          className="task-button task-button-secondary task-load-more"
           type="button"
           disabled={store.loadingMore}
           onClick={() => void store.loadMore(api)}

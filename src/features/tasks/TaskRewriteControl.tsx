@@ -1,3 +1,4 @@
+import { RiSparkling2Line } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../i18n";
 import type { TaskRewriteInput, TasksApi } from "./tasksApi";
@@ -90,10 +91,12 @@ export function TaskRewriteControl({
   return (
     <div className="task-rewrite-control">
       <button
+        className="task-button task-button-quiet"
         type="button"
         onClick={() => void start()}
         disabled={rewriteId !== null}
       >
+        <RiSparkling2Line size={14} aria-hidden="true" />
         {labels?.optimize ?? t("tasks.rewrite.optimize")}
       </button>
       {rewriteId ? (
@@ -101,7 +104,11 @@ export function TaskRewriteControl({
           <span role="status">
             {labels?.pending ?? t("tasks.rewrite.pending")}
           </span>
-          <button type="button" onClick={() => void cancel()}>
+          <button
+            className="task-button task-button-secondary"
+            type="button"
+            onClick={() => void cancel()}
+          >
             {labels?.cancel ?? t("tasks.rewrite.cancel")}
           </button>
         </>
@@ -116,6 +123,7 @@ export function TaskRewriteControl({
             ))}
           </ul>
           <button
+            className="task-button task-button-primary"
             type="button"
             onClick={() => {
               setUndoValue(value);
@@ -125,13 +133,18 @@ export function TaskRewriteControl({
           >
             {labels?.apply ?? t("tasks.rewrite.apply")}
           </button>
-          <button type="button" onClick={() => setResult(null)}>
+          <button
+            className="task-button task-button-secondary"
+            type="button"
+            onClick={() => setResult(null)}
+          >
             {labels?.reject ?? t("tasks.rewrite.reject")}
           </button>
         </div>
       ) : null}
       {undoValue ? (
         <button
+          className="task-button task-button-secondary"
           type="button"
           onClick={() => {
             onApply(undoValue);
