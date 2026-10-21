@@ -9,7 +9,14 @@ beforeEach(() => useTasksStore.getState().reset());
 it("loads the global list and opens a task detail without an active project", async () => {
   const api = createTasksApiMock();
   vi.mocked(api.list).mockResolvedValue({
-    items: [taskDetail({ title: "Global task", projectName: "SpireCode" })],
+    items: [
+      taskDetail({
+        title: "Global task",
+        projectName: "SpireCode",
+        durationMs: 125_000,
+        tokenCount: 12_345,
+      }),
+    ],
     nextCursor: null,
   });
   vi.mocked(api.get).mockResolvedValue(taskDetail({ title: "Global task" }));
@@ -18,6 +25,8 @@ it("loads the global list and opens a task detail without an active project", as
 
   const taskButton = await screen.findByRole("button", { name: /Global task/ });
   expect(taskButton).toHaveTextContent("SpireCode");
+  expect(taskButton).toHaveTextContent("2m 5s");
+  expect(taskButton).toHaveTextContent("12.3K tokens");
   fireEvent.click(taskButton);
   await waitFor(() => expect(api.get).toHaveBeenCalledWith("task-1"));
   expect(

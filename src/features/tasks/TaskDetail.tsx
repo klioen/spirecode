@@ -9,6 +9,7 @@ import {
 import { useState } from "react";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import type { TaskDetailValue, TaskRunSummary, TasksApi } from "./tasksApi";
+import { formatTaskDuration, formatTaskTokens } from "./taskMetrics";
 
 interface TaskDetailProps {
   api: TasksApi;
@@ -43,7 +44,7 @@ export function TaskDetail({
   onEdit,
   onOpenSession,
 }: TaskDetailProps) {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +104,16 @@ export function TaskDetail({
 
       <section className="task-detail-section task-detail-overview">
         <p>{task.description}</p>
+        <dl className="task-metrics-grid">
+          <div>
+            <dt>{t("tasks.metrics.duration")}</dt>
+            <dd>{formatTaskDuration(task.durationMs, language)}</dd>
+          </div>
+          <div>
+            <dt>{t("tasks.metrics.tokens")}</dt>
+            <dd>{formatTaskTokens(task.tokenCount)}</dd>
+          </div>
+        </dl>
       </section>
 
       <section className="task-detail-section">
