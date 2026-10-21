@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   RiFolder3Line,
   RiGitCommitLine,
@@ -9,6 +15,7 @@ import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { commands } from "../../bindings";
 import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
+import { commandError } from "../../lib/errors";
 import { ChangesPanel } from "../changes/ChangesPanel";
 import { refreshChanges } from "../changes/changesRefresh";
 import { useChangesStore } from "../changes/changesStore";
@@ -53,6 +60,7 @@ export function Workbench() {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const taskSessionNavigationGeneration = useRef(0);
   const [taskProjects, setTaskProjects] = useState<TaskProjectOption[]>([]);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("extensions");
@@ -64,6 +72,7 @@ export function Workbench() {
           !disposed &&
           (!readiness.defaultModelAvailable || !readiness.resourcesHealthy)
         ) {
+          taskSessionNavigationGeneration.current += 1;
           setSettingsSection("agent");
           setSettingsOpen(true);
         }
@@ -81,6 +90,14 @@ export function Workbench() {
   }, []);
   const projects = useProjectsStore((state) => state.projects);
   const activeWorktreeId = useProjectsStore((state) => state.activeWorktreeId);
+  useEffect(
+    () =>
+      useProjectsStore.subscribe((state, previous) => {
+        if (state.activeWorktreeId !== previous.activeWorktreeId)
+          taskSessionNavigationGeneration.current += 1;
+      }),
+    [],
+  );
   useEffect(() => {
     if (!window.spire) return;
     void useTasksStore.getState().load(tasksApi);
@@ -94,6 +111,7 @@ export function Workbench() {
         event.payload?.navigate &&
         event.taskId
       ) {
+        taskSessionNavigationGeneration.current += 1;
         useTasksStore.getState().selectTask(event.taskId);
         setTasksOpen(true);
       }
@@ -229,11 +247,18 @@ export function Workbench() {
           <ProjectRail
             onToggleProjects={workbench.toggleProjects}
             onOpenSettings={() => {
+              taskSessionNavigationGeneration.current += 1;
               setSettingsSection("general");
               setSettingsOpen(true);
             }}
-            onOpenTasks={() => setTasksOpen((open) => !open)}
-            onOpenSession={() => setTasksOpen(false)}
+            onOpenTasks={() => {
+              taskSessionNavigationGeneration.current += 1;
+              setTasksOpen((open) => !open);
+            }}
+            onOpenSession={() => {
+              taskSessionNavigationGeneration.current += 1;
+              setTasksOpen(false);
+            }}
             tasksSelected={tasksOpen}
           />
           <PanelResizeHandle
@@ -292,13 +317,24 @@ export function Workbench() {
             api={tasksApi}
             projects={taskProjects}
             onOpenSession={(worktreeId, sessionId) => {
-              void projectsApi.selectWorktree(worktreeId).then(() => {
-                useProjectsStore.getState().selectWorktree(worktreeId);
-                useEditorStore
-                  .getState()
-                  .openChat(worktreeId, sessionId, "Task");
-                setTasksOpen(false);
-              });
+              const generation = taskSessionNavigationGeneration.current + 1;
+              taskSessionNavigationGeneration.current = generation;
+              void projectsApi.selectWorktree(worktreeId).then(
+                (worktree) => {
+                  if (taskSessionNavigationGeneration.current !== generation)
+                    return;
+                  useProjectsStore.getState().addWorktree(worktree);
+                  useEditorStore
+                    .getState()
+                    .openChat(worktreeId, sessionId, "Task");
+                  setTasksOpen(false);
+                },
+                (error: unknown) => {
+                  if (taskSessionNavigationGeneration.current !== generation)
+                    return;
+                  useProjectsStore.getState().setError(commandError(error));
+                },
+              );
             }}
           />
         ) : active ? (

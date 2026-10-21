@@ -109,10 +109,11 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
         project.id === worktree.projectId
           ? {
               ...project,
-              worktrees: [
-                ...project.worktrees.filter(({ id }) => id !== worktree.id),
-                worktree,
-              ],
+              worktrees: project.worktrees.some(({ id }) => id === worktree.id)
+                ? project.worktrees.map((current) =>
+                    current.id === worktree.id ? worktree : current,
+                  )
+                : [...project.worktrees, worktree],
             }
           : project,
       ),
