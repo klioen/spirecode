@@ -6,6 +6,7 @@ import {
   RiLayoutRightLine,
 } from "@remixicon/react";
 import { SpireCodeMark } from "../../components/SpireCodeMark";
+import { commands } from "../../bindings";
 import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { ChangesPanel } from "../changes/ChangesPanel";
@@ -15,7 +16,12 @@ import { EditorPane } from "../editor/EditorPane";
 import { useEditorStore } from "../editor/editorStore";
 import { FileTree } from "../files/FileTree";
 import { ProjectRail } from "../projects/ProjectRail";
+import { projectsApi } from "../projects/projectsApi";
 import { useProjectsStore } from "../projects/projectsStore";
+import { TaskPage } from "../tasks/TaskPage";
+import type { TaskProjectOption } from "../tasks/TaskForm";
+import { tasksApi } from "../tasks/tasksApi";
+import { useTasksStore } from "../tasks/tasksStore";
 import { settingsApi } from "../settings/settingsApi";
 import { SettingsPage, type SettingsSection } from "../settings/SettingsPage";
 import { BreadcrumbSwitcher } from "./BreadcrumbSwitcher";
@@ -46,6 +52,8 @@ export function Workbench() {
   const { t } = useTranslation();
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [taskProjects, setTaskProjects] = useState<TaskProjectOption[]>([]);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("extensions");
   useEffect(() => {
@@ -73,6 +81,70 @@ export function Workbench() {
   }, []);
   const projects = useProjectsStore((state) => state.projects);
   const activeWorktreeId = useProjectsStore((state) => state.activeWorktreeId);
+  useEffect(() => {
+    if (!window.spire) return;
+    void useTasksStore.getState().load(tasksApi);
+    return tasksApi.subscribe((event) => {
+      if (event.kind === "changed" || event.kind === "notification")
+        void useTasksStore
+          .getState()
+          .invalidate(tasksApi, event.taskId, event.revision);
+      if (
+        event.kind === "notification" &&
+        event.payload?.navigate &&
+        event.taskId
+      ) {
+        useTasksStore.getState().selectTask(event.taskId);
+        setTasksOpen(true);
+      }
+    });
+  }, []);
+  useEffect(() => {
+    if (!tasksOpen) return;
+    let cancelled = false;
+    void Promise.all(
+      projects.map(async (project): Promise<TaskProjectOption> => {
+        const branches =
+          project.kind === "git"
+            ? await commands.gitListOriginBranches(project.id)
+            : { defaultRef: null, branches: [] };
+        const worktrees = await Promise.all(
+          project.worktrees.map(async (worktree) => {
+            const status =
+              project.kind === "git"
+                ? await commands.gitStatus(worktree.id)
+                : { changes: [] };
+            return {
+              id: worktree.id,
+              name: worktree.name,
+              dirty: status.changes.length > 0,
+            };
+          }),
+        );
+        return {
+          id: project.id,
+          name: project.name,
+          kind: project.kind,
+          defaultBaseRef: branches.defaultRef ?? undefined,
+          baseRefs: branches.branches.map((branch) => ({
+            value: branch.ref,
+            label: branch.name,
+          })),
+          worktrees,
+        };
+      }),
+    ).then(
+      (options) => {
+        if (!cancelled) setTaskProjects(options);
+      },
+      () => {
+        if (!cancelled) setTaskProjects([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projects, tasksOpen]);
   const active = useMemo(() => {
     for (const project of projects) {
       const worktree = project.worktrees.find(
@@ -149,7 +221,7 @@ export function Workbench() {
     );
   return (
     <div
-      className={`workbench ${workbench.projectsCollapsed ? "projects-collapsed" : ""} ${workbench.rightCollapsed ? "right-collapsed" : ""}`}
+      className={`workbench ${workbench.projectsCollapsed ? "projects-collapsed" : ""} ${workbench.rightCollapsed || tasksOpen ? "right-collapsed" : ""}`}
       style={style}
     >
       {!workbench.projectsCollapsed && (
@@ -160,6 +232,8 @@ export function Workbench() {
               setSettingsSection("general");
               setSettingsOpen(true);
             }}
+            onOpenTasks={() => setTasksOpen((open) => !open)}
+            tasksSelected={tasksOpen}
           />
           <PanelResizeHandle
             label={t("workbench.resizeProjects")}
@@ -212,13 +286,27 @@ export function Workbench() {
         </div>
       </header>
       <div className="workspace-center">
-        {active ? (
+        {tasksOpen ? (
+          <TaskPage
+            api={tasksApi}
+            projects={taskProjects}
+            onOpenSession={(worktreeId, sessionId) => {
+              void projectsApi.selectWorktree(worktreeId).then(() => {
+                useProjectsStore.getState().selectWorktree(worktreeId);
+                useEditorStore
+                  .getState()
+                  .openChat(worktreeId, sessionId, "Task");
+                setTasksOpen(false);
+              });
+            }}
+          />
+        ) : active ? (
           <EditorPane worktreeId={active.worktree.id} />
         ) : (
           <EmptyWorkbench />
         )}
       </div>
-      {!workbench.rightCollapsed && (
+      {!workbench.rightCollapsed && !tasksOpen && (
         <PanelResizeHandle
           label={t("workbench.resizeRight")}
           edge="right"
@@ -230,39 +318,41 @@ export function Workbench() {
           onReset={() => workbench.resetPanelSize("right")}
         />
       )}
-      <aside className="right-panel">
-        <div className="right-tabs">
-          <Tooltip label={t("workbench.files")}>
-            <button
-              className={visibleRightView === "files" ? "active" : ""}
-              aria-label={t("workbench.files")}
-              onClick={() => workbench.setRightView("files")}
-            >
-              <RiFolder3Line size={15} />
-            </button>
-          </Tooltip>
-          {supportsGit && (
-            <Tooltip label={t("workbench.changes")}>
+      {!tasksOpen && (
+        <aside className="right-panel">
+          <div className="right-tabs">
+            <Tooltip label={t("workbench.files")}>
               <button
-                className={visibleRightView === "changes" ? "active" : ""}
-                aria-label={t("workbench.changes")}
-                onClick={() => workbench.setRightView("changes")}
+                className={visibleRightView === "files" ? "active" : ""}
+                aria-label={t("workbench.files")}
+                onClick={() => workbench.setRightView("files")}
               >
-                <RiGitCommitLine size={15} />
+                <RiFolder3Line size={15} />
               </button>
             </Tooltip>
-          )}
-        </div>
-        {active ? (
-          visibleRightView === "files" ? (
-            <FileTree worktreeId={active.worktree.id} />
+            {supportsGit && (
+              <Tooltip label={t("workbench.changes")}>
+                <button
+                  className={visibleRightView === "changes" ? "active" : ""}
+                  aria-label={t("workbench.changes")}
+                  onClick={() => workbench.setRightView("changes")}
+                >
+                  <RiGitCommitLine size={15} />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+          {active ? (
+            visibleRightView === "files" ? (
+              <FileTree worktreeId={active.worktree.id} />
+            ) : (
+              <ChangesPanel worktreeId={active.worktree.id} />
+            )
           ) : (
-            <ChangesPanel worktreeId={active.worktree.id} />
-          )
-        ) : (
-          <div className="tree-state">{t("workbench.openToBrowse")}</div>
-        )}
-      </aside>
+            <div className="tree-state">{t("workbench.openToBrowse")}</div>
+          )}
+        </aside>
+      )}
       {error && (
         <div className="toast">
           <b>{error.code}</b>

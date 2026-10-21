@@ -460,3 +460,89 @@ describe("IPC command argument validation", () => {
     ).toThrow("Unexpected argument: absolutePath");
   });
 });
+
+describe("Task IPC validation", () => {
+  const createInput = {
+    title: "Fix scrolling",
+    description: "Keep the previous position",
+    projectId: "project-1",
+    workspace: { mode: "new_managed", baseRef: "origin/main" },
+    acceptanceCriteria: ["Position is restored"],
+    automationEnabled: true,
+  };
+
+  it("accepts bounded Task list and create requests", () => {
+    expect(
+      validateCommandArgs("task_list", {
+        limit: 50,
+        statuses: ["running", "needs_review"],
+      }),
+    ).toEqual({ limit: 50, statuses: ["running", "needs_review"] });
+    expect(validateCommandArgs("task_create", { input: createInput })).toEqual({
+      input: createInput,
+    });
+  });
+
+  it("rejects broad, malformed, and oversized Task input", () => {
+    expect(() =>
+      validateCommandArgs("task_create", {
+        input: { ...createInput, path: "/tmp/repository" },
+      }),
+    ).toThrow("unexpected fields");
+    expect(() =>
+      validateCommandArgs("task_create", {
+        input: {
+          ...createInput,
+          workspace: {
+            mode: "existing",
+            worktreeId: "worktree-1",
+            allowDirty: false,
+            cwd: "/tmp/repository",
+          },
+        },
+      }),
+    ).toThrow("unexpected fields");
+    expect(() =>
+      validateCommandArgs("task_list", { limit: 101, statuses: [] }),
+    ).toThrow("limit is too large");
+    expect(() =>
+      validateCommandArgs("task_list", { limit: 50, statuses: ["merged"] }),
+    ).toThrow("statuses is invalid");
+  });
+
+  it("validates revisions and restricted rewrite input", () => {
+    expect(
+      validateCommandArgs("task_run", {
+        taskId: "task-1",
+        expectedRevision: 2,
+      }),
+    ).toEqual({ taskId: "task-1", expectedRevision: 2 });
+    expect(() =>
+      validateCommandArgs("task_run", {
+        taskId: "task-1",
+        expectedRevision: 0,
+      }),
+    ).toThrow("expectedRevision must be a safe integer");
+    expect(
+      validateCommandArgs("task_rewrite_start", {
+        rewriteId: "rewrite-1",
+        input: {
+          title: "Fix scrolling",
+          description: "Clarify this",
+          acceptanceCriteria: ["Verified"],
+        },
+      }),
+    ).toBeDefined();
+    expect(() =>
+      validateCommandArgs("task_rewrite_start", {
+        rewriteId: "rewrite-1",
+        input: {
+          title: "Fix scrolling",
+          description: "Clarify this",
+          acceptanceCriteria: ["Verified"],
+          projectPath: "/tmp/repository",
+        },
+      }),
+    ).toThrow("unexpected fields");
+  });
+});

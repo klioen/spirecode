@@ -51,6 +51,19 @@ export const COMMANDS = [
   "chat_session_abort",
   "chat_session_rename",
   "chat_session_delete",
+  "task_list",
+  "task_get",
+  "task_create",
+  "task_update",
+  "task_run",
+  "task_cancel",
+  "task_complete",
+  "task_request_changes",
+  "task_continue_for_report",
+  "task_notifications_list",
+  "task_notification_mark_read",
+  "task_rewrite_start",
+  "task_rewrite_abort",
   "settings_extensions_list",
   "settings_extension_catalog_list",
   "settings_extension_package_install",
@@ -75,6 +88,7 @@ export const TOPICS = [
   "git://changed",
   "terminal://event",
   "chat://event",
+  "task://event",
 ] as const;
 
 export type CommandName = (typeof COMMANDS)[number];

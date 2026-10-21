@@ -57,6 +57,12 @@ export function subscribeHostEvent<T>(
   return Promise.resolve(window.spire.subscribe(topic, listener));
 }
 
+export function subscribeTaskEvent<T>(
+  listener: (payload: T) => void,
+): () => void {
+  return window.spire.subscribe("task://event", listener);
+}
+
 export function setHostDirtyFileCount(count: number): void {
   window.spire.setDirtyFileCount(count);
 }
@@ -94,6 +100,49 @@ export const commands = {
       targetGroupId,
       beforeProjectId,
     }),
+
+  taskList: (input: Record<string, unknown>) =>
+    command<unknown>("task_list", input),
+  taskGet: (taskId: string) => command<unknown>("task_get", { taskId }),
+  taskCreate: (input: Record<string, unknown>) =>
+    command<unknown>("task_create", { input }),
+  taskUpdate: (
+    taskId: string,
+    expectedRevision: number,
+    patch: Record<string, unknown>,
+  ) => command<unknown>("task_update", { taskId, expectedRevision, patch }),
+  taskRun: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_run", { taskId, expectedRevision }),
+  taskCancel: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_cancel", { taskId, expectedRevision }),
+  taskComplete: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_complete", { taskId, expectedRevision }),
+  taskRequestChanges: (
+    taskId: string,
+    expectedRevision: number,
+    note: string,
+  ) =>
+    command<unknown>("task_request_changes", {
+      taskId,
+      expectedRevision,
+      note,
+    }),
+  taskContinueForReport: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_continue_for_report", {
+      taskId,
+      expectedRevision,
+    }),
+  taskNotificationsList: (input: Record<string, unknown>) =>
+    command<unknown>("task_notifications_list", input),
+  taskNotificationMarkRead: (
+    taskId: string,
+    runId: string | null,
+    kind: string,
+  ) => command<void>("task_notification_mark_read", { taskId, runId, kind }),
+  taskRewriteStart: (rewriteId: string, input: Record<string, unknown>) =>
+    command<void>("task_rewrite_start", { rewriteId, input }),
+  taskRewriteAbort: (rewriteId: string) =>
+    command<void>("task_rewrite_abort", { rewriteId }),
 
   settingsLanguageGet: () => command<AppLanguage>("settings_language_get"),
   settingsAgentReadiness: () =>

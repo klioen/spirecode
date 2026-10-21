@@ -4,6 +4,7 @@ import type { WorktreeSummary } from "../../bindings";
 import { hostChatApi } from "../chat/hostChatApi";
 import { chatRuntime } from "../chat/chatRuntime";
 import { chatResourceId, useEditorStore } from "../editor/editorStore";
+import { useTasksStore } from "../tasks/tasksStore";
 import { ProjectRail } from "./ProjectRail";
 import { projectsApi } from "./projectsApi";
 import { useProjectsStore } from "./projectsStore";
@@ -49,6 +50,12 @@ beforeEach(() => {
   vi.mocked(hostChatApi.rename).mockReset();
   vi.mocked(hostChatApi.delete).mockReset();
   useEditorStore.setState({ views: {} });
+  useTasksStore.setState({
+    items: [],
+    incompleteCount: 0,
+    activeCount: 0,
+    selectedTaskId: null,
+  });
   useProjectsStore.setState({
     groups: [],
     projects: [
@@ -91,6 +98,18 @@ beforeEach(() => {
 });
 
 describe("ProjectRail", () => {
+  it("places the global Task entry above Projects and outside project sorting", () => {
+    render(<ProjectRail />);
+
+    const tasks = screen.getByRole("button", { name: /Tasks/i });
+    const projects = screen.getByText("PROJECTS");
+    expect(
+      tasks.compareDocumentPosition(projects) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(tasks.closest("[data-project-drag-handle]")).toBeNull();
+  });
+
   it("opens an existing folder", async () => {
     vi.mocked(projectsApi.openDialog).mockResolvedValueOnce(null);
     render(<ProjectRail />);

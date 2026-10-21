@@ -4,7 +4,8 @@ export type HostTopic =
   | "filesystem://changed"
   | "git://changed"
   | "terminal://event"
-  | "chat://event";
+  | "chat://event"
+  | "task://event";
 
 export type HostResult<T> =
   { ok: true; value: T } | { ok: false; error: CommandError };

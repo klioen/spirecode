@@ -228,17 +228,41 @@ async function launchGui(command) {
   ]);
   if (earlyExit) throw new Error(`GUI exited during smoke with ${exitCode}`);
 
-  child.kill();
-  if (await exitedWithin(exited, 3_000)) return;
+  const taskDatabase = path.join(userData, "tasks.sqlite3");
+  let databaseCreated = true;
+  try {
+    await access(taskDatabase);
+  } catch {
+    databaseCreated = false;
+  }
 
-  if (process.platform === "win32") {
-    await run("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"]);
-  } else {
-    child.kill("SIGKILL");
+  child.kill();
+  if (!(await exitedWithin(exited, 3_000))) {
+    if (process.platform === "win32") {
+      await run("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"]);
+    } else {
+      child.kill("SIGKILL");
+    }
+    if (!(await exitedWithin(exited, 5_000))) {
+      throw new Error("GUI process did not exit after forced termination");
+    }
   }
-  if (!(await exitedWithin(exited, 5_000))) {
-    throw new Error("GUI process did not exit after forced termination");
-  }
+  if (!databaseCreated)
+    throw new Error("Packaged GUI did not create the Task database");
+  await run(
+    command,
+    [
+      "-e",
+      `const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(${JSON.stringify(taskDatabase)}, { readOnly: true });
+const migration = db.prepare("SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
+const integrity = db.prepare("PRAGMA quick_check").get();
+const tables = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('tasks','task_runs','task_run_steps','task_events','task_notifications')").get();
+db.close();
+process.exit(migration?.version === 2 && migration?.name === "migration-v2" && integrity?.quick_check === "ok" && tables?.count === 5 ? 0 : 2);`,
+    ],
+    { ELECTRON_RUN_AS_NODE: "1" },
+  );
 }
 
 function exitedWithin(exited, milliseconds) {

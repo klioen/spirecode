@@ -5,6 +5,7 @@ import { KeyedQueue } from "./core/asyncQueue.js";
 import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
+import type { TaskRewriteDraft } from "./domains/tasks/piRewrite.js";
 import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
 import type {
   AppLanguage,
@@ -34,6 +35,10 @@ const text = (args: Args, key: string, allowEmpty = false): string => {
     worktreeId: 128,
     terminalId: 128,
     sessionId: 256,
+    taskId: 128,
+    rewriteId: 128,
+    note: 64 * 1024,
+    cursor: 4 * 1024,
     subscriptionId: 128,
     provider: 128,
     modelId: 256,
@@ -71,6 +76,12 @@ const number = (args: Args, key: string): number => {
   const value = args[key];
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new TypeError(`${key} must be a number`);
+  return value;
+};
+const safeInteger = (args: Args, key: string, minimum = 0): number => {
+  const value = number(args, key);
+  if (!Number.isSafeInteger(value) || value < minimum)
+    throw new TypeError(`${key} must be a safe integer`);
   return value;
 };
 const boolean = (args: Args, key: string): boolean => {
@@ -392,11 +403,62 @@ async function invoke(
       const worktreeId = text(args, "worktreeId");
       const sessionId = text(args, "sessionId");
       const subscriptionId = chatSubscriptions.get(sessionId);
-      await state.chat.delete(worktreeId, sessionId);
+      await state.deleteChatSession(worktreeId, sessionId);
       if (chatSubscriptions.get(sessionId) === subscriptionId)
         chatSubscriptions.delete(sessionId);
       return undefined;
     }
+    case "task_list":
+      return state.taskList(taskListInput(args));
+    case "task_get":
+      return state.taskGet(text(args, "taskId"));
+    case "task_create":
+      return state.taskCreate(taskCreateInput(args));
+    case "task_update":
+      return state.taskUpdate(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+        taskUpdateInput(args),
+      );
+    case "task_run":
+      return state.taskRun(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
+    case "task_cancel":
+      return state.taskCancel(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
+    case "task_complete":
+      return state.taskComplete(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
+    case "task_request_changes":
+      return state.taskRequestChanges(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+        text(args, "note"),
+      );
+    case "task_continue_for_report":
+      return state.taskContinueForReport(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
+    case "task_notifications_list":
+      return state.taskNotificationsList(taskNotificationListInput(args));
+    case "task_notification_mark_read":
+      return state.taskNotificationMarkRead(
+        text(args, "taskId"),
+        "runId" in args ? text(args, "runId", true) || null : null,
+        text(args, "kind"),
+      );
+    case "task_rewrite_start":
+      state.startTaskRewrite(text(args, "rewriteId"), taskRewriteInput(args));
+      return undefined;
+    case "task_rewrite_abort":
+      return state.abortTaskRewrite(text(args, "rewriteId"));
     case "settings_extensions_list": {
       const worktreeId = text(args, "worktreeId", true);
       return state.settings.list(
@@ -534,6 +596,19 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
   chat_session_rename: ["worktreeId", "sessionId", "title"],
   chat_session_delete: ["worktreeId", "sessionId"],
+  task_list: ["cursor", "limit", "statuses"],
+  task_get: ["taskId"],
+  task_create: ["input"],
+  task_update: ["taskId", "expectedRevision", "patch"],
+  task_run: ["taskId", "expectedRevision"],
+  task_cancel: ["taskId", "expectedRevision"],
+  task_complete: ["taskId", "expectedRevision"],
+  task_request_changes: ["taskId", "expectedRevision", "note"],
+  task_continue_for_report: ["taskId", "expectedRevision"],
+  task_notifications_list: ["cursor", "limit"],
+  task_notification_mark_read: ["taskId", "runId", "kind"],
+  task_rewrite_start: ["rewriteId", "input"],
+  task_rewrite_abort: ["rewriteId"],
   settings_extensions_list: ["worktreeId"],
   settings_extension_catalog_list: ["query", "sort", "page"],
   settings_extension_package_install: ["packageName"],
@@ -601,10 +676,239 @@ function thinkingLevel(args: Args): ChatThinkingLevel {
   return value as ChatThinkingLevel;
 }
 
+const TASK_STATUSES = new Set([
+  "backlog",
+  "queued",
+  "running",
+  "needs_review",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+function taskListInput(args: Args): {
+  limit: number;
+  cursor?: string;
+  statuses?: import("./domains/tasks/types.js").TaskStatus[];
+} {
+  const limit = safeInteger(args, "limit", 1);
+  if (limit > 100) throw new TypeError("limit is too large");
+  const cursor = "cursor" in args ? text(args, "cursor") : undefined;
+  let statuses: import("./domains/tasks/types.js").TaskStatus[] | undefined;
+  if ("statuses" in args) {
+    if (
+      !Array.isArray(args.statuses) ||
+      args.statuses.length > TASK_STATUSES.size ||
+      args.statuses.some(
+        (status) => typeof status !== "string" || !TASK_STATUSES.has(status),
+      )
+    )
+      throw new TypeError("statuses is invalid");
+    statuses = args.statuses as import("./domains/tasks/types.js").TaskStatus[];
+  }
+  return {
+    limit,
+    ...(cursor ? { cursor } : {}),
+    ...(statuses ? { statuses } : {}),
+  };
+}
+
+function taskCreateInput(
+  args: Args,
+): import("./domains/tasks/service.js").CreateTaskRequest {
+  const input = strictRecord(args.input, "input");
+  exactKeys(input, [
+    "title",
+    "description",
+    "projectId",
+    "workspace",
+    "acceptanceCriteria",
+    "automationEnabled",
+  ]);
+  if (Buffer.byteLength(JSON.stringify(input), "utf8") > 96 * 1024)
+    throw new TypeError("Task input is too large");
+  const title = boundedString(input.title, "title", 200);
+  const description = boundedString(
+    input.description,
+    "description",
+    64 * 1024,
+    true,
+  );
+  const projectId = boundedString(input.projectId, "projectId", 128);
+  if (!Array.isArray(input.acceptanceCriteria))
+    throw new TypeError("acceptanceCriteria must be an array");
+  const acceptanceCriteria = input.acceptanceCriteria.map((criterion) =>
+    boundedString(criterion, "acceptanceCriteria", 2 * 1024),
+  );
+  if (typeof input.automationEnabled !== "boolean")
+    throw new TypeError("automationEnabled must be a boolean");
+  const workspace = taskWorkspace(input.workspace);
+  return {
+    title,
+    description,
+    projectId,
+    workspace,
+    acceptanceCriteria,
+    automationEnabled: input.automationEnabled,
+  };
+}
+
+function taskUpdateInput(
+  args: Args,
+): import("./domains/tasks/service.js").UpdateTaskRequest {
+  const patch = strictRecord(args.patch, "patch");
+  exactKeys(patch, [
+    "title",
+    "description",
+    "workspace",
+    "acceptanceCriteria",
+    "automationEnabled",
+  ]);
+  if (Object.keys(patch).length === 0) throw new TypeError("patch is empty");
+  if (Buffer.byteLength(JSON.stringify(patch), "utf8") > 96 * 1024)
+    throw new TypeError("Task patch is too large");
+  const result: import("./domains/tasks/service.js").UpdateTaskRequest = {};
+  if ("title" in patch) result.title = boundedString(patch.title, "title", 200);
+  if ("description" in patch)
+    result.description = boundedString(
+      patch.description,
+      "description",
+      64 * 1024,
+      true,
+    );
+  if ("workspace" in patch) result.workspace = taskWorkspace(patch.workspace);
+  if ("acceptanceCriteria" in patch) {
+    if (!Array.isArray(patch.acceptanceCriteria))
+      throw new TypeError("acceptanceCriteria must be an array");
+    result.acceptanceCriteria = patch.acceptanceCriteria.map((criterion) => {
+      const value = strictRecord(criterion, "acceptanceCriteria");
+      exactKeys(value, ["id", "text"]);
+      return {
+        ...(value.id === undefined
+          ? {}
+          : { id: boundedString(value.id, "criterion.id", 128) }),
+        text: boundedString(value.text, "criterion.text", 2 * 1024),
+      };
+    });
+  }
+  if ("automationEnabled" in patch) {
+    if (typeof patch.automationEnabled !== "boolean")
+      throw new TypeError("automationEnabled must be a boolean");
+    result.automationEnabled = patch.automationEnabled;
+  }
+  return result;
+}
+
+function taskNotificationListInput(args: Args): {
+  limit: number;
+  cursor?: string;
+} {
+  const limit = safeInteger(args, "limit", 1);
+  if (limit > 100) throw new TypeError("limit is too large");
+  const cursor = "cursor" in args ? text(args, "cursor") : undefined;
+  return { limit, ...(cursor ? { cursor } : {}) };
+}
+
+function taskRewriteInput(args: Args): TaskRewriteDraft {
+  const input = strictRecord(args.input, "input");
+  exactKeys(input, ["title", "description", "acceptanceCriteria"]);
+  if (!Array.isArray(input.acceptanceCriteria))
+    throw new TypeError("acceptanceCriteria must be an array");
+  return {
+    title: boundedString(input.title, "title", 200),
+    description: boundedString(
+      input.description,
+      "description",
+      64 * 1024,
+      true,
+    ),
+    acceptanceCriteria: input.acceptanceCriteria
+      .map((criterion) =>
+        boundedString(criterion, "acceptanceCriteria", 2 * 1024, true).trim(),
+      )
+      .filter(Boolean),
+  };
+}
+
+function taskWorkspace(
+  value: unknown,
+): import("./domains/tasks/types.js").WorkspaceRequest {
+  const workspace = strictRecord(value, "workspace");
+  if (workspace.mode === "new_managed") {
+    exactKeys(workspace, ["mode", "baseRef"]);
+    return {
+      mode: "new_managed",
+      baseRef: boundedString(workspace.baseRef, "baseRef", 1024),
+    };
+  }
+  if (workspace.mode === "existing") {
+    exactKeys(workspace, ["mode", "worktreeId", "allowDirty"]);
+    if (typeof workspace.allowDirty !== "boolean")
+      throw new TypeError("allowDirty must be a boolean");
+    return {
+      mode: "existing",
+      worktreeId: boundedString(workspace.worktreeId, "worktreeId", 128),
+      allowDirty: workspace.allowDirty,
+    };
+  }
+  throw new TypeError("workspace mode is invalid");
+}
+
+function strictRecord(value: unknown, field: string): Args {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    (Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null)
+  )
+    throw new TypeError(`${field} must be an object`);
+  return value as Args;
+}
+
+function exactKeys(value: Args, keys: readonly string[]): void {
+  const allowed = new Set(keys);
+  if (
+    Object.keys(value).length !== keys.length ||
+    Object.keys(value).some((key) => !allowed.has(key))
+  )
+    throw new TypeError("Task input contains unexpected fields");
+}
+
+function boundedString(
+  value: unknown,
+  field: string,
+  maximumBytes: number,
+  allowEmpty = false,
+): string {
+  if (typeof value !== "string")
+    throw new TypeError(`${field} must be a string`);
+  if (
+    (!allowEmpty && !value.trim()) ||
+    Buffer.byteLength(value, "utf8") > maximumBytes
+  )
+    throw new TypeError(`${field} is empty or too large`);
+  return value;
+}
+
 export function validateCommandArgs(command: CommandName, args: Args): Args {
   const allowed = new Set(ALLOWED_FIELDS[command]);
   for (const key of Object.keys(args))
     if (!allowed.has(key)) throw new TypeError(`Unexpected argument: ${key}`);
+
+  if (command === "task_list") {
+    taskListInput(args);
+    return args;
+  }
+  if (command === "task_create") {
+    taskCreateInput(args);
+    return args;
+  }
+  if (command === "task_rewrite_start") {
+    text(args, "rewriteId");
+    taskRewriteInput(args);
+    return args;
+  }
 
   for (const key of allowed) {
     if (
@@ -614,7 +918,9 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
       !(key in args)
     )
       continue;
-    if (key === "cols" || key === "rows" || key === "page") number(args, key);
+    if (key === "expectedRevision") safeInteger(args, key, 1);
+    else if (key === "cols" || key === "rows" || key === "page")
+      number(args, key);
     else if (key === "force" || key === "enabled" || key === "untracked")
       boolean(args, key);
     else if (

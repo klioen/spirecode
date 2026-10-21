@@ -1,0 +1,368 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { openTaskDatabase, type TaskDatabase } from "./database.js";
+import { TaskRepository } from "./repository.js";
+import type { CreateTaskInput, TaskRunReport } from "./types.js";
+
+const directories: string[] = [];
+let database: TaskDatabase;
+let repository: TaskRepository;
+let now: number;
+
+const taskInput: CreateTaskInput = {
+  id: "10000000-0000-4000-8000-000000000001",
+  title: "  Ship task foundation  ",
+  description: "Persist tasks safely",
+  projectId: "20000000-0000-4000-8000-000000000001",
+  workspace: { mode: "new_managed", baseRef: "refs/remotes/origin/main" },
+  acceptanceCriteria: [
+    { id: "30000000-0000-4000-8000-000000000001", text: " Tests pass " },
+  ],
+  automationEnabled: false,
+};
+
+beforeEach(() => {
+  const directory = mkdtempSync(join(tmpdir(), "spire-task-repository-"));
+  directories.push(directory);
+  now = 1_700_000_000_000;
+  database = openTaskDatabase(join(directory, "tasks.sqlite3"), {
+    now: () => now,
+  });
+  repository = new TaskRepository(database.connection, { now: () => now });
+});
+
+afterEach(() => {
+  database.close();
+  for (const directory of directories.splice(0)) {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+function createTask() {
+  return repository.createTask(taskInput);
+}
+
+function createRun(expectedRevision = 1) {
+  return repository.createRun(taskInput.id, expectedRevision, {
+    id: "40000000-0000-4000-8000-000000000001",
+    projectId: taskInput.projectId,
+    promptMarker: "spire-task-run:40000000-0000-4000-8000-000000000001",
+    ownsManagedWorktree: true,
+    worktreeName: "task-40000000-ship-task-foundation",
+    baseRef: "refs/remotes/origin/main",
+  });
+}
+
+describe("TaskRepository", () => {
+  it("creates, gets, and lists normalized tasks", () => {
+    const created = createTask();
+    expect(created).toMatchObject({
+      title: "Ship task foundation",
+      status: "backlog",
+      revision: 1,
+      workspace: { mode: "new_managed", baseRef: "refs/remotes/origin/main" },
+      acceptanceCriteria: [{ text: "Tests pass" }],
+    });
+    expect(repository.getTask(created.id)).toEqual(created);
+    expect(repository.listTasks({ limit: 10 })).toEqual({
+      items: [created],
+      nextCursor: null,
+    });
+  });
+
+  it("updates editable task fields with a revision guard", () => {
+    const created = createTask();
+    const updated = repository.updateTask(created.id, created.revision, {
+      title: "Ship the complete task foundation",
+      description: "Updated scope",
+      workspace: taskInput.workspace,
+      acceptanceCriteria: taskInput.acceptanceCriteria,
+      automationEnabled: false,
+    });
+
+    expect(updated).toMatchObject({
+      title: "Ship the complete task foundation",
+      description: "Updated scope",
+      automationEnabled: false,
+      revision: 2,
+    });
+    expect(() =>
+      repository.updateTask(created.id, created.revision, {
+        title: "Stale",
+        description: "",
+        workspace: taskInput.workspace,
+        acceptanceCriteria: taskInput.acceptanceCriteria,
+        automationEnabled: false,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "TASK_CONFLICT" }));
+  });
+
+  it("paginates deterministically and filters fixed statuses", () => {
+    createTask();
+    now += 1;
+    repository.createTask({
+      ...taskInput,
+      id: "10000000-0000-4000-8000-000000000002",
+      title: "Second",
+    });
+
+    const first = repository.listTasks({ limit: 1, statuses: ["backlog"] });
+    expect(first.items.map((task) => task.title)).toEqual(["Second"]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = repository.listTasks({ limit: 1, cursor: first.nextCursor });
+    expect(second.items.map((task) => task.title)).toEqual([
+      "Ship task foundation",
+    ]);
+  });
+
+  it("uses revision guards and creates only one active run", () => {
+    createTask();
+    const { task, run } = createRun();
+    expect(task).toMatchObject({
+      status: "queued",
+      activeRunId: run.id,
+      revision: 2,
+    });
+    expect(run).toMatchObject({
+      attempt: 1,
+      status: "queued",
+      sagaPhase: "created",
+      revision: 1,
+    });
+    expect(repository.taskCounts()).toEqual({
+      incompleteCount: 1,
+      activeCount: 1,
+    });
+
+    expect(() => createRun(1)).toThrowError(
+      expect.objectContaining({ code: "TASK_CONFLICT" }),
+    );
+    expect(() =>
+      repository.createRun(taskInput.id, 2, {
+        id: "40000000-0000-4000-8000-000000000002",
+        projectId: taskInput.projectId,
+        promptMarker: "spire-task-run:40000000-0000-4000-8000-000000000002",
+        ownsManagedWorktree: false,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "TASK_ACTIVE_RUN_EXISTS" }));
+  });
+
+  it("transitions task and run atomically with revision checks", () => {
+    createTask();
+    const { run } = createRun();
+    now += 1;
+    const updated = repository.transitionRun(run.id, 1, "provisioning", {
+      sagaPhase: "workspace_intent",
+      taskStatus: "running",
+    });
+    expect(updated.run).toMatchObject({
+      status: "provisioning",
+      sagaPhase: "workspace_intent",
+      revision: 2,
+    });
+    expect(updated.task).toMatchObject({ status: "running", revision: 3 });
+
+    expect(() => repository.transitionRun(run.id, 1, "prompting")).toThrowError(
+      expect.objectContaining({ code: "TASK_CONFLICT" }),
+    );
+    expect(() => repository.transitionRun(run.id, 2, "reported")).toThrowError(
+      expect.objectContaining({ code: "TASK_INVALID_STATE" }),
+    );
+  });
+
+  it("lists runs newest-first and keeps reporting on the dedicated path", () => {
+    createTask();
+    const { run } = createRun();
+    expect(repository.listRuns(taskInput.id, { limit: 10 })).toEqual({
+      items: [run],
+      nextCursor: null,
+    });
+    expect(repository.getRun(run.id)).toEqual(run);
+
+    const provisioning = repository.transitionRun(run.id, 1, "provisioning", {
+      taskStatus: "running",
+    });
+    const prompting = repository.transitionRun(
+      run.id,
+      provisioning.run.revision,
+      "prompting",
+    );
+    const running = repository.transitionRun(
+      run.id,
+      prompting.run.revision,
+      "running",
+    );
+    expect(() =>
+      repository.transitionRun(run.id, running.run.revision, "reported"),
+    ).toThrowError(expect.objectContaining({ code: "TASK_INVALID_STATE" }));
+  });
+
+  it("persists workspace/session bindings and terminal failures", () => {
+    createTask();
+    const { run } = createRun();
+    const provisioning = repository.transitionRun(run.id, 1, "provisioning", {
+      sagaPhase: "workspace_intent",
+      taskStatus: "running",
+    });
+    const workspace = repository.bindRunWorkspace(
+      run.id,
+      provisioning.run.revision,
+      "50000000-0000-4000-8000-000000000001",
+    );
+    expect(workspace).toMatchObject({
+      worktreeId: "50000000-0000-4000-8000-000000000001",
+      sagaPhase: "workspace_ready",
+    });
+    const prompting = repository.transitionRun(
+      run.id,
+      workspace.revision,
+      "prompting",
+      { sagaPhase: "session_intent" },
+    );
+    const session = repository.bindRunSession(
+      run.id,
+      prompting.run.revision,
+      "60000000-0000-4000-8000-000000000001",
+      "/session.jsonl",
+    );
+    expect(session).toMatchObject({
+      sessionId: "60000000-0000-4000-8000-000000000001",
+      sessionPath: "/session.jsonl",
+      sagaPhase: "session_ready",
+    });
+    expect(repository.listActiveRuns()).toHaveLength(1);
+
+    const failed = repository.failRun(run.id, session.revision, {
+      code: "TASK_PROMPT_FAILED",
+      message: "Prompt was rejected",
+      retryable: true,
+    });
+    expect(failed.task).toMatchObject({ status: "failed", activeRunId: null });
+    expect(failed.run).toMatchObject({
+      status: "failed",
+      sagaPhase: "terminal",
+      error: { code: "TASK_PROMPT_FAILED", retryable: true },
+    });
+    expect(repository.listActiveRuns()).toEqual([]);
+  });
+
+  it("completes only a task that is awaiting review", () => {
+    createTask();
+    expect(() => repository.completeTask(taskInput.id, 1)).toThrowError(
+      expect.objectContaining({ code: "TASK_INVALID_STATE" }),
+    );
+  });
+
+  it("records the first valid report and makes identical retries idempotent", () => {
+    createTask();
+    const { run } = createRun();
+    const provisioning = repository.transitionRun(run.id, 1, "provisioning", {
+      taskStatus: "running",
+    });
+    const prompting = repository.transitionRun(
+      run.id,
+      provisioning.run.revision,
+      "prompting",
+    );
+    const running = repository.transitionRun(
+      run.id,
+      prompting.run.revision,
+      "running",
+    );
+    const report: TaskRunReport = {
+      outcome: "success",
+      summary: "Done",
+      acceptanceCriteria: [
+        {
+          criterionId: taskInput.acceptanceCriteria[0].id,
+          status: "passed",
+          evidence: "vitest passed",
+        },
+      ],
+      tests: [
+        { command: "pnpm exec vitest run", status: "passed", summary: "green" },
+      ],
+    };
+
+    const recorded = repository.reportRun(run.id, running.run.revision, report);
+    expect(recorded.run).toMatchObject({
+      status: "reported",
+      report,
+      reportedAt: now,
+    });
+    expect(recorded.task).toMatchObject({
+      status: "needs_review",
+      activeRunId: null,
+    });
+    expect(repository.reportRun(run.id, 1, report)).toEqual(recorded);
+    expect(() =>
+      repository.reportRun(run.id, recorded.run.revision, {
+        ...report,
+        summary: "Different",
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "TASK_RESULT_ALREADY_REPORTED" }),
+    );
+  });
+
+  it("stores bounded events, steps, and deduplicated notifications", () => {
+    createTask();
+    const { run } = createRun();
+    repository.upsertRunStep(run.id, "workspace", "intent", {
+      source: "managed",
+    });
+    repository.upsertRunStep(run.id, "workspace", "done", { worktreeId: "w1" });
+    expect(repository.listRunSteps(run.id)).toEqual([
+      expect.objectContaining({
+        step: "workspace",
+        state: "done",
+        details: { worktreeId: "w1" },
+      }),
+    ]);
+
+    repository.appendEvent(taskInput.id, run.id, "run.created", { attempt: 1 });
+    expect(repository.listEvents(taskInput.id, { limit: 10 })).toEqual([
+      expect.objectContaining({ type: "run.created", payload: { attempt: 1 } }),
+    ]);
+
+    expect(repository.createNotification(taskInput.id, run.id, "failed")).toBe(
+      true,
+    );
+    expect(repository.createNotification(taskInput.id, run.id, "failed")).toBe(
+      false,
+    );
+    now += 1;
+    expect(
+      repository.createNotification(taskInput.id, null, "task-level"),
+    ).toBe(true);
+    expect(
+      repository.createNotification(taskInput.id, null, "task-level"),
+    ).toBe(false);
+    expect(repository.listNotifications({ limit: 10 }).items).toEqual([
+      expect.objectContaining({
+        taskId: taskInput.id,
+        runId: null,
+        kind: "task-level",
+      }),
+      expect.objectContaining({
+        taskId: taskInput.id,
+        runId: run.id,
+        kind: "failed",
+        appReadAt: null,
+      }),
+    ]);
+    repository.markNotificationRead(taskInput.id, run.id, "failed");
+    expect(repository.listNotifications({ limit: 10 }).items[1].appReadAt).toBe(
+      now,
+    );
+  });
+
+  it("rejects invalid input before writing", () => {
+    expect(() =>
+      repository.createTask({ ...taskInput, acceptanceCriteria: [] }),
+    ).toThrowError(expect.objectContaining({ code: "TASK_RESULT_INVALID" }));
+    expect(repository.listTasks({ limit: 10 }).items).toEqual([]);
+  });
+});

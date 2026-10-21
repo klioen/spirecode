@@ -178,6 +178,106 @@ afterEach(async () => {
 });
 
 describe("ChatService", () => {
+  it("keeps ordinary create behavior and forwards custom tools only when provided", async () => {
+    const { root, adapter } = await fixture();
+    const create = vi.spyOn(adapter, "create");
+    const service = new ChatService(() => root, { adapter });
+
+    await service.create("w1");
+    const customTools = [{ name: "task_report" }];
+    await service.create("w1", { customTools });
+
+    expect(create).toHaveBeenNthCalledWith(1, root);
+    expect(create).toHaveBeenNthCalledWith(2, root, { customTools });
+  });
+
+  it("notifies multiple internal observers alongside the Renderer subscriber", async () => {
+    const { root, records, adapter } = await fixture();
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+    const renderer: unknown[] = [];
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1", {
+      onEvent: (event) => first.push(event),
+    });
+
+    await service.ensureLoaded("w1", created.sessionId, {
+      onEvent: (event) => second.push(event),
+    });
+    await service.attach("w1", created.sessionId, (event) =>
+      renderer.push(event),
+    );
+    const session = records.get(created.sessionId)?.session as FakeSession;
+    session.emit({ type: "agent_end", messages: [{ content: "private" }] });
+
+    expect(first).toEqual([{ type: "agent_end" }]);
+    expect(second).toEqual([{ type: "agent_end" }]);
+    expect(renderer).toEqual([
+      {
+        sessionId: created.sessionId,
+        sequence: 1,
+        event: { type: "agent_end" },
+      },
+    ]);
+
+    await service.closeWorktree("w1");
+    session.emit({ type: "agent_start" });
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+  });
+
+  it("loads an internal session without occupying the Renderer subscriber", async () => {
+    const { root, records, adapter } = await fixture();
+    const seed = await adapter.create(root);
+    const open = vi.spyOn(adapter, "open");
+    const service = new ChatService(() => root, { adapter });
+    const internal: unknown[] = [];
+    const renderer: unknown[] = [];
+    const customTools = [{ name: "task_report" }];
+
+    await service.ensureLoaded("w1", seed.sessionId, {
+      customTools,
+      onEvent: (event) => internal.push(event),
+    });
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: seed.sessionId }),
+      root,
+      { customTools },
+    );
+    await service.attach("w1", seed.sessionId, (event) => renderer.push(event));
+    (records.get(seed.sessionId)?.session as FakeSession).emit({
+      type: "agent_start",
+    });
+
+    expect(internal).toEqual([{ type: "agent_start" }]);
+    expect(renderer).toEqual([
+      {
+        sessionId: seed.sessionId,
+        sequence: 1,
+        event: { type: "agent_start" },
+      },
+    ]);
+  });
+
+  it("finds a marker recursively in loaded messages and entries", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1");
+    const session = records.get(created.sessionId)?.session as FakeSession;
+    session.messages = [{ role: "user", content: [{ text: "run:alpha" }] }];
+    session.entries = [{ data: { nested: ["prefix marker:beta suffix"] } }];
+
+    await expect(
+      service.sessionContainsText("w1", created.sessionId, "run:alpha"),
+    ).resolves.toBe(true);
+    await expect(
+      service.sessionContainsText("w1", created.sessionId, "marker:beta"),
+    ).resolves.toBe(true);
+    await expect(
+      service.sessionContainsText("w1", created.sessionId, "missing"),
+    ).resolves.toBe(false);
+  });
+
   it("renames a loaded session through the active Pi session", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(() => root, { adapter });

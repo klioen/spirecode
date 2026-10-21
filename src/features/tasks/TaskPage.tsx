@@ -1,0 +1,302 @@
+import { useEffect, useState } from "react";
+import {
+  formatDateTime,
+  useTranslation,
+  type TranslationKey,
+} from "../../i18n";
+import { TaskDetail } from "./TaskDetail";
+import { TaskForm, type TaskProjectOption } from "./TaskForm";
+import type {
+  TaskDetailValue,
+  TaskNotificationValue,
+  TaskStatus,
+  TasksApi,
+} from "./tasksApi";
+import { DEFAULT_TASK_STATUSES, useTasksStore } from "./tasksStore";
+
+interface TaskPageProps {
+  api: TasksApi;
+  projects: TaskProjectOption[];
+  onOpenSession?: (worktreeId: string, sessionId: string) => void;
+}
+
+const optionalStatuses: TaskStatus[] = ["completed", "cancelled"];
+const taskStatusKeys: Record<TaskStatus, TranslationKey> = {
+  backlog: "tasks.status.backlog",
+  queued: "tasks.status.queued",
+  running: "tasks.status.running",
+  needs_review: "tasks.status.needsReview",
+  completed: "tasks.status.completed",
+  failed: "tasks.status.failed",
+  cancelled: "tasks.status.cancelled",
+};
+
+export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
+  const { t } = useTranslation();
+  const store = useTasksStore();
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [detail, setDetail] = useState<TaskDetailValue | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<TaskNotificationValue[]>(
+    [],
+  );
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationCursor, setNotificationCursor] = useState<string | null>(
+    null,
+  );
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  useEffect(() => {
+    void store.load(api);
+    const refreshNotifications = () =>
+      void api.notificationsList({ limit: 50 }).then((page) => {
+        setNotifications(page.items);
+        setNotificationCursor(page.nextCursor);
+      });
+    refreshNotifications();
+    return api.subscribe((event) => {
+      if (event.kind === "notification") refreshNotifications();
+    });
+  }, [api]);
+
+  useEffect(() => {
+    if (!store.selectedTaskId || detail?.id === store.selectedTaskId) return;
+    void api
+      .get(store.selectedTaskId)
+      .then(setDetail, (error: unknown) =>
+        setDetailError(
+          error instanceof Error ? error.message : t("tasks.openFailed"),
+        ),
+      );
+  }, [api, detail?.id, store.selectedTaskId, t]);
+
+  const selectedSummary = store.items.find(
+    ({ id }) => id === store.selectedTaskId,
+  );
+  useEffect(() => {
+    if (
+      !detail ||
+      !selectedSummary ||
+      selectedSummary.revision <= detail.revision
+    )
+      return;
+    void api
+      .get(detail.id)
+      .then(setDetail, (error: unknown) =>
+        setDetailError(
+          error instanceof Error ? error.message : t("tasks.refreshFailed"),
+        ),
+      );
+  }, [api, detail, selectedSummary?.revision, t]);
+
+  const open = async (taskId: string) => {
+    store.selectTask(taskId);
+    setDetailError(null);
+    try {
+      setDetail(await api.get(taskId));
+    } catch (error) {
+      setDetailError(
+        error instanceof Error ? error.message : t("tasks.openFailed"),
+      );
+    }
+  };
+
+  if (creating || (editing && detail)) {
+    return (
+      <main className="task-page">
+        <TaskForm
+          api={api}
+          projects={projects}
+          task={editing ? (detail ?? undefined) : undefined}
+          onCancel={() => {
+            setCreating(false);
+            setEditing(false);
+          }}
+          onCreated={(task) => {
+            setCreating(false);
+            setEditing(false);
+            setDetail(task);
+            store.selectTask(task.id);
+            void store.load(api);
+          }}
+        />
+      </main>
+    );
+  }
+
+  if (detail && store.selectedTaskId === detail.id) {
+    return (
+      <main className="task-page">
+        <TaskDetail
+          api={api}
+          task={detail}
+          onChange={(task) => {
+            setDetail(task);
+            void store.load(api);
+          }}
+          onEdit={() => setEditing(true)}
+          onBack={() => {
+            store.selectTask(null);
+            setDetail(null);
+          }}
+          onOpenSession={onOpenSession}
+        />
+      </main>
+    );
+  }
+
+  return (
+    <main className="task-page">
+      <header>
+        <h1>{t("tasks.heading")}</h1>
+        <button type="button" onClick={() => setCreating(true)}>
+          {t("tasks.new")}
+        </button>
+        <button
+          type="button"
+          aria-expanded={showNotifications}
+          onClick={() => setShowNotifications((value) => !value)}
+        >
+          {t("tasks.notifications", {
+            count: notifications.filter(({ appReadAt }) => appReadAt === null)
+              .length,
+          })}
+        </button>
+      </header>
+      {showNotifications ? (
+        <section aria-label={t("tasks.notificationsHeading")}>
+          {notifications.length === 0 ? (
+            <p>{t("tasks.notificationsEmpty")}</p>
+          ) : (
+            <ul>
+              {notifications.map((notification) => (
+                <li
+                  key={`${notification.taskId}:${notification.runId ?? ""}:${notification.kind}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void api.notificationMarkRead(
+                        notification.taskId,
+                        notification.runId,
+                        notification.kind,
+                      );
+                      setNotifications((items) =>
+                        items.map((item) =>
+                          item === notification
+                            ? { ...item, appReadAt: Date.now() }
+                            : item,
+                        ),
+                      );
+                      void open(notification.taskId);
+                    }}
+                  >
+                    {t("tasks.notificationItem", {
+                      kind: t(
+                        notification.kind === "needs_review"
+                          ? "tasks.notification.needsReview"
+                          : notification.kind === "awaiting_report"
+                            ? "tasks.notification.awaitingReport"
+                            : "tasks.notification.failed",
+                      ),
+                    })}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {notificationCursor ? (
+            <button
+              type="button"
+              disabled={loadingNotifications}
+              onClick={() => {
+                setLoadingNotifications(true);
+                void api
+                  .notificationsList({
+                    limit: 50,
+                    cursor: notificationCursor,
+                  })
+                  .then((page) => {
+                    setNotifications((items) => [
+                      ...items,
+                      ...page.items.filter(
+                        (candidate) =>
+                          !items.some(
+                            (item) =>
+                              item.taskId === candidate.taskId &&
+                              item.runId === candidate.runId &&
+                              item.kind === candidate.kind,
+                          ),
+                      ),
+                    ]);
+                    setNotificationCursor(page.nextCursor);
+                  })
+                  .finally(() => setLoadingNotifications(false));
+              }}
+            >
+              {loadingNotifications
+                ? t("tasks.loadingMore")
+                : t("tasks.loadMoreNotifications")}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
+      <fieldset>
+        <legend>{t("tasks.showStatuses")}</legend>
+        {optionalStatuses.map((status) => (
+          <label key={status}>
+            <input
+              type="checkbox"
+              checked={store.statuses.includes(status)}
+              onChange={(event) => {
+                const statuses = event.target.checked
+                  ? [...store.statuses, status]
+                  : store.statuses.filter((item) => item !== status);
+                store.setStatuses(
+                  statuses.length ? statuses : DEFAULT_TASK_STATUSES,
+                );
+                void useTasksStore.getState().load(api);
+              }}
+            />
+            {t(taskStatusKeys[status])}
+          </label>
+        ))}
+      </fieldset>
+      {store.loading ? <p role="status">{t("tasks.loading")}</p> : null}
+      {store.error ? <p role="alert">{store.error}</p> : null}
+      {detailError ? <p role="alert">{detailError}</p> : null}
+      {!store.loading && store.items.length === 0 ? (
+        <p>{t("tasks.empty")}</p>
+      ) : null}
+      <ul>
+        {store.items.map((task) => (
+          <li key={task.id}>
+            <button type="button" onClick={() => void open(task.id)}>
+              <strong>{task.title}</strong>
+              <span>{t(taskStatusKeys[task.status])}</span>
+              <span>{task.projectName ?? task.projectId}</span>
+              <span>
+                {task.workspace.mode === "new_managed"
+                  ? task.workspace.baseRef
+                  : task.workspace.worktreeId}
+              </span>
+              <time dateTime={new Date(task.updatedAt).toISOString()}>
+                {formatDateTime(task.updatedAt)}
+              </time>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {store.nextCursor ? (
+        <button
+          type="button"
+          disabled={store.loadingMore}
+          onClick={() => void store.loadMore(api)}
+        >
+          {store.loadingMore ? t("tasks.loadingMore") : t("tasks.loadMore")}
+        </button>
+      ) : null}
+    </main>
+  );
+}

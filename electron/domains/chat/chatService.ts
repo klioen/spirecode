@@ -24,6 +24,12 @@ import {
 const MAX_BUFFERED_EVENTS = 512;
 const MAX_PROMPT_BYTES = 64 * 1024;
 
+export interface ChatSessionInternalOptions {
+  customTools?: unknown[];
+  sessionId?: string;
+  onEvent?: (event: Record<string, unknown>) => void;
+}
+
 interface SessionState extends PiSessionRecord {
   worktreeId: string;
   sequence: number;
@@ -33,6 +39,7 @@ interface SessionState extends PiSessionRecord {
   error: null;
   buffered: ChatEventEnvelope[];
   subscriber?: ChatEventSubscriber;
+  observers: Set<(event: Record<string, unknown>) => void>;
   attaching: boolean;
   needsResnapshot: boolean;
   unsubscribe: () => void;
@@ -68,18 +75,87 @@ export class ChatService {
     this.trashItem = options.trashItem;
   }
 
-  async create(worktreeId: string): Promise<ChatSessionSummary> {
+  async create(
+    worktreeId: string,
+    options: ChatSessionInternalOptions = {},
+  ): Promise<ChatSessionSummary> {
     const cwd = await this.root(worktreeId);
     try {
-      const record = this.register(
-        await (await this.adapter()).create(cwd),
-        worktreeId,
-        cwd,
-      );
+      const adapter = await this.adapter();
+      const created =
+        options.customTools === undefined && options.sessionId === undefined
+          ? await adapter.create(cwd)
+          : await adapter.create(cwd, {
+              ...(options.customTools === undefined
+                ? {}
+                : { customTools: options.customTools }),
+              ...(options.sessionId === undefined
+                ? {}
+                : { sessionId: options.sessionId }),
+            });
+      const record = this.register(created, worktreeId, cwd, options);
       return this.summary(record);
     } catch (error) {
       throw mapChatError(error, "Unable to create agent session");
     }
+  }
+
+  ensureLoaded(
+    worktreeId: string,
+    sessionId: string,
+    options: ChatSessionInternalOptions = {},
+  ): Promise<ChatSessionSummary> {
+    return this.runLifecycle(sessionId, async () => {
+      const cwd = await this.root(worktreeId);
+      let record = this.sessions.get(sessionId);
+      if (record) {
+        this.assertOwner(record, worktreeId);
+        this.addObserver(record, options.onEvent);
+        return this.summary(record);
+      }
+
+      try {
+        const adapter = await this.adapter();
+        const info = (await adapter.list(cwd)).find(
+          (item) => item.sessionId === sessionId,
+        );
+        if (!info) throw notFound();
+        const opened =
+          options.customTools === undefined
+            ? await adapter.open(info, cwd)
+            : await adapter.open(info, cwd, {
+                customTools: options.customTools,
+              });
+        record = this.register(opened, worktreeId, cwd, options);
+        return this.summary(record);
+      } catch (error) {
+        throw mapChatError(error, "Unable to load agent session");
+      }
+    });
+  }
+
+  sessionStatus(worktreeId: string, sessionId: string): ChatRunStatus {
+    return this.requireUsable(worktreeId, sessionId).status;
+  }
+
+  sessionContainsText(
+    worktreeId: string,
+    sessionId: string,
+    marker: string,
+  ): Promise<boolean> {
+    return this.runLifecycle(sessionId, async () => {
+      await this.root(worktreeId);
+      const record = this.requireUsable(worktreeId, sessionId);
+      try {
+        const [messages, entries] = await Promise.all([
+          record.session.getMessages(),
+          record.session.getEntries(),
+        ]);
+        return containsText(messages, marker) || containsText(entries, marker);
+      } catch (error) {
+        throw mapChatError(error, "Unable to inspect agent session");
+      }
+    });
   }
 
   async list(worktreeId: string): Promise<ChatSessionSummary[]> {
@@ -424,6 +500,7 @@ export class ChatService {
         loaded.subscriber = undefined;
         loaded.attaching = false;
         loaded.unsubscribe();
+        loaded.observers.clear();
         this.sessions.delete(sessionId);
         this.owners.delete(sessionId);
         await loaded.session.dispose();
@@ -451,6 +528,7 @@ export class ChatService {
       record.subscriber = undefined;
       record.attaching = false;
       record.unsubscribe();
+      record.observers.clear();
       this.sessions.delete(record.sessionId);
       this.owners.delete(record.sessionId);
       try {
@@ -478,6 +556,7 @@ export class ChatService {
       records.map(async (record) => {
         try {
           record.unsubscribe();
+          record.observers.clear();
           await record.session.dispose();
         } catch (error) {
           failure ??= error;
@@ -566,6 +645,7 @@ export class ChatService {
     created: PiSessionRecord,
     worktreeId: string,
     cwd: string,
+    options: ChatSessionInternalOptions = {},
   ): SessionState {
     if (
       !created.session ||
@@ -578,6 +658,7 @@ export class ChatService {
     const duplicate = this.sessions.get(created.sessionId);
     if (duplicate) {
       this.assertOwner(duplicate, worktreeId);
+      this.addObserver(duplicate, options.onEvent);
       void created.session.dispose();
       return duplicate;
     }
@@ -593,6 +674,7 @@ export class ChatService {
       activity: created.session.activity,
       error: null,
       buffered: [],
+      observers: new Set(options.onEvent ? [options.onEvent] : []),
       attaching: false,
       needsResnapshot: false,
       unsubscribe: (): void => undefined,
@@ -619,8 +701,29 @@ export class ChatService {
         sequence: record.sequence,
         event,
       };
+      this.notifyObservers(record, event);
       if (record.attaching || !record.subscriber) this.buffer(record, envelope);
       else this.deliver(record, envelope);
+    }
+  }
+
+  private addObserver(
+    record: SessionState,
+    observer: ChatSessionInternalOptions["onEvent"],
+  ): void {
+    if (observer) record.observers.add(observer);
+  }
+
+  private notifyObservers(
+    record: SessionState,
+    event: Record<string, unknown>,
+  ): void {
+    for (const observer of record.observers) {
+      try {
+        observer(event);
+      } catch {
+        record.observers.delete(observer);
+      }
     }
   }
 
@@ -802,6 +905,21 @@ function isWithin(root: string, target: string): boolean {
     relative !== ".." &&
     !path.isAbsolute(relative)
   );
+}
+
+function containsText(value: unknown, marker: string): boolean {
+  if (!marker) return false;
+  const seen = new Set<object>();
+  const visit = (candidate: unknown): boolean => {
+    if (typeof candidate === "string") return candidate.includes(marker);
+    if (typeof candidate !== "object" || candidate === null) return false;
+    if (seen.has(candidate)) return false;
+    seen.add(candidate);
+    return Array.isArray(candidate)
+      ? candidate.some(visit)
+      : Object.values(candidate).some(visit);
+  };
+  return visit(value);
 }
 
 function resnapshotError(): ChatError {
