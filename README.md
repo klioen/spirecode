@@ -121,6 +121,12 @@ pnpm bundle
 
 Run packaging on the target operating system because `node-pty` is native. Current bundles are development artifacts. They are not a substitute for a signed GitHub Release, and users may see operating-system trust warnings.
 
+On macOS arm64, rebuild and safely replace the local `/Applications/SpireCode.app` installation with:
+
+```bash
+pnpm install:mac
+```
+
 ## Troubleshooting
 
 ### Chat requires authentication
