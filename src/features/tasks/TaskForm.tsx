@@ -1,4 +1,11 @@
-import { useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useTranslation } from "../../i18n";
 import type {
   CreateTaskInput,
@@ -15,6 +22,168 @@ export interface TaskProjectOption {
   defaultBaseRef?: string;
   baseRefs: Array<{ value: string; label: string }>;
   worktrees: Array<{ id: string; name: string; dirty?: boolean }>;
+}
+
+interface ProjectPickerProps {
+  projects: TaskProjectOption[];
+  value: string;
+  disabled: boolean;
+  onChange: (projectId: string) => void;
+}
+
+function ProjectPicker({
+  projects,
+  value,
+  disabled,
+  onChange,
+}: ProjectPickerProps) {
+  const { t } = useTranslation();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = `${useId()}-task-projects`;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredProjects = useMemo(
+    () =>
+      projects.filter((project) =>
+        project.name.toLocaleLowerCase().includes(normalizedQuery),
+      ),
+    [normalizedQuery, projects],
+  );
+  const selectedIndex = filteredProjects.findIndex(
+    (project) => project.id === value,
+  );
+  const [activeIndex, setActiveIndex] = useState(
+    selectedIndex >= 0 ? selectedIndex : 0,
+  );
+  const selectedProject = projects.find((project) => project.id === value);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [normalizedQuery, selectedIndex]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!rootRef.current || event.composedPath().includes(rootRef.current))
+        return;
+      setOpen(false);
+      setQuery("");
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [open]);
+
+  const close = (returnFocus: boolean) => {
+    setOpen(false);
+    setQuery("");
+    if (returnFocus) triggerRef.current?.focus();
+  };
+
+  const selectProject = (projectId: string) => {
+    onChange(projectId);
+    close(true);
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!filteredProjects.length) return;
+      const offset = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex(
+        (current) =>
+          (current + offset + filteredProjects.length) %
+          filteredProjects.length,
+      );
+      return;
+    }
+    if (event.key === "Enter" && filteredProjects[activeIndex]) {
+      event.preventDefault();
+      selectProject(filteredProjects[activeIndex].id);
+    }
+  };
+
+  return (
+    <div className="task-form-field task-project-field" ref={rootRef}>
+      <span>{t("tasks.form.project")}</span>
+      <button
+        ref={triggerRef}
+        className="task-project-trigger"
+        type="button"
+        aria-label={t("tasks.form.projectValue", {
+          name: selectedProject?.name ?? t("tasks.form.selectProject"),
+        })}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => {
+          setQuery("");
+          setOpen((current) => !current);
+        }}
+      >
+        <span>{selectedProject?.name ?? t("tasks.form.selectProject")}</span>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      {open ? (
+        <div className="task-project-popover">
+          <input
+            ref={inputRef}
+            role="combobox"
+            aria-label={t("tasks.form.searchProjects")}
+            aria-controls={listboxId}
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              filteredProjects[activeIndex]
+                ? `${listboxId}-option-${activeIndex}`
+                : undefined
+            }
+            value={query}
+            placeholder={t("tasks.form.searchProjects")}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={handleSearchKeyDown}
+          />
+          <div
+            id={listboxId}
+            className="task-project-options"
+            role="listbox"
+            aria-label={t("tasks.form.project")}
+          >
+            {filteredProjects.length ? (
+              filteredProjects.map((project, index) => (
+                <button
+                  id={`${listboxId}-option-${index}`}
+                  key={project.id}
+                  type="button"
+                  role="option"
+                  aria-selected={project.id === value}
+                  className={index === activeIndex ? "active" : ""}
+                  onPointerMove={() => setActiveIndex(index)}
+                  onClick={() => selectProject(project.id)}
+                >
+                  {project.name}
+                </button>
+              ))
+            ) : (
+              <p className="task-project-empty">{t("tasks.form.noProjects")}</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 interface TaskFormProps {
@@ -159,31 +328,21 @@ export function TaskForm({
         value={rewriteValue}
         onApply={applyRewrite}
       />
-      <label>
-        {t("tasks.form.project")}
-        <select
-          aria-label={t("tasks.form.project")}
-          value={projectId}
-          disabled={Boolean(task)}
-          onChange={(event) => {
-            setProjectId(event.target.value);
-            setWorktreeId("");
-            setAllowDirty(false);
-            if (
-              projects.find(({ id }) => id === event.target.value)?.kind ===
-              "directory"
-            )
-              setWorkspaceMode("existing");
-          }}
-        >
-          <option value="">{t("tasks.form.selectProject")}</option>
-          {projects.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ProjectPicker
+        projects={projects}
+        value={projectId}
+        disabled={Boolean(task)}
+        onChange={(nextProjectId) => {
+          setProjectId(nextProjectId);
+          setWorktreeId("");
+          setAllowDirty(false);
+          if (
+            projects.find(({ id }) => id === nextProjectId)?.kind ===
+            "directory"
+          )
+            setWorkspaceMode("existing");
+        }}
+      />
       <fieldset className="task-form-section task-workspace-section">
         <legend>{t("tasks.form.workspace")}</legend>
         {project?.kind === "git" ? (
