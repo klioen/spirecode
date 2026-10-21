@@ -277,7 +277,8 @@ describe("ProjectRail", () => {
     ]);
 
     chatRuntime.ensure("active-directory", "directory-main", "streaming");
-    render(<ProjectRail />);
+    const onOpenSession = vi.fn();
+    render(<ProjectRail onOpenSession={onOpenSession} />);
 
     expect(screen.getAllByLabelText("Pi session active")).toHaveLength(2);
     expect(
@@ -324,6 +325,7 @@ describe("ProjectRail", () => {
       ).toBe(chatResourceId("directory-main", "latest")),
     );
     expect(useProjectsStore.getState().activeWorktreeId).toBe("directory-main");
+    expect(onOpenSession).toHaveBeenCalledTimes(1);
   });
 
   it("expands Git worktree sessions and quickly moves a session to Trash", async () => {

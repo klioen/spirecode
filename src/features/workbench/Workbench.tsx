@@ -221,7 +221,7 @@ export function Workbench() {
     );
   return (
     <div
-      className={`workbench ${workbench.projectsCollapsed ? "projects-collapsed" : ""} ${workbench.rightCollapsed || tasksOpen ? "right-collapsed" : ""}`}
+      className={`workbench ${workbench.projectsCollapsed ? "projects-collapsed" : ""} ${workbench.rightCollapsed || tasksOpen ? "right-collapsed" : ""} ${tasksOpen ? "tasks-open" : ""}`}
       style={style}
     >
       {!workbench.projectsCollapsed && (
@@ -233,6 +233,7 @@ export function Workbench() {
               setSettingsOpen(true);
             }}
             onOpenTasks={() => setTasksOpen((open) => !open)}
+            onOpenSession={() => setTasksOpen(false)}
             tasksSelected={tasksOpen}
           />
           <PanelResizeHandle

@@ -75,7 +75,6 @@ interface Task {
   description: string;
   projectId: string;
   workspace: WorkspaceRequest;
-  acceptanceCriteria: Array<{ id: string; text: string }>;
   automationEnabled: boolean;
   status: TaskStatus;
   activeRunId: string | null;
@@ -90,7 +89,6 @@ Validation:
 
 - IDs are UUIDs generated in Main；Renderer supplied IDs are never trusted as ownership proof.
 - title trim 后 1–200 UTF-8 bytes；description 0–64 KiB。
-- acceptance criteria 为 1–50 项，每项 trim 后 1–2 KiB，保持顺序并拥有稳定 UUID。
 - project 必须存在；Git project 默认使用 Task 专属 managed worktree，也可显式选择 existing worktree；Directory project 只能绑定其 synthetic main workspace，不能创建 managed worktree。
 - `new_managed.baseRef` 必须继续通过现有 origin branch allowlist；默认是 `listOriginBranches().defaultRef`。
 - `existing.worktreeId` 必须属于所选 project。Main 在启动时重新检查 dirty 状态；dirty 时只有表单已明确提交 `allowDirty: true` 才继续，否则返回 `TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED`。
@@ -158,11 +156,6 @@ task_report_result({
   runId: string,
   outcome: "success" | "blocked" | "failed",
   summary: string,
-  acceptanceCriteria: Array<{
-    criterionId: string,
-    status: "passed" | "failed" | "not_run";
-    evidence: string;
-  }>,
   tests: Array<{
     command: string;
     status: "passed" | "failed" | "not_run";
@@ -176,7 +169,7 @@ task_report_result({
 })
 ```
 
-Main 校验 tool invocation 来自该 Run 的 live session、`runId` 精确匹配、criterion 集合无缺失/重复/未知 ID、文本与数组大小受限、URL 为 `https`，且 change request 必须 `draft: true`。首个有效报告以 SQLite 事务写入；重复完全相同调用幂等返回成功，内容不同的第二次调用返回 `TASK_RESULT_ALREADY_REPORTED`。报告本身不等于用户验收：任何 outcome 的有效报告都使 Run=`reported`、Task=`needs_review`，由 UI 明确展示 outcome。
+Main 校验 tool invocation 来自该 Run 的 live session、`runId` 精确匹配、summary/tests 文本与数组大小受限、URL 为 `https`，且 change request 必须 `draft: true`。首个有效报告以 SQLite 事务写入；重复完全相同调用幂等返回成功，内容不同的第二次调用返回 `TASK_RESULT_ALREADY_REPORTED`。报告本身不等于用户验收：任何 outcome 的有效报告都使 Run=`reported`、Task=`needs_review`，由 UI 明确展示 outcome。
 
 ## 4. State machines
 
@@ -247,7 +240,6 @@ CREATE TABLE tasks (
   requested_worktree_id TEXT,
   base_ref TEXT,
   allow_dirty INTEGER NOT NULL CHECK (allow_dirty IN (0,1)),
-  acceptance_criteria_json TEXT NOT NULL CHECK (json_valid(acceptance_criteria_json)),
   automation_enabled INTEGER NOT NULL CHECK (automation_enabled IN (0,1)),
   status TEXT NOT NULL CHECK (status IN ('backlog','queued','running','needs_review','completed','failed','cancelled')),
   active_run_id TEXT,
@@ -327,12 +319,13 @@ WHERE status IN ('queued','provisioning','prompting','running','awaiting_report'
 
 Migration 规则：
 
-1. 空库在单个 `BEGIN IMMEDIATE` 中创建当前 v2 schema，并写入 v1 initial 与 v2 migration rows。
-2. 每个后续 migration 是单独编号、前向 only、事务化且可重复检测；不允许静默跳过未知更高版本。
-3. migration 前执行 `PRAGMA quick_check`；失败则关闭 DB、保留原文件/WAL/SHM、进入只读故障页，不新建空库覆盖。
-4. schema migration 前用 SQLite `VACUUM INTO` 一致性快照生成 `tasks.sqlite3.pre-v<N>.bak`，成功后保留最近一个；migration 在事务中执行，失败回滚原库并保留 backup，报告稳定错误。
-5. 正常关闭执行被动 checkpoint；升级/备份前执行 `wal_checkpoint(TRUNCATE)`。崩溃依赖 WAL 恢复，不手工删除 `-wal/-shm`。
-6. 所有字段更新使用 `WHERE id=? AND revision=?` 乐观并发；冲突返回 `TASK_CONFLICT` 并要求 Renderer refresh。
+1. 空库在单个 `BEGIN IMMEDIATE` 中创建当前 v3 schema，并写入连续的 v1、v2、v3 migration rows。
+2. v2 → v3 migration 在一致性备份后删除 `tasks.acceptance_criteria_json` 列，并从所有非空 `task_runs.report_json` 中删除 `acceptanceCriteria` key；其余 Task、Run、summary、tests 和 change request 数据保持不变。迁移失败时保留 pre-v3 backup；迁移成功后删除所有 app-managed `tasks.sqlite3.pre-v*.bak`，避免备份继续保存已删除数据。
+3. 每个后续 migration 是单独编号、前向 only、事务化且可重复检测；不允许静默跳过未知更高版本。
+4. migration 前执行 `PRAGMA quick_check`；失败则关闭 DB、保留原文件/WAL/SHM、进入只读故障页，不新建空库覆盖。
+5. schema migration 前用 SQLite `VACUUM INTO` 一致性快照生成 `tasks.sqlite3.pre-v<N>.bak`；migration 在事务中执行，失败回滚原库并保留 backup，报告稳定错误。普通 migration 成功后保留最近一个；v3 数据删除 migration 成功后按第 2 条删除所有 app-managed migration backup。
+6. 正常关闭执行被动 checkpoint；升级/备份前执行 `wal_checkpoint(TRUNCATE)`。崩溃依赖 WAL 恢复，不手工删除 `-wal/-shm`。
+7. 所有字段更新使用 `WHERE id=? AND revision=?` 乐观并发；冲突返回 `TASK_CONFLICT` 并要求 Renderer refresh。
 
 ## 6. Durable saga and crash recovery
 
@@ -344,7 +337,7 @@ SQLite 无法与 Git worktree 或 Pi JSONL 做分布式事务。每个外部副�
 2. 写 `workspace:intent`。
 3. `new_managed` 调用扩展后的 WorktreeService，用既定 name 创建；`existing` 重新校验 ownership/dirty/busy。探测 catalog + Git worktree list + owner marker 后写 `workspace:done` 与 worktree ID。
 4. 写 `session:intent`。以 worktree canonical cwd 创建持久 Pi session，立即把 session name 设为 `SpireCode Task <runId>`；通过 `SessionManager.list(cwd)` 的唯一 name/ID 探测并收敛，然后写 session ID/path。
-5. 写 `prompt:intent`。prompt 首尾含不可伪造为其他 Run 的固定 marker `spire-task-run:<runId>`、结构化需求、验收项、报告工具要求和 Draft-only policy。
+5. 写 `prompt:intent`。prompt 首尾含不可伪造为其他 Run 的固定 marker `spire-task-run:<runId>`、结构化需求、报告工具要求和 Draft-only policy。
 6. attach session 并检查 transcript 是否已有完全匹配 marker 的 user prompt；没有才提交。Pi `preflightResult` 确认 accepted 后写 `prompt:done`。因此崩溃恢复不会重复首个 prompt。
 7. 订阅 session events/tool calls，Run=running、Task=running。
 
@@ -379,7 +372,7 @@ Execution 使用持久 `SessionManager.create/open` 和当前共享 `ModelRuntim
 
 系统/开发 prompt 明确：
 
-- 按 acceptance criteria 工作并运行合理验证；
+- 按 description 工作并运行合理验证；
 - 完成、阻塞或失败都必须调用 `task_report_result`；
 - `agent_settled` 不代表 Task 完成；
 - 若创建 GitHub PR/GitLab MR，只能 Draft；不得 ready、approve、merge；
@@ -394,7 +387,7 @@ Task form 的“AI 优化”由独立 `TaskRewriteAdapter` 执行：
 - `SessionManager.inMemory(cwd)`；cwd 使用 userData 内空的受控 rewrite 目录，不使用 project/worktree cwd；
 - 创建专用 AgentSession，禁止默认 coding tools；
 - resource loader 设置 no extensions、no skills、no prompt templates、no themes、no context files、no MCP；
-- 仅注册 `submit_task_rewrite`，参数只能是 title、description、acceptance criteria；project、workspace、automation 不允许由模型改变；
+- 仅注册 `submit_task_rewrite`，参数只能是 title 和 description；project、workspace、automation 不允许由模型改变；
 - custom tool 至多成功一次，必须通过与 Task 相同的长度/条数校验；普通文本输出不能直接改表单；
 - 单次请求 60 秒超时、同一窗口仅一个 active rewrite，可 abort；settled 未调用 tool 视为失败；
 - session 在 apply/reject/cancel/关闭表单后 dispose；无 JSONL、无 SQLite、无日志正文。
@@ -454,12 +447,11 @@ task://event -> {
 
 ### 9.2 New Task form
 
-字段顺序：title → description → AI 优化 → project → workspace → acceptance criteria → automation。
+字段顺序：title → description → AI 优化 → project → workspace → automation。
 
 - project 选择后加载其 worktree 与 origin branches。
 - workspace 默认 `New managed worktree` + default origin ref；用户可切为 existing worktree。
 - existing dirty 状态在提交前由 Main 最终校验；UI 弹出明确确认后才以 `allowDirty=true` 重试，不缓存永久授权。
-- acceptance criteria 可增删/排序，至少一项。
 - automation switch 默认 on，说明“提交后自动创建/绑定 workspace 并启动 Agent”。off 时只创建 backlog。
 - 提交是 single-flight；成功后打开 Task detail。失败保留 draft。
 
@@ -467,10 +459,12 @@ task://event -> {
 
 - 时间线展示 saga phase、worktree、session、agent running/idle、错误和 report，不渲染未脱敏原始 event payload。
 - `awaiting_report` 显示“Agent 已停止，尚未提交结果”，不能显示 completed；提供 Continue for report、Cancel。
-- needs_review 展示 summary、每项 criterion evidence、tests 和 Draft PR/MR link；按钮为 Accept completion 与 Request changes。
+- needs_review 展示 summary、tests 和 Draft PR/MR link；按钮为 Accept completion 与 Request changes。
 - Request changes 要求 note，创建下一 attempt 并沿用同一 workspace，除非原 workspace 缺失；V1 不在该动作中切 workspace。
 - completed 只来自用户动作，并记录 event；没有自动完成倒计时。
 - 进入 Task 的 worktree/session 通过现有 selection/Chat placement API 完成，不在 Zustand 复制 transcript。
+- Task surface 的列表、表单和详情在宽屏下相对整个应用窗口居中，而不是只相对 Projects rail 右侧的 workspace 居中。
+- Task surface 打开时，从 Projects 树选择任意 Pi session 必须退出 Task surface并展示已经打开的 Chat；选择失败或过期响应不能关闭 Task surface。
 
 ## 10. Notifications
 
@@ -522,7 +516,7 @@ TASK_FAILED
 
 错误分为 retryable 与 requires-attention。自动恢复仅重放幂等 saga step，不无限重试 provider/auth/invalid-state 错误；单 step 最多一次启动恢复尝试，随后等待用户 Retry。UI 保留 Task 与资源引用，显示稳定 message 和可操作动作。绝不将失败映射为 clean/completed。
 
-Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery outcome；不得记录 title、description、criteria、prompt、report evidence、绝对路径、model response 或 secrets。
+Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery outcome；不得记录 title、description、prompt、report evidence、绝对路径、model response 或 secrets。
 
 ## 13. Performance and concurrency
 
@@ -537,10 +531,10 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 ## 14. Compatibility, backup and rollback
 
 - 现有 `state.json`、Project/Worktree IDs、Pi JSONL 和 Chat IPC 不迁移、不重写。Task 只引用这些 identity。
-- 没有 `tasks.sqlite3` 的现有用户自动创建当前 v2 schema（含连续 v1/v2 migration history）；Task 模块故障不阻止 Projects/Files/Git/Chat 使用。
+- 没有 `tasks.sqlite3` 的现有用户自动创建当前 v3 schema（含连续 v1/v2/v3 migration history）；Task 模块故障不阻止 Projects/Files/Git/Chat 使用。
 - 新应用遇到未知更高 schema version 时将 Task 模块置只读 unavailable，不降级写入。
 - 回滚到不支持 Task 的旧版时，旧版忽略 `tasks.sqlite3`；用户数据与 managed worktree 保留。再次升级后恢复。
-- 需要人工回滚 schema 时只能恢复 migration 前 backup，并先退出应用、同时处理 db/wal/shm；产品 V1 不提供危险的自动 downgrade。
+- 普通 migration 如需人工回滚 schema，只能恢复 migration 前 backup，并先退出应用、同时处理 db/wal/shm；产品 V1 不提供危险的自动 downgrade。v3 是明确的数据删除边界，成功后不会保留含旧 criteria 数据的 app-managed backup，因此不能通过产品备份降回 v2。
 - 卸载/清除应用数据前的备份沿用 userData 备份策略；V1 不提供 Task export/import。
 - Task 创建的 managed worktree 使用现有 owner marker，因此不支持 Task 的版本仍能作为普通 managed worktree列出；不得重复导入成 project。
 
@@ -549,14 +543,14 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 ### Functional
 
 1. Task 入口固定在 Projects 上方，跨 project 切换保持可用。
-2. 新建表单包含已批准全部字段，默认 new managed + default baseRef + automation on。
+2. Task domain、创建表单和持久化 schema 均不包含 acceptance criteria，默认 new managed + default baseRef + automation on。
 3. automation on 自动完成 worktree/session/prompt 编排；off 创建 backlog，手动 Run 后执行同一流程。
 4. existing worktree 不创建新 checkout，dirty 时必须显式确认，且永不自动删除。
 5. 每个 TaskRun 固定 worktree/session；Retry/Request changes 创建递增 attempt。
 6. `agent_end`/`agent_settled` 均不能完成 Task；settled 无报告进入 awaiting_report。
 7. 只有有效 `task_report_result` 进入 needs_review，只有用户 Accept 进入 completed。
 8. needs_review/awaiting_report/failed 生成去重应用内通知；窗口不活跃时尽力发送系统通知。
-9. AI 优化只能由 `submit_task_rewrite` 改写三个文本字段，可 Undo，不产生持久 session/DB 记录。
+9. AI 优化只能由 `submit_task_rewrite` 改写 title 和 description，可 Undo，不产生持久 session/DB 记录。
 10. PR/MR report 只接受 `draft: true`；产品无 ready/approve/merge action。
 
 ### Recovery and data
@@ -572,6 +566,7 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 16. rewrite runtime 的测试证明 coding/MCP/extensions/skills/templates/context 均未加载，只有一个 custom tool。
 17. Git 仍使用 hardened argument-array runner；Renderer 仍 sandboxed 且 preload 接口不扩权。
 18. focused tests、migration/recovery tests、Renderer accessibility tests、`pnpm check` 全部退出 0；目标平台 bundle/smoke 验证 `node:sqlite` 可在最终 artifact 中打开 WAL 数据库。
+19. Task surface 在宽屏相对应用窗口居中；从 Task 页面点击 Projects 中的 session 会切换到对应 Chat。
 
 ## 16. Rejected alternatives
 
@@ -579,6 +574,6 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 - **继续用 JSON 原子文件**：跨多个有索引/状态约束的实体与恢复 journal 时并发和 migration 风险更高。
 - **在 Renderer 使用 SQLite/Pi/Git**：违反 Electron sandbox 与窄 IPC 边界。
 - **rewrite 复用普通 Chat**：会持久化 transcript 并错误加载 coding/MCP/extensions。
-- **`agent_settled` 自动 completed**：idle 不证明验收项与测试完成。
+- **`agent_settled` 自动 completed**：idle 不证明需求与测试完成。
 - **失败/取消自动删除 worktree**：可能丢失用户改动，且 existing workspace 不归 Task 所有。
 - **自动 ready/approve/merge**：越过人工审查和仓库权限边界。

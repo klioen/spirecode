@@ -467,7 +467,6 @@ describe("Task IPC validation", () => {
     description: "Keep the previous position",
     projectId: "project-1",
     workspace: { mode: "new_managed", baseRef: "origin/main" },
-    acceptanceCriteria: ["Position is restored"],
     automationEnabled: true,
   };
 
@@ -481,6 +480,18 @@ describe("Task IPC validation", () => {
     expect(validateCommandArgs("task_create", { input: createInput })).toEqual({
       input: createInput,
     });
+    expect(() =>
+      validateCommandArgs("task_create", {
+        input: { ...createInput, acceptanceCriteria: [] },
+      }),
+    ).toThrow("unexpected fields");
+    expect(() =>
+      validateCommandArgs("task_update", {
+        taskId: "task-1",
+        expectedRevision: 1,
+        patch: { acceptanceCriteria: [] },
+      }),
+    ).toThrow("unexpected fields");
   });
 
   it("rejects broad, malformed, and oversized Task input", () => {
@@ -529,7 +540,6 @@ describe("Task IPC validation", () => {
         input: {
           title: "Fix scrolling",
           description: "Clarify this",
-          acceptanceCriteria: ["Verified"],
         },
       }),
     ).toBeDefined();
@@ -539,7 +549,6 @@ describe("Task IPC validation", () => {
         input: {
           title: "Fix scrolling",
           description: "Clarify this",
-          acceptanceCriteria: ["Verified"],
           projectPath: "/tmp/repository",
         },
       }),

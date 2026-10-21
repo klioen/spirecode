@@ -32,13 +32,6 @@ const reviewTask = taskDetail({
       report: {
         outcome: "success",
         summary: "Implemented and tested",
-        acceptanceCriteria: [
-          {
-            criterionId: "criterion-1",
-            status: "passed",
-            evidence: "Focused suite passed",
-          },
-        ],
         tests: [
           { command: "pnpm test", status: "passed", summary: "6 passed" },
         ],
@@ -53,6 +46,18 @@ const reviewTask = taskDetail({
 });
 
 describe("TaskDetail", () => {
+  it("renders the task description", () => {
+    render(
+      <TaskDetail
+        api={createTasksApiMock()}
+        task={taskDetail()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Build the renderer feature")).toBeInTheDocument();
+  });
+
   it("treats awaiting_report as running and never as completed", async () => {
     const api = createTasksApiMock();
     render(<TaskDetail api={api} task={awaitingTask} onChange={vi.fn()} />);
@@ -72,12 +77,11 @@ describe("TaskDetail", () => {
     );
   });
 
-  it("shows structured evidence and only completes through explicit acceptance", async () => {
+  it("shows structured test evidence and only completes through an explicit user action", async () => {
     const api = createTasksApiMock();
     const onChange = vi.fn();
     render(<TaskDetail api={api} task={reviewTask} onChange={onChange} />);
 
-    expect(screen.getByText(/Focused tests pass: Passed/)).toBeInTheDocument();
     expect(screen.getByText(/pnpm test: Passed/)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Open draft change request" }),

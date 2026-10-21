@@ -709,7 +709,6 @@ export class AppState {
     return {
       ...(await this.taskSummary(detail.task)),
       description: detail.task.description,
-      acceptanceCriteria: detail.task.acceptanceCriteria,
       automationEnabled: detail.task.automationEnabled,
       completedAt: detail.task.completedAt,
       runs: detail.runs.map((run) => ({
@@ -824,20 +823,6 @@ function taskReportTool(integration: TaskSessionIntegration) {
           Type.Literal("failed"),
         ]),
         summary: Type.String(),
-        acceptanceCriteria: Type.Array(
-          Type.Object(
-            {
-              criterionId: Type.String(),
-              status: Type.Union([
-                Type.Literal("passed"),
-                Type.Literal("failed"),
-                Type.Literal("not_run"),
-              ]),
-              evidence: Type.String(),
-            },
-            { additionalProperties: false },
-          ),
-        ),
         tests: Type.Array(
           Type.Object(
             {

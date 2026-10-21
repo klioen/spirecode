@@ -108,6 +108,15 @@ describe("theme tokens", () => {
     );
   });
 
+  it("centers the Task surface against the full app window on wide screens", () => {
+    expect(css).toContain(
+      ".workbench.tasks-open:not(.projects-collapsed) .task-page",
+    );
+    expect(css).toContain(
+      "padding-right: calc(48px + var(--projects-width, 220px))",
+    );
+  });
+
   it("keeps Settings as a full-window navigation surface", () => {
     expectDeclarations(".settings-page", [
       "width: 100%",

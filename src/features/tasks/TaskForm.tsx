@@ -53,9 +53,6 @@ export function TaskForm({
   const [allowDirty, setAllowDirty] = useState(
     task?.workspace.mode === "existing" ? task.workspace.allowDirty : false,
   );
-  const [criteria, setCriteria] = useState(
-    task?.acceptanceCriteria.map(({ text }) => text) ?? [""],
-  );
   const [automationEnabled, setAutomationEnabled] = useState(
     task?.automationEnabled ?? true,
   );
@@ -69,27 +66,17 @@ export function TaskForm({
     project?.defaultBaseRef ??
     project?.baseRefs[0]?.value ??
     "";
-  const rewriteValue: TaskRewriteInput = {
-    title,
-    description,
-    acceptanceCriteria: criteria,
-  };
+  const rewriteValue: TaskRewriteInput = { title, description };
 
   const applyRewrite = (next: TaskRewriteInput) => {
     setTitle(next.title);
     setDescription(next.description);
-    setCriteria(
-      next.acceptanceCriteria.length ? next.acceptanceCriteria : [""],
-    );
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (submitting) return;
-    const normalizedCriteria = criteria
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (!title.trim() || !project || normalizedCriteria.length === 0) {
+    if (!title.trim() || !project) {
       setError(t("tasks.form.required"));
       return;
     }
@@ -118,7 +105,6 @@ export function TaskForm({
         workspaceMode === "new_managed"
           ? { mode: "new_managed", baseRef }
           : { mode: "existing", worktreeId, allowDirty },
-      acceptanceCriteria: normalizedCriteria,
       automationEnabled,
     };
     setSubmitting(true);
@@ -128,27 +114,11 @@ export function TaskForm({
         onCreated(await api.create(input));
         return;
       }
-      const usedCriterionIds = new Set<string>();
-      const acceptanceCriteria = normalizedCriteria.map((text, index) => {
-        const exact = task.acceptanceCriteria.find(
-          (criterion) =>
-            criterion.text === text && !usedCriterionIds.has(criterion.id),
-        );
-        const positional = task.acceptanceCriteria[index];
-        const existing =
-          exact ??
-          (positional && !usedCriterionIds.has(positional.id)
-            ? positional
-            : undefined);
-        if (existing) usedCriterionIds.add(existing.id);
-        return { ...(existing ? { id: existing.id } : {}), text };
-      });
       onCreated(
         await api.update(task.id, task.revision, {
           title: input.title,
           description: input.description,
           workspace: input.workspace,
-          acceptanceCriteria,
           automationEnabled: input.automationEnabled,
         }),
       );
@@ -291,66 +261,6 @@ export function TaskForm({
             ) : null}
           </>
         )}
-      </fieldset>
-      <fieldset className="task-form-section task-criteria-section">
-        <legend>{t("tasks.acceptanceCriteria")}</legend>
-        {criteria.map((criterion, index) => (
-          <div className="task-criterion-row" key={index}>
-            <input
-              aria-label={t("tasks.form.criterion", { index: index + 1 })}
-              value={criterion}
-              onChange={(event) =>
-                setCriteria((current) =>
-                  current.map((item, itemIndex) =>
-                    itemIndex === index ? event.target.value : item,
-                  ),
-                )
-              }
-            />
-            <button
-              className="task-criterion-action"
-              type="button"
-              aria-label={t("tasks.form.removeCriterion", {
-                index: index + 1,
-              })}
-              disabled={criteria.length === 1}
-              onClick={() =>
-                setCriteria((current) =>
-                  current.filter((_, itemIndex) => itemIndex !== index),
-                )
-              }
-            >
-              {t("tasks.form.remove")}
-            </button>
-            <button
-              className="task-criterion-action"
-              type="button"
-              aria-label={t("tasks.form.moveCriterionUp", {
-                index: index + 1,
-              })}
-              disabled={index === 0}
-              onClick={() =>
-                setCriteria((current) => {
-                  const next = [...current];
-                  [next[index - 1], next[index]] = [
-                    next[index],
-                    next[index - 1],
-                  ];
-                  return next;
-                })
-              }
-            >
-              {t("tasks.form.up")}
-            </button>
-          </div>
-        ))}
-        <button
-          className="task-button task-button-secondary task-add-criterion"
-          type="button"
-          onClick={() => setCriteria((current) => [...current, ""])}
-        >
-          {t("tasks.form.addCriterion")}
-        </button>
       </fieldset>
       <label className="task-automation-toggle">
         <input

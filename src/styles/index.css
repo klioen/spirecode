@@ -2459,35 +2459,6 @@ body.panel-resizing-vertical * {
   font-size: 12px;
   font-weight: 400;
 }
-.task-criterion-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 6px;
-}
-.task-criterion-row + .task-criterion-row {
-  margin-top: 8px;
-}
-.task-criterion-action {
-  min-width: 30px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-subtle);
-  font: inherit;
-  font-size: 10px;
-  cursor: pointer;
-}
-.task-criterion-action:hover:not(:disabled) {
-  background: var(--interactive-hover);
-  color: var(--text-default);
-}
-.task-criterion-action:disabled {
-  opacity: 0.35;
-}
-.task-add-criterion {
-  margin-top: 10px;
-}
 .task-rewrite-control,
 .task-detail-actions {
   display: flex;
@@ -2562,13 +2533,6 @@ body.panel-resizing-vertical * {
   color: var(--text-default);
   white-space: pre-wrap;
 }
-.task-criteria-list {
-  margin: 0;
-  padding-left: 22px;
-}
-.task-criteria-list li + li {
-  margin-top: 7px;
-}
 .task-run-list {
   display: grid;
   gap: 8px;
@@ -2634,6 +2598,11 @@ body.panel-resizing-vertical * {
 }
 .task-detail-run {
   margin-top: 16px;
+}
+@media (min-width: 1100px) {
+  .workbench.tasks-open:not(.projects-collapsed) .task-page {
+    padding-right: calc(48px + var(--projects-width, 220px));
+  }
 }
 @media (max-width: 900px) {
   .task-page {

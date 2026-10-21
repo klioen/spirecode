@@ -117,11 +117,6 @@ export function TaskRewriteControl({
         <div role="group" aria-label={t("tasks.rewrite.suggestion")}>
           <p>{result.title}</p>
           <p>{result.description}</p>
-          <ul>
-            {result.acceptanceCriteria.map((criterion) => (
-              <li key={criterion}>{criterion}</li>
-            ))}
-          </ul>
           <button
             className="task-button task-button-primary"
             type="button"

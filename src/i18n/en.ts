@@ -27,7 +27,6 @@ export const en = {
   "tasks.notification.needsReview": "needs review",
   "tasks.notification.awaitingReport": "awaiting report",
   "tasks.notification.failed": "failed",
-  "tasks.acceptanceCriteria": "Acceptance criteria",
   "tasks.runs": "Runs",
   "tasks.noRuns": "No runs yet.",
   "tasks.attempt": "Attempt {attempt}: {status}",
@@ -39,7 +38,6 @@ export const en = {
   "tasks.cancelTask": "Cancel task",
   "tasks.result": "Task result",
   "tasks.resultLabel": "Result: {result}",
-  "tasks.notReported": "not reported",
   "tasks.tests": "Tests",
   "tasks.externalLinkConfirm":
     "Open this external draft change request?\n\n{url}",
@@ -73,12 +71,6 @@ export const en = {
   "tasks.form.selectWorktree": "Select a worktree",
   "tasks.form.dirty": "dirty",
   "tasks.form.allowDirty": "Allow Agent to use this dirty worktree",
-  "tasks.form.criterion": "Criterion {index}",
-  "tasks.form.removeCriterion": "Remove criterion {index}",
-  "tasks.form.moveCriterionUp": "Move criterion {index} up",
-  "tasks.form.remove": "Remove",
-  "tasks.form.up": "Up",
-  "tasks.form.addCriterion": "Add criterion",
   "tasks.form.startAutomation": "Start automation after creating the task",
   "tasks.form.automationWarning":
     "Automation can modify the selected workspace.",
@@ -87,8 +79,7 @@ export const en = {
   "tasks.form.saving": "Saving…",
   "tasks.form.save": "Save task",
   "tasks.form.cancel": "Cancel",
-  "tasks.form.required":
-    "Title, project, and at least one criterion are required",
+  "tasks.form.required": "Title and project are required",
   "tasks.form.baseRequired": "A base branch is required",
   "tasks.form.worktreeRequired": "Select an existing worktree",
   "tasks.form.dirtyRequired": "Confirm use of the dirty worktree",

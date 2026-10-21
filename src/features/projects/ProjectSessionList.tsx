@@ -11,9 +11,11 @@ import { commandError } from "../../lib/errors";
 export function ProjectSessionList({
   worktreeId,
   onSelectWorktree,
+  onOpenSession,
 }: {
   worktreeId: string;
   onSelectWorktree: (worktreeId: string) => Promise<boolean>;
+  onOpenSession?: () => void;
 }) {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
@@ -82,6 +84,7 @@ export function ProjectSessionList({
       useEditorStore
         .getState()
         .openChat(worktreeId, session.sessionId, session.title);
+      onOpenSession?.();
     } catch (failure) {
       setLoadError(commandError(failure).message);
     }

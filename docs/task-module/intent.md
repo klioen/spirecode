@@ -18,10 +18,10 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 
 - 在左侧导航的 Projects 上方增加全局 Task 模块；它不依赖当前 active project/worktree。
 - 使用两个持久领域实体：
-  - `Task` 表示稳定的用户意图、workspace 选择、验收标准和当前汇总状态；
+  - `Task` 表示稳定的用户意图、workspace 选择和当前汇总状态；
   - `TaskRun` 表示一次具体执行尝试，固定关联实际 worktree 与 Pi session。
 - Electron Main 在 `app.getPath("userData")/tasks.sqlite3` 中持久化 Task 领域数据，并拥有 schema migration、WAL、事务和恢复。
-- 新建表单包含 title、description、project、workspace（从 `baseRef` 创建新 managed worktree，或选择 existing worktree）、acceptance criteria 和 automation。
+- 新建表单包含 title、description、project、workspace（从 `baseRef` 创建新 managed worktree，或选择 existing worktree）和 automation；不要求用户重复填写已隐含在 description 中的 acceptance criteria。
 - workspace 默认选择“从默认 `baseRef` 创建新 managed worktree”；只有用户显式切换时才使用 existing worktree。
 - automation 开启时，Main 负责 saga 编排：创建或绑定 worktree、创建持久 Pi session、构造受控任务 prompt 并自动提交。
 - Agent 只有通过 `task_report_result` 显式提交结构化结果，Task 才进入 `needs_review`；`agent_settled` 本身绝不表示完成。
@@ -53,7 +53,7 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 - 所有 filesystem、Git、worktree、Pi session 和 SQLite 操作只在 Main；Git 继续使用 executable + argument array 和 hardened runner。
 - Task 只保存 project/worktree/session identity 与结构化报告，不复制文件正文、diff、terminal output 或 Chat transcript。
 - existing worktree 永不由 Task 自动删除；Task 创建的 managed worktree 也不得因普通取消或失败自动删除有改动的目录。
-- acceptance criteria 是有序、非空的文本项；Agent 报告必须逐项给出状态与证据。
+- Task 不包含独立 acceptance criteria；schema migration 删除存量字段及历史 report 中的对应数据。Agent 以 description 为需求来源，并报告执行摘要与测试结果。
 - 任务运行失败、应用退出和崩溃不得被伪装成成功；恢复必须可重复并留下可诊断状态。
 - V1 不把 Task 变成远端 issue tracker，也不实现无人值守审批/合并。
 
@@ -63,13 +63,14 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 
 ## Success criteria
 
-- 用户能从 Projects 上方进入全局 Task 页面，创建、查看、筛选并打开 Task。
+- 用户能从 Projects 上方进入全局 Task 页面，创建、查看、筛选并打开 Task；Task surface 相对应用窗口居中展示。
 - 默认路径会创建 managed worktree、持久 Pi session 并自动发送一次且仅一次首个 prompt。
 - existing worktree 路径不会创建或接管 worktree，dirty workspace 需显式确认。
 - 应用在每个 saga 边界崩溃后可恢复或进入明确可重试状态，不重复创建 worktree/session/prompt。
 - `agent_settled` 无报告时显示等待报告/可恢复状态；只有有效 `task_report_result` 进入 `needs_review`。
 - 用户人工验收后才能标记 completed；Draft PR/MR 不被自动 ready、approve 或 merge。
-- AI 优化无持久 session、无 coding/MCP/extension tools，结果可撤销。
+- AI 优化只改写 title 和 description，无持久 session、无 coding/MCP/extension tools，结果可撤销。
+- 在 Task 页面点击 Projects 树中的 Pi session 会退出 Task surface，并打开对应 workspace 的 Chat。
 - Task 数据不进入 Zustand 大对象或项目目录，窄 IPC、安全校验、migrations 和通知均有自动化测试。
 
 ## Non-goals

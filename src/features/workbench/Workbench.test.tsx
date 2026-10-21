@@ -13,16 +13,19 @@ vi.mock("../projects/ProjectRail", () => ({
     onToggleProjects,
     onOpenSettings,
     onOpenTasks,
+    onOpenSession,
   }: {
     onToggleProjects: () => void;
     onOpenSettings: () => void;
     onOpenTasks: () => void;
+    onOpenSession: () => void;
   }) => (
     <aside>
       Projects
       <button onClick={onToggleProjects}>Toggle projects panel</button>
       <button onClick={onOpenSettings}>Settings</button>
       <button onClick={onOpenTasks}>Tasks</button>
+      <button onClick={onOpenSession}>Project session</button>
     </aside>
   ),
 }));
@@ -373,12 +376,26 @@ describe("Workbench panel handles", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
     expect(screen.getByText("Task page")).toBeInTheDocument();
+    expect(screen.getByText("Task page").closest(".workbench")).toHaveClass(
+      "tasks-open",
+    );
     expect(screen.queryByText("Editor")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("separator", { name: "Resize files panel" }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getByText("Editor")).toBeInTheDocument();
+  });
+
+  it("returns from Tasks when a Project session is opened", () => {
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getByText("Task page")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Project session" }));
+    expect(screen.queryByText("Task page")).not.toBeInTheDocument();
     expect(screen.getByText("Editor")).toBeInTheDocument();
   });
 

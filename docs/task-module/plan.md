@@ -1,8 +1,8 @@
 # Plan: 实现全局 Task 与可恢复 TaskRun
 
-Status: accepted for planning only。 Implements: `docs/task-module/spec.md`。
+Status: implemented and verified。 Implements: `docs/task-module/spec.md`。
 
-> 本次交付仅创建高风险 SDLC 文档，不修改代码。以下实施计划必须在用户再次明确批准代码实施后执行。
+> 用户已批准高风险实现；本计划记录已采用的交付顺序与验证门禁。
 
 ## 1. Risk gate and delivery strategy
 
@@ -43,8 +43,8 @@ Status: accepted for planning only。 Implements: `docs/task-module/spec.md`。
 Add `electron/domains/tasks/`:
 
 - `types.ts` — Main-only domain types, status enums and transition guards。
-- `validation.ts` — title/description/criteria/workspace/report/rewrite validation and size limits。
-- `migrations/001-initial.ts` — exact v1 STRICT schema, indexes and migration metadata。
+- `validation.ts` — title/description/workspace/report/rewrite validation and size limits；不再包含 criteria contract。
+- `database.ts` 内的 initial schema — 空库直接创建当前 v3 STRICT schema，并记录连续 migration metadata。
 - `database.ts` — open/PRAGMA/quick_check/backup/migrate/checkpoint/close，parameterized statements only。
 - `repository.ts` — queued short transactions, optimistic revision writes, pagination and invariants。
 - `stateMachine.ts` — pure Task/Run transitions, no I/O。
@@ -84,7 +84,7 @@ Tests in `electron/domains/tasks/piExecution.test.ts` use an SDK fake to prove:
 - `agent_end` and `agent_settled` never report completion；
 - settled without tool becomes awaiting_report；
 - tool report is validated, idempotent only when identical and reaches repository once；
-- forged run/criterion/session data is rejected；
+- forged run/session data and removed criteria fields are rejected；
 - extension tool name conflict fails closed；
 - errors are redacted。
 
@@ -125,7 +125,7 @@ Add `src/features/tasks/`:
 - `TaskNavItem.tsx` — global row/badge/spinner。
 - `TaskPage.tsx` — list/detail routing and empty/error/loading states。
 - `TaskList.tsx` — paginated accessible status list/filter。
-- `TaskForm.tsx` — approved fields, dependent project/workspace data, single-flight submit and dirty confirmation。
+- `TaskForm.tsx` — approved fields, dependent project/workspace data, single-flight submit and dirty confirmation；不包含 criteria。
 - `TaskRewriteControl.tsx` — start/cancel/apply/reject/undo in local component state。
 - `TaskDetail.tsx` — saga timeline、awaiting-report warning、report/review actions and links。
 - focused `*.test.ts(x)` for each behavior。
@@ -139,7 +139,7 @@ Modify:
 - `src/i18n/en.ts` and `src/i18n/zh-CN.ts` with matched Task strings；run localization guard。
 - global stylesheet files currently owning ProjectRail/Workbench styles；keep selectors feature-scoped。
 
-When opening a Run session, call existing worktree selection + Chat placement APIs. Do not duplicate Chat renderer or transcript in Task components。
+When opening a Run session, call existing worktree selection + Chat placement APIs. Do not duplicate Chat renderer or transcript in Task components。ProjectRail 成功打开 session 后必须通知 Workbench 退出 Task surface；Task surface 的宽屏内容需相对整个应用窗口居中。
 
 ## 3. Red-green sequence
 
@@ -161,8 +161,8 @@ Exit proof: illegal transitions and broad IPC are impossible before persistence 
 
 ### Phase 2 — SQLite schema and repository
 
-1. Write migration tests against temporary files: initial create、STRICT constraints、PRAGMAs、unknown future version、backup/rollback、WAL crash reopen。
-2. Implement DB open/migration/backup/checkpoint。
+1. Write migration tests against temporary files: initial create、STRICT constraints、PRAGMAs、unknown future version、backup/rollback、WAL crash reopen，以及 v2 → v3 删除 Task criteria 列和历史 report criteria 数据、保留其余字段、成功时清理含旧数据的 app-managed backup、失败时保留 pre-v3 backup。
+2. Implement DB open/migration/backup/checkpoint；当前 schema 为 v3。
 3. Write repository tests for create/list/get/revision conflict、one active Run、events、notifications and pagination。
 4. Implement short queued transactions and invariant checks。
 5. Add 10k Task benchmark fixture and verify indexed list p95 target without committing generated DB。
@@ -234,7 +234,7 @@ Exit proof: Renderer can perform only the listed Task operations and Task failur
 ### Phase 8 — Renderer navigation, form and review UI
 
 1. Add red tests for Task row above Projects and outside DnD；implement minimal navigation。
-2. Add form tests for defaults、dependent project options、criteria ordering、automation off、single-flight and dirty confirmation；implement form。
+2. Add form tests for defaults、dependent project options、automation off、single-flight and dirty confirmation；Task contract 中不得出现 criteria。
 3. Add list/detail tests for paging、revision invalidation、awaiting-report wording、report evidence and manual completion。
 4. Add accessibility checks: keyboard navigation、focus return、aria-live notification、status text independent of color。
 5. Add i18n keys in both locales and run brand/i18n guards。
@@ -300,17 +300,18 @@ rg -n "tasks\.sqlite3|task_report_result|submit_task_rewrite" electron src
 ## 5. Manual acceptance
 
 1. 无 project 时打开 Task list；确认可看历史、不能错误启动新 Run。
-2. 打开 Git project，新建默认自动化 Task；确认新 managed worktree、唯一 session、唯一首 prompt；另用 Directory project 确认只能选择 synthetic main workspace，且不会创建 worktree。
+2. 打开 Git project，新建默认自动化 Task；确认 UI、IPC、数据库和 report 中均无 acceptance criteria，并确认新 managed worktree、唯一 session、唯一首 prompt；另用 Directory project 确认只能选择 synthetic main workspace，且不会创建 worktree。
 3. 在 worktree 创建改动并让 Agent settled 但不报告；确认状态 awaiting_report、收到提醒、未完成。
 4. Continue for report；提交有效 tool report；确认 needs_review 和逐项 evidence。
 5. Accept；确认只有此人工动作进入 completed。
 6. Request changes；确认 attempt +1 且沿用 workspace/session策略，无并行 active Run。
 7. existing clean/dirty worktree 各执行一次；dirty 必须二次确认，取消/失败均不删除 workspace。
 8. 在 saga 每个 fault hook 强制退出应用并重启；确认不重复 worktree/session/prompt。
-9. AI 优化 Apply → Undo、Reject、Cancel、timeout；确认 Chat History/磁盘/SQLite 无 rewrite session 或正文。
-10. 后台窗口触发 needs_review/failed；确认系统通知通用且点击定位 Task；前台仅应用内提醒。
-11. 报告 Draft PR/MR link；确认 UI 无 ready/approve/merge 控件，Main 无对应 IPC/tool。
-12. 回滚运行不支持 Task 的旧版再升级；确认旧版忽略数据库，新版恢复 Task，不损坏 Project/Chat。
+9. AI 优化 Apply → Undo、Reject、Cancel、timeout；确认只改 title/description，且 Chat History/磁盘/SQLite 无 rewrite session 或正文。
+10. 在宽屏调整 Projects rail 宽度，确认 Task list/form/detail 相对应用窗口居中；在 Task 页面点击同一或不同 worktree 的 Pi session，确认退出 Task surface 并打开对应 Chat。
+11. 后台窗口触发 needs_review/failed；确认系统通知通用且点击定位 Task；前台仅应用内提醒。
+12. 报告 Draft PR/MR link；确认 UI 无 ready/approve/merge 控件，Main 无对应 IPC/tool。
+13. 回滚运行不支持 Task 的旧版再升级；确认旧版忽略数据库，新版恢复 Task，不损坏 Project/Chat。
 
 ## 6. Rollout and rollback
 
