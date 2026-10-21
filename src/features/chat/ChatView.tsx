@@ -5,8 +5,7 @@ import { chatRuntime, type ChatRuntime, useChatSession } from "./chatRuntime";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { RiArrowDownLine } from "@remixicon/react";
-import { ProcessFlow } from "./ProcessFlow";
-import { TodoListCard } from "./TodoListCard";
+import { WorkSummary } from "./WorkSummary";
 import { projectChatTimeline } from "./chatDisplayItems";
 import { toChatError } from "./sessionReducer";
 import { useChatScrollController } from "./useChatScrollController";
@@ -141,18 +140,14 @@ function ChatViewContent({
               </button>
             </div>
           ) : null}
-          {projectChatTimeline(state.items).map((item) => {
+          {projectChatTimeline(state.items, running).map((item) => {
             switch (item.type) {
               case "message":
                 return (
                   <ChatMessage key={`message:${item.id}`} message={item} />
                 );
-              case "process":
-                return (
-                  <ProcessFlow key={`process:${item.id}`} steps={item.steps} />
-                );
-              case "todo":
-                return <TodoListCard key={`todo:${item.id}`} todo={item} />;
+              case "work":
+                return <WorkSummary key={item.id} work={item} />;
               case "notice":
                 return (
                   <div

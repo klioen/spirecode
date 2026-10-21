@@ -2552,6 +2552,57 @@ details[open] > summary > .chat-disclosure-icon {
 .chat-tool-error > summary .chat-status-icon {
   color: var(--danger);
 }
+.chat-work-summary {
+  width: min(800px, 100%);
+  border: 0;
+  color: var(--text-subtle);
+}
+.chat-work-summary > summary {
+  min-height: 24px;
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 22px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.chat-work-summary > summary::-webkit-details-marker {
+  display: none;
+}
+.chat-work-summary > summary:hover,
+.chat-work-summary > summary:focus-visible {
+  color: var(--text-muted);
+}
+.chat-work-summary > summary > .chat-disclosure-icon {
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none;
+}
+.chat-work-summary[open] > summary > .chat-disclosure-icon {
+  transform: rotate(90deg);
+}
+.chat-work-details {
+  padding: 6px 0 10px 22px;
+  display: grid;
+  gap: 6px;
+}
+.chat-work-thinking {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 21px;
+}
+.chat-work-details > .chat-message {
+  width: 100%;
+}
 .chat-process-list {
   padding: 6px 0 10px;
   border: 0;

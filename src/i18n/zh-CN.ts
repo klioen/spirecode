@@ -433,6 +433,8 @@ export const zhCN = {
   "chat.history.moveToTrash": "移到废纸篓",
   "chat.history.movingToTrash": "正在移到废纸篓…",
   "chat.thinking": "深度思考",
+  "chat.work.workingFor": "正在工作 {time}",
+  "chat.work.workedFor": "工作了 {time}",
   "chat.process.analyzing": "分析任务",
   "chat.process.multiple": "{actions}等多项操作",
   "chat.process.action.runCommand": "执行命令",
