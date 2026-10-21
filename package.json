@@ -39,6 +39,7 @@
     "smoke:app": "./scripts/smoke-app.sh",
     "smoke:dmg": "./scripts/smoke-dmg.sh",
     "bundle": "node scripts/package-electron.mjs",
+    "install:mac": "./scripts/install-macos.sh",
     "release:test": "node --test scripts/release/*.test.mjs",
     "release:build": "node scripts/release/build.mjs",
     "release:metadata": "node scripts/release/checksums.mjs && node scripts/release/sbom.mjs",
