@@ -96,6 +96,18 @@ describe("theme tokens", () => {
     expectDeclarations(".branch-options", menuSurface.slice(1));
   });
 
+  it("indents each Projects tree level by one consistent step", () => {
+    expectDeclarations(".worktree-list", ["padding-left: 28px"]);
+    expectDeclarations(".project-session-row", ["padding: 0 8px 0 52px"]);
+    expect(css).toContain(
+      ".project-session-state {\n  min-height: 28px;\n  padding: 6px 8px 6px 52px;",
+    );
+    expectDeclarations(
+      ".worktree-entry > .project-session-list .project-session-row,\n.worktree-entry > .project-session-list .project-session-state",
+      ["padding-left: 38px"],
+    );
+  });
+
   it("keeps Settings as a full-window navigation surface", () => {
     expectDeclarations(".settings-page", [
       "width: 100%",

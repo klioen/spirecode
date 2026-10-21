@@ -101,16 +101,15 @@ export class ProjectService {
     const { catalog, migrated } = await loadCatalog(statePath);
     const service = new ProjectService(statePath, catalog);
     if (migrated) await saveAtomic(statePath, catalog);
+    let sessionProjects: SessionProjectCandidate[] = [];
     if (options.discoverSessionProjects) {
-      let sessionProjects: SessionProjectCandidate[];
       try {
         sessionProjects = await options.discoverSessionProjects();
       } catch (error) {
         console.warn("Unable to discover Pi session projects", error);
-        return service;
       }
-      await service.syncSessionProjects(sessionProjects);
     }
+    await service.syncSessionProjects(sessionProjects);
     return service;
   }
 
@@ -386,6 +385,7 @@ export class ProjectService {
     return this.queue.run(async () => {
       const candidate = structuredClone(this.catalogValue);
       candidate.version = PROJECT_STATE_VERSION;
+      reconcileOwnedWorktreeProjects(candidate);
       const result = await upsertProject(
         candidate,
         canonical,
@@ -433,6 +433,7 @@ export class ProjectService {
       const catalog = structuredClone(this.catalogValue);
       catalog.version = PROJECT_STATE_VERSION;
       const before = JSON.stringify(catalog);
+      reconcileOwnedWorktreeProjects(catalog);
       const ordered = [...roots.values()].sort(
         (left, right) => left.lastOpenedAt - right.lastOpenedAt,
       );
@@ -746,6 +747,56 @@ function findProjectByWorktree(catalog: Catalog, id: string): ProjectSummary {
   return project;
 }
 
+function findOwnedWorktreeRoot(
+  catalog: Catalog,
+  canonical: string,
+): { project: ProjectSummary; worktree: WorktreeSummary } | undefined {
+  const matches = catalog.projects.flatMap((project) =>
+    project.worktrees
+      .filter(
+        (worktree) => worktree.kind !== "main" && worktree.path === canonical,
+      )
+      .map((worktree) => ({ project, worktree })),
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function reconcileOwnedWorktreeProjects(catalog: Catalog): void {
+  const duplicateIds = new Set<string>();
+  for (const duplicate of catalog.projects) {
+    const owner = findOwnedWorktreeRoot(catalog, duplicate.path);
+    const duplicateMain = duplicate.worktrees[0];
+    if (
+      !owner ||
+      owner.project.id === duplicate.id ||
+      duplicate.worktrees.length !== 1 ||
+      duplicateMain?.kind !== "main" ||
+      duplicateMain.path !== duplicate.path
+    )
+      continue;
+    owner.project.lastOpenedAt = Math.max(
+      owner.project.lastOpenedAt,
+      duplicate.lastOpenedAt,
+    );
+    owner.worktree.lastOpenedAt = Math.max(
+      owner.worktree.lastOpenedAt,
+      duplicateMain.lastOpenedAt,
+      duplicate.lastOpenedAt,
+    );
+    if (catalog.activeWorktreeId === duplicateMain.id) {
+      catalog.activeWorktreeId = owner.worktree.id;
+    }
+    duplicateIds.add(duplicate.id);
+  }
+  if (duplicateIds.size === 0) return;
+  catalog.projects = catalog.projects.filter(
+    (project) => !duplicateIds.has(project.id),
+  );
+  catalog.projectOrder = catalog.projectOrder.filter(
+    (projectId) => !duplicateIds.has(projectId),
+  );
+}
+
 async function upsertProject(
   catalog: Catalog,
   canonical: string,
@@ -753,6 +804,18 @@ async function upsertProject(
   openedAt: number,
   activate: boolean,
 ): Promise<ProjectSummary> {
+  const owner = findOwnedWorktreeRoot(catalog, canonical);
+  if (owner) {
+    owner.project.lastOpenedAt = activate
+      ? openedAt
+      : Math.max(owner.project.lastOpenedAt, openedAt);
+    owner.worktree.lastOpenedAt = activate
+      ? openedAt
+      : Math.max(owner.worktree.lastOpenedAt, openedAt);
+    if (activate) catalog.activeWorktreeId = owner.worktree.id;
+    return owner.project;
+  }
+
   const existing = catalog.projects.find(
     (project) => project.path === canonical,
   );
