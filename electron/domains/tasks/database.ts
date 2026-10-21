@@ -7,7 +7,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: new (path: string) => DatabaseConnection;
 };
 
-export const CURRENT_TASK_SCHEMA_VERSION = 2;
+export const CURRENT_TASK_SCHEMA_VERSION = 3;
 
 export type TaskDatabaseErrorCode =
   | "TASK_DATABASE_UNAVAILABLE"
@@ -47,7 +47,6 @@ CREATE TABLE tasks (
   requested_worktree_id TEXT,
   base_ref TEXT,
   allow_dirty INTEGER NOT NULL CHECK (allow_dirty IN (0,1)),
-  acceptance_criteria_json TEXT NOT NULL CHECK (json_valid(acceptance_criteria_json)),
   automation_enabled INTEGER NOT NULL CHECK (automation_enabled IN (0,1)),
   status TEXT NOT NULL CHECK (status IN ('backlog','queued','running','needs_review','completed','failed','cancelled')),
   active_run_id TEXT,
@@ -122,6 +121,14 @@ WHERE status IN ('queued','provisioning','prompting','running','awaiting_report'
 const MIGRATION_2 =
   "CREATE INDEX task_notifications_unread_idx ON task_notifications(app_read_at, created_at DESC) WHERE app_read_at IS NULL";
 
+const MIGRATION_3 = `
+UPDATE task_runs
+SET report_json = json_remove(report_json, '$.acceptanceCriteria')
+WHERE report_json IS NOT NULL
+  AND json_type(report_json, '$.acceptanceCriteria') IS NOT NULL;
+ALTER TABLE tasks DROP COLUMN acceptance_criteria_json;
+`;
+
 function tableExists(connection: DatabaseConnection, name: string): boolean {
   return Boolean(
     connection
@@ -168,6 +175,11 @@ function migrate(
           "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
         )
         .run(2, "migration-v2", now());
+      connection
+        .prepare(
+          "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        )
+        .run(3, "migration-v3", now());
       connection.exec("COMMIT");
       return CURRENT_TASK_SCHEMA_VERSION;
     } catch (error) {
@@ -216,6 +228,7 @@ function migrate(
       );
       connection.exec("BEGIN IMMEDIATE");
       if (targetVersion === 2) connection.exec(MIGRATION_2);
+      else if (targetVersion === 3) connection.exec(MIGRATION_3);
       else throw new Error(`No Task migration for schema ${targetVersion}`);
       connection
         .prepare(
@@ -223,7 +236,8 @@ function migrate(
         )
         .run(targetVersion, `migration-v${targetVersion}`, now());
       connection.exec("COMMIT");
-      removeOlderMigrationBackups(databasePath, backupPath);
+      if (targetVersion !== 3)
+        removeOlderMigrationBackups(databasePath, backupPath);
       version = targetVersion;
     } catch (error) {
       try {
@@ -268,18 +282,25 @@ function createMigrationBackup(
 
 function removeOlderMigrationBackups(
   databasePath: string,
-  retainedBackupPath: string,
+  retainedBackupPath: string | null,
 ): void {
   const directory = dirname(databasePath);
   const prefix = `${basename(databasePath)}.pre-v`;
   for (const entry of readdirSync(directory)) {
+    if (!entry.startsWith(prefix) || !entry.endsWith(".bak")) continue;
+    const version = entry.slice(prefix.length, -".bak".length);
+    if (!/^\d+$/.test(version)) continue;
+    if (Number(version) > CURRENT_TASK_SCHEMA_VERSION) continue;
     const candidate = join(directory, entry);
-    if (
-      entry.startsWith(prefix) &&
-      entry.endsWith(".bak") &&
-      candidate !== retainedBackupPath
-    )
-      rmSync(candidate, { force: true });
+    if (candidate === retainedBackupPath) continue;
+    let metadata;
+    try {
+      metadata = lstatSync(candidate);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (metadata.isFile()) rmSync(candidate, { force: true });
   }
 }
 
@@ -330,6 +351,7 @@ export function openTaskDatabase(
       options.now ?? Date.now,
       databasePath,
     );
+    if (schemaVersion >= 3) removeOlderMigrationBackups(databasePath, null);
     return new TaskDatabase(connection, schemaVersion);
   } catch (error) {
     if (connection) {

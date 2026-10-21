@@ -12,13 +12,9 @@ export const DEFAULT_TASK_REWRITE_TIMEOUT_MS = 60_000;
 
 const MAX_TITLE_BYTES = 200;
 const MAX_DESCRIPTION_BYTES = 64 * 1024;
-const MAX_CRITERIA = 50;
-const MAX_CRITERION_BYTES = 2 * 1024;
-
 export interface TaskRewriteDraft {
   title: string;
   description: string;
-  acceptanceCriteria: string[];
 }
 
 export type TaskRewriteErrorCode =
@@ -119,7 +115,7 @@ export class TaskRewriteService {
         "A task rewrite is already active",
       );
 
-    const validatedInput = validateTaskRewrite(input, false);
+    const validatedInput = validateTaskRewrite(input);
     let resolveResult!: (result: TaskRewriteDraft) => void;
     let rejectResult!: (error: TaskRewriteError) => void;
     const resultPromise = new Promise<TaskRewriteDraft>((resolve, reject) => {
@@ -137,7 +133,7 @@ export class TaskRewriteService {
       name: TASK_REWRITE_TOOL_NAME,
       label: "Submit task rewrite",
       description:
-        "Submit the final rewritten title, description, and acceptance criteria. Call exactly once.",
+        "Submit the final rewritten title and description. Call exactly once.",
       parameters: rewriteParametersSchema,
       async execute(_toolCallId, params) {
         if (submitted)
@@ -354,59 +350,31 @@ const rewriteParametersSchema = Type.Object(
   {
     title: Type.String(),
     description: Type.String(),
-    acceptanceCriteria: Type.Array(Type.String(), {
-      minItems: 1,
-      maxItems: MAX_CRITERIA,
-    }),
   },
   { additionalProperties: false },
 );
 
-function validateTaskRewrite(
-  value: unknown,
-  requireCriteria = true,
-): TaskRewriteDraft {
+function validateTaskRewrite(value: unknown): TaskRewriteDraft {
   if (!isPlainRecord(value)) return invalid("Rewrite must be an object");
-  if (!hasExactKeys(value, ["title", "description", "acceptanceCriteria"]))
+  if (!hasExactKeys(value, ["title", "description"]))
     return invalid("Rewrite contains missing or unsupported fields");
   if (typeof value.title !== "string") return invalid("Title must be a string");
   if (typeof value.description !== "string")
     return invalid("Description must be a string");
-  if (!Array.isArray(value.acceptanceCriteria))
-    return invalid("Acceptance criteria must be an array");
 
   const title = value.title.trim();
   if (!title || byteLength(title) > MAX_TITLE_BYTES)
     return invalid("Title must be between 1 and 200 UTF-8 bytes");
   if (byteLength(value.description) > MAX_DESCRIPTION_BYTES)
     return invalid("Description exceeds 64 KiB");
-  if (value.acceptanceCriteria.length > MAX_CRITERIA)
-    return invalid("Acceptance criteria must contain at most 50 items");
-
-  const acceptanceCriteria = value.acceptanceCriteria
-    .map((criterion) => {
-      if (typeof criterion !== "string")
-        return invalid("Each acceptance criterion must be a string");
-      const normalized = criterion.trim();
-      if (!normalized && !requireCriteria) return null;
-      const bytes = byteLength(normalized);
-      if (!normalized || bytes > MAX_CRITERION_BYTES)
-        return invalid(
-          "Each acceptance criterion must be between 1 and 2048 UTF-8 bytes",
-        );
-      return normalized;
-    })
-    .filter((criterion): criterion is string => criterion !== null);
-  if (requireCriteria && acceptanceCriteria.length < 1)
-    return invalid("Acceptance criteria must contain 1 to 50 items");
-  return { title, description: value.description, acceptanceCriteria };
+  return { title, description: value.description };
 }
 
 function buildRewritePrompt(input: TaskRewriteDraft): string {
   return [
     "Rewrite this task for clarity without changing its intent.",
     `You must call ${TASK_REWRITE_TOOL_NAME} exactly once.`,
-    "Only title, description, and acceptanceCriteria may be returned.",
+    "Only title and description may be returned.",
     "Plain assistant text is not accepted as a result.",
     JSON.stringify(input),
   ].join("\n");

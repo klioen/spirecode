@@ -1,5 +1,4 @@
 import type {
-  AcceptanceCriterion,
   CreateTaskInput,
   TaskRunReport,
   WorkspaceRequest,
@@ -72,21 +71,6 @@ export function validateId(value: unknown, field = "id"): string {
   return value;
 }
 
-function validateCriterion(
-  value: AcceptanceCriterion,
-  index: number,
-): AcceptanceCriterion {
-  requireExactKeys(value, ["id", "text"], `acceptanceCriteria[${index}]`);
-  return {
-    id: validateId(value?.id, `acceptanceCriteria[${index}].id`),
-    text: requireString(
-      value?.text,
-      `acceptanceCriteria[${index}].text`,
-      2 * 1024,
-    ),
-  };
-}
-
 export function validateWorkspace(value: WorkspaceRequest): WorkspaceRequest {
   if (!isPlainRecord(value)) fail("workspace is required");
   if (value.mode === "new_managed") {
@@ -120,24 +104,10 @@ export function validateCreateTaskInput(
       "description",
       "projectId",
       "workspace",
-      "acceptanceCriteria",
       "automationEnabled",
     ],
     "task input",
   );
-  if (
-    !Array.isArray(input.acceptanceCriteria) ||
-    input.acceptanceCriteria.length < 1 ||
-    input.acceptanceCriteria.length > 50
-  ) {
-    fail("acceptanceCriteria must contain 1-50 items");
-  }
-  const criteria = input.acceptanceCriteria.map(validateCriterion);
-  if (
-    new Set(criteria.map((criterion) => criterion.id)).size !== criteria.length
-  ) {
-    fail("acceptanceCriteria ids must be unique");
-  }
   if (typeof input.automationEnabled !== "boolean")
     fail("automationEnabled must be boolean");
 
@@ -152,7 +122,6 @@ export function validateCreateTaskInput(
     ),
     projectId: validateId(input.projectId, "projectId"),
     workspace: validateWorkspace(input.workspace),
-    acceptanceCriteria: criteria,
     automationEnabled: input.automationEnabled,
   };
 }
@@ -167,56 +136,16 @@ function boundedArray(
   return value;
 }
 
-export function validateTaskRunReport(
-  report: TaskRunReport,
-  criteria: readonly AcceptanceCriterion[],
-): TaskRunReport {
+export function validateTaskRunReport(report: TaskRunReport): TaskRunReport {
   requireExactKeys(
     report,
     report?.changeRequest
-      ? ["outcome", "summary", "acceptanceCriteria", "tests", "changeRequest"]
-      : ["outcome", "summary", "acceptanceCriteria", "tests"],
+      ? ["outcome", "summary", "tests", "changeRequest"]
+      : ["outcome", "summary", "tests"],
     "report",
   );
   if (!(["success", "blocked", "failed"] as const).includes(report.outcome))
     fail("report outcome is invalid");
-  const expectedIds = new Set(criteria.map((criterion) => criterion.id));
-  const reported = boundedArray(
-    report.acceptanceCriteria,
-    "report.acceptanceCriteria",
-    50,
-  ).map((entry, index) => {
-    const item = entry as TaskRunReport["acceptanceCriteria"][number];
-    requireExactKeys(
-      item,
-      ["criterionId", "status", "evidence"],
-      `report.acceptanceCriteria[${index}]`,
-    );
-    const criterionId = validateId(
-      item?.criterionId,
-      `report.acceptanceCriteria[${index}].criterionId`,
-    );
-    if (!expectedIds.has(criterionId))
-      fail("report contains an unknown criterion");
-    if (!(["passed", "failed", "not_run"] as const).includes(item.status))
-      fail("criterion status is invalid");
-    return {
-      criterionId,
-      status: item.status,
-      evidence: requireString(
-        item.evidence,
-        `report.acceptanceCriteria[${index}].evidence`,
-        8 * 1024,
-        true,
-      ),
-    };
-  });
-  if (
-    reported.length !== expectedIds.size ||
-    new Set(reported.map((item) => item.criterionId)).size !== expectedIds.size
-  ) {
-    fail("report must include every criterion exactly once");
-  }
   const tests = boundedArray(report.tests, "report.tests", 100).map(
     (entry, index) => {
       const item = entry as TaskRunReport["tests"][number];
@@ -247,7 +176,6 @@ export function validateTaskRunReport(
   const normalized: TaskRunReport = {
     outcome: report.outcome,
     summary: requireString(report.summary, "report.summary", 64 * 1024),
-    acceptanceCriteria: reported,
     tests,
   };
   if (report.changeRequest) {

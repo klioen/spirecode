@@ -135,7 +135,6 @@ export interface CreateTaskRequest {
   description: string;
   projectId: string;
   workspace: WorkspaceRequest;
-  acceptanceCriteria: string[];
   automationEnabled: boolean;
 }
 
@@ -143,7 +142,6 @@ export interface UpdateTaskRequest {
   title?: string;
   description?: string;
   workspace?: WorkspaceRequest;
-  acceptanceCriteria?: Array<{ id?: string; text: string }>;
   automationEnabled?: boolean;
 }
 
@@ -220,11 +218,6 @@ export class TaskService {
         "TASK_PROJECT_NOT_GIT",
         "Directory projects must use their existing workspace",
       );
-    if (!Array.isArray(input.acceptanceCriteria))
-      throw new TaskServiceError(
-        "TASK_RESULT_INVALID",
-        "acceptanceCriteria must be an array",
-      );
     if (input.workspace.mode === "existing")
       await this.#requireOwnedWorktree(
         input.projectId,
@@ -238,10 +231,6 @@ export class TaskService {
       description: input.description,
       projectId: input.projectId,
       workspace: input.workspace,
-      acceptanceCriteria: input.acceptanceCriteria.map((text) => ({
-        id: this.#uuid(),
-        text,
-      })),
       automationEnabled: input.automationEnabled,
     });
     this.repository.appendEvent(task.id, null, "task.created");
@@ -274,30 +263,10 @@ export class TaskService {
           workspace.worktreeId,
           workspace.allowDirty,
         );
-      const existingCriterionIds = new Set(
-        task.acceptanceCriteria.map(({ id }) => id),
-      );
-      const seenCriterionIds = new Set<string>();
-      const acceptanceCriteria = patch.acceptanceCriteria
-        ? patch.acceptanceCriteria.map(({ id, text }) => {
-            if (
-              id !== undefined &&
-              (!existingCriterionIds.has(id) || seenCriterionIds.has(id))
-            )
-              throw new TaskServiceError(
-                "TASK_RESULT_INVALID",
-                "Acceptance criterion ID is invalid",
-              );
-            const criterionId = id ?? this.#uuid();
-            seenCriterionIds.add(criterionId);
-            return { id: criterionId, text };
-          })
-        : task.acceptanceCriteria;
       const updated = this.repository.updateTask(taskId, expectedRevision, {
         title: patch.title ?? task.title,
         description: patch.description ?? task.description,
         workspace,
-        acceptanceCriteria,
         automationEnabled: patch.automationEnabled ?? task.automationEnabled,
       });
       this.repository.appendEvent(taskId, null, "task.updated");
@@ -818,7 +787,6 @@ export class TaskService {
           "runId",
           "outcome",
           "summary",
-          "acceptanceCriteria",
           "tests",
           ...(input.changeRequest ? ["changeRequest"] : []),
         ]);
@@ -830,7 +798,6 @@ export class TaskService {
         const report: TaskRunReport = {
           outcome: input.outcome,
           summary: input.summary,
-          acceptanceCriteria: input.acceptanceCriteria,
           tests: input.tests,
           ...(input.changeRequest
             ? { changeRequest: input.changeRequest }
