@@ -107,43 +107,20 @@ function createInput(automationEnabled = true) {
       mode: "new_managed" as const,
       baseRef: "origin/main",
     },
-    acceptanceCriteria: ["Service is tested", "Recovery is idempotent"],
     automationEnabled,
   };
 }
 
 describe("TaskService", () => {
-  it("generates task and criterion UUIDs in Main and leaves manual tasks in backlog", async () => {
+  it("generates task UUIDs in Main and leaves manual tasks in backlog", async () => {
     const detail = await service.create(createInput(false));
 
     expect(detail.task.id).toBe(ids[0]);
-    expect(detail.task.acceptanceCriteria.map((item) => item.id)).toEqual([
-      ids[1],
-      ids[2],
-    ]);
     expect(detail.task.status).toBe("backlog");
     expect(dependencies.createWorktree).not.toHaveBeenCalled();
     await expect(service.list({ limit: 10 })).resolves.toMatchObject({
       items: [{ id: ids[0] }],
     });
-  });
-
-  it("preserves criterion IDs across editable task updates", async () => {
-    const detail = await service.create(createInput(false));
-    const [first, second] = detail.task.acceptanceCriteria;
-
-    const updated = await service.update(detail.task.id, detail.task.revision, {
-      title: "Updated title",
-      acceptanceCriteria: [
-        { id: second!.id, text: second!.text },
-        { id: first!.id, text: "Updated criterion" },
-      ],
-    });
-
-    expect(updated.task.acceptanceCriteria).toEqual([
-      { id: second!.id, text: second!.text },
-      { id: first!.id, text: "Updated criterion" },
-    ]);
   });
 
   it("rejects non-Git projects and worktrees owned by another project", async () => {
@@ -201,7 +178,7 @@ describe("TaskService", () => {
 
     expect(dependencies.createWorktree).toHaveBeenCalledWith(
       projectId,
-      expect.stringMatching(/^task-40000000-implement-task-service$/),
+      expect.stringMatching(/^task-20000000-implement-task-service$/),
       "origin/main",
     );
     expect(dependencies.createSession).toHaveBeenCalledWith(
@@ -236,11 +213,6 @@ describe("TaskService", () => {
       runId: run.id,
       outcome: "success",
       summary: "Implemented",
-      acceptanceCriteria: detail.task.acceptanceCriteria.map((criterion) => ({
-        criterionId: criterion.id,
-        status: "passed" as const,
-        evidence: "focused tests pass",
-      })),
       tests: [{ command: "pnpm test", status: "passed", summary: "green" }],
     });
     expect(reported.task.status).toBe("needs_review");
@@ -326,11 +298,6 @@ describe("TaskService", () => {
       runId: third.runs[0]!.id,
       outcome: "success",
       summary: "Done",
-      acceptanceCriteria: third.task.acceptanceCriteria.map((criterion) => ({
-        criterionId: criterion.id,
-        status: "passed" as const,
-        evidence: "Verified",
-      })),
       tests: [],
     });
 
@@ -403,11 +370,6 @@ describe("TaskService", () => {
       runId: run.id,
       outcome: "blocked",
       summary: "Needs input",
-      acceptanceCriteria: retry.task.acceptanceCriteria.map((criterion) => ({
-        criterionId: criterion.id,
-        status: "not_run" as const,
-        evidence: "blocked",
-      })),
       tests: [],
     });
     const review = await service.get(retry.task.id);
@@ -422,11 +384,6 @@ describe("TaskService", () => {
       runId: changes.runs[0]!.id,
       outcome: "success",
       summary: "Done",
-      acceptanceCriteria: changes.task.acceptanceCriteria.map((criterion) => ({
-        criterionId: criterion.id,
-        status: "passed" as const,
-        evidence: "done",
-      })),
       tests: [],
     });
     const secondReview = await service.get(changes.task.id);
@@ -486,7 +443,6 @@ describe("TaskService", () => {
       description: "",
       projectId,
       workspace: { mode: "new_managed", baseRef: "origin/main" },
-      acceptanceCriteria: [{ id: ids[1], text: "Recovered" }],
       automationEnabled: true,
     });
     const created = repository.createRun(task.id, task.revision, {

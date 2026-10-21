@@ -61,7 +61,13 @@ describe("task database", () => {
     ).toEqual([
       { version: 1, name: "initial" },
       { version: 2, name: "migration-v2" },
+      { version: 3, name: "migration-v3" },
     ]);
+    expect(
+      database.connection
+        .prepare("SELECT name FROM pragma_table_info('tasks')")
+        .all(),
+    ).not.toContainEqual({ name: "acceptance_criteria_json" });
 
     database.close();
   });
@@ -73,41 +79,40 @@ describe("task database", () => {
     first.close();
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(2);
+    expect(reopened.schemaVersion).toBe(3);
     expect(
       reopened.connection
         .prepare("SELECT count(*) AS count FROM schema_migrations")
         .get(),
-    ).toEqual({ count: 2 });
+    ).toEqual({ count: 3 });
     reopened.close();
   });
 
-  it("checkpoints and backs up v1 before migrating to v2", () => {
+  it("migrates v1 to the current schema and removes legacy-data backups", () => {
     const path = temporaryDatabasePath();
     const first = openTaskDatabase(path);
+    first.connection.exec(
+      "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
+    );
     first.connection.exec("DROP INDEX task_notifications_unread_idx");
-    first.connection.exec("DELETE FROM schema_migrations WHERE version = 2");
+    first.connection.exec("DELETE FROM schema_migrations WHERE version >= 2");
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(2);
-    expect(existsSync(`${path}.pre-v2.bak`)).toBe(true);
+    expect(migrated.schemaVersion).toBe(3);
+    expect(existsSync(`${path}.pre-v2.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     migrated.close();
-
-    const backup = new DatabaseSync(`${path}.pre-v2.bak`, { readOnly: true });
-    expect(
-      backup
-        .prepare("SELECT max(version) AS version FROM schema_migrations")
-        .get(),
-    ).toEqual({ version: 1 });
-    backup.close();
   });
 
   it("rolls back a failed migration and retains its backup", () => {
     const path = temporaryDatabasePath();
     const first = openTaskDatabase(path);
+    first.connection.exec(
+      "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
+    );
     first.connection.exec("DROP INDEX task_notifications_unread_idx");
-    first.connection.exec("DELETE FROM schema_migrations WHERE version = 2");
+    first.connection.exec("DELETE FROM schema_migrations WHERE version >= 2");
     first.connection.exec(
       "CREATE TABLE task_notifications_unread_idx(value TEXT)",
     );
@@ -124,6 +129,97 @@ describe("task database", () => {
         .get(),
     ).toEqual({ version: 1 });
     verify.close();
+  });
+
+  it("deletes v2 criteria schema, report data, and the legacy-data backup", () => {
+    const path = temporaryDatabasePath();
+    const first = openTaskDatabase(path);
+    first.connection.exec(
+      "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
+    );
+    first.connection.exec("DELETE FROM schema_migrations WHERE version = 3");
+    first.connection.exec(`
+      INSERT INTO tasks (
+        id,title,description,project_id,workspace_mode,requested_worktree_id,base_ref,
+        allow_dirty,automation_enabled,status,active_run_id,revision,created_at,updated_at,completed_at,
+        acceptance_criteria_json
+      ) VALUES ('task','Legacy','Keep description','project','new_managed',NULL,'origin/main',
+        0,1,'completed',NULL,1,1,1,1,'[{"id":"criterion","text":"delete me"}]');
+      INSERT INTO task_runs (
+        id,task_id,attempt,status,saga_phase,project_id,worktree_id,owns_managed_worktree,
+        worktree_name,base_ref,session_id,session_path,prompt_marker,report_json,error_code,
+        error_message,error_retryable,revision,created_at,started_at,settled_at,reported_at,finished_at
+      ) VALUES ('run','task',1,'reported','terminal','project','worktree',1,'legacy','origin/main',
+        'session',NULL,'marker','{"outcome":"success","summary":"keep summary","acceptanceCriteria":[{"criterionId":"criterion","status":"passed","evidence":"delete me"}],"tests":[{"command":"pnpm test","status":"passed","summary":"keep test"}],"changeRequest":{"kind":"github_pr","url":"https://example.com/pr/1","draft":true}}',
+        NULL,NULL,NULL,1,1,1,1,1,1);
+    `);
+    first.close();
+
+    const migrated = openTaskDatabase(path);
+    expect(migrated.schemaVersion).toBe(3);
+    expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
+    expect(
+      migrated.connection
+        .prepare("SELECT name FROM pragma_table_info('tasks')")
+        .all(),
+    ).not.toContainEqual({ name: "acceptance_criteria_json" });
+    const report = migrated.connection
+      .prepare("SELECT report_json FROM task_runs WHERE id = 'run'")
+      .get() as { report_json: string };
+    expect(JSON.parse(report.report_json)).toEqual({
+      outcome: "success",
+      summary: "keep summary",
+      tests: [{ command: "pnpm test", status: "passed", summary: "keep test" }],
+      changeRequest: {
+        kind: "github_pr",
+        url: "https://example.com/pr/1",
+        draft: true,
+      },
+    });
+    migrated.close();
+  });
+
+  it("rolls back a failed v3 migration and retains its backup", () => {
+    const path = temporaryDatabasePath();
+    const first = openTaskDatabase(path);
+    first.connection.exec(
+      "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
+    );
+    first.connection.exec("DELETE FROM schema_migrations WHERE version = 3");
+    first.connection.exec(
+      "CREATE INDEX legacy_criteria_idx ON tasks(acceptance_criteria_json)",
+    );
+    first.close();
+
+    expect(() => openTaskDatabase(path)).toThrowError(
+      expect.objectContaining({ code: "TASK_MIGRATION_FAILED" }),
+    );
+    expect(existsSync(`${path}.pre-v3.bak`)).toBe(true);
+    const verify = new DatabaseSync(path, { readOnly: true });
+    expect(
+      verify
+        .prepare("SELECT max(version) AS version FROM schema_migrations")
+        .get(),
+    ).toEqual({ version: 2 });
+    expect(
+      verify.prepare("SELECT name FROM pragma_table_info('tasks')").all(),
+    ).toContainEqual({ name: "acceptance_criteria_json" });
+    verify.close();
+  });
+
+  it("retries v3 legacy backup cleanup on every open without broad deletion", () => {
+    const path = temporaryDatabasePath();
+    const first = openTaskDatabase(path);
+    first.close();
+    writeFileSync(`${path}.pre-v3.bak`, "stale app backup");
+    writeFileSync(`${path}.pre-v4.bak`, "future migration backup");
+    writeFileSync(`${path}.pre-vmanual.bak`, "user file");
+
+    const reopened = openTaskDatabase(path);
+    expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v4.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-vmanual.bak`)).toBe(true);
+    reopened.close();
   });
 
   it("rejects an unknown future migration without modifying it", () => {
@@ -174,9 +270,9 @@ describe("task database", () => {
     expect(() =>
       database.connection.exec(`INSERT INTO tasks (
         id,title,description,project_id,workspace_mode,requested_worktree_id,base_ref,
-        allow_dirty,acceptance_criteria_json,automation_enabled,status,active_run_id,
+        allow_dirty,automation_enabled,status,active_run_id,
         revision,created_at,updated_at,completed_at
-      ) VALUES ('bad','x','','p','new_managed',NULL,'main',0,'not-json',1,'backlog',NULL,1,1,1,NULL)`),
+      ) VALUES ('bad','x','','p','new_managed',NULL,'main',2,1,'backlog',NULL,1,1,1,NULL)`),
     ).toThrow();
     database.close();
   });

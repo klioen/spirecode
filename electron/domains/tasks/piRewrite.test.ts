@@ -12,7 +12,6 @@ import {
 const input = {
   title: "  Improve task wording  ",
   description: "Keep the behavior unchanged.",
-  acceptanceCriteria: ["  Clear title  ", "Testable criteria"],
 };
 
 function expectCode(code: string) {
@@ -68,7 +67,6 @@ describe("TaskRewriteService", () => {
       await tool.execute("call-1", {
         title: "Better title",
         description: "Better description",
-        acceptanceCriteria: ["One", "Two"],
       });
     });
     const service = new TaskRewriteService(harness.factory);
@@ -76,7 +74,6 @@ describe("TaskRewriteService", () => {
     await expect(service.rewrite(input)).resolves.toEqual({
       title: "Better title",
       description: "Better description",
-      acceptanceCriteria: ["One", "Two"],
     });
     expect(harness.calls).toEqual([
       "create",
@@ -105,7 +102,6 @@ describe("TaskRewriteService", () => {
       const toolResult = await tool.execute("call-1", {
         title: "Better title",
         description: "Better description",
-        acceptanceCriteria: ["One"],
         projectId: "forbidden",
       });
       expect(toolResult.isError).toBe(true);
@@ -191,7 +187,6 @@ describe("createDefaultTaskRewriteService", () => {
         await capturedTool.execute("call-1", {
           title: "Production rewrite",
           description: "No persistence",
-          acceptanceCriteria: ["Only one tool"],
         });
       },
       async abort() {
@@ -249,7 +244,6 @@ describe("createDefaultTaskRewriteService", () => {
     await expect(service.rewrite(input)).resolves.toEqual({
       title: "Production rewrite",
       description: "No persistence",
-      acceptanceCriteria: ["Only one tool"],
     });
 
     expect(sdk.ModelRuntime.create).not.toHaveBeenCalled();

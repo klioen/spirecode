@@ -38,18 +38,12 @@ export type WorkspaceRequest =
   | { mode: "new_managed"; baseRef: string }
   | { mode: "existing"; worktreeId: string; allowDirty: boolean };
 
-export interface AcceptanceCriterion {
-  id: string;
-  text: string;
-}
-
 export interface Task {
   id: string;
   title: string;
   description: string;
   projectId: string;
   workspace: WorkspaceRequest;
-  acceptanceCriteria: AcceptanceCriterion[];
   automationEnabled: boolean;
   status: TaskStatus;
   activeRunId: string | null;
@@ -65,7 +59,6 @@ export interface CreateTaskInput {
   description: string;
   projectId: string;
   workspace: WorkspaceRequest;
-  acceptanceCriteria: AcceptanceCriterion[];
   automationEnabled: boolean;
 }
 
@@ -73,12 +66,6 @@ export interface TaskRunError {
   code: string;
   message: string;
   retryable: boolean;
-}
-
-export interface ReportedCriterion {
-  criterionId: string;
-  status: "passed" | "failed" | "not_run";
-  evidence: string;
 }
 
 export interface ReportedTest {
@@ -90,7 +77,6 @@ export interface ReportedTest {
 export interface TaskRunReport {
   outcome: "success" | "blocked" | "failed";
   summary: string;
-  acceptanceCriteria: ReportedCriterion[];
   tests: ReportedTest[];
   changeRequest?: {
     kind: "github_pr" | "gitlab_mr" | "other";

@@ -17,9 +17,6 @@ const taskInput: CreateTaskInput = {
   description: "Persist tasks safely",
   projectId: "20000000-0000-4000-8000-000000000001",
   workspace: { mode: "new_managed", baseRef: "refs/remotes/origin/main" },
-  acceptanceCriteria: [
-    { id: "30000000-0000-4000-8000-000000000001", text: " Tests pass " },
-  ],
   automationEnabled: false,
 };
 
@@ -63,7 +60,6 @@ describe("TaskRepository", () => {
       status: "backlog",
       revision: 1,
       workspace: { mode: "new_managed", baseRef: "refs/remotes/origin/main" },
-      acceptanceCriteria: [{ text: "Tests pass" }],
     });
     expect(repository.getTask(created.id)).toEqual(created);
     expect(repository.listTasks({ limit: 10 })).toEqual({
@@ -78,7 +74,6 @@ describe("TaskRepository", () => {
       title: "Ship the complete task foundation",
       description: "Updated scope",
       workspace: taskInput.workspace,
-      acceptanceCriteria: taskInput.acceptanceCriteria,
       automationEnabled: false,
     });
 
@@ -93,7 +88,6 @@ describe("TaskRepository", () => {
         title: "Stale",
         description: "",
         workspace: taskInput.workspace,
-        acceptanceCriteria: taskInput.acceptanceCriteria,
         automationEnabled: false,
       }),
     ).toThrowError(expect.objectContaining({ code: "TASK_CONFLICT" }));
@@ -274,13 +268,6 @@ describe("TaskRepository", () => {
     const report: TaskRunReport = {
       outcome: "success",
       summary: "Done",
-      acceptanceCriteria: [
-        {
-          criterionId: taskInput.acceptanceCriteria[0].id,
-          status: "passed",
-          evidence: "vitest passed",
-        },
-      ],
       tests: [
         { command: "pnpm exec vitest run", status: "passed", summary: "green" },
       ],
@@ -357,12 +344,5 @@ describe("TaskRepository", () => {
     expect(repository.listNotifications({ limit: 10 }).items[1].appReadAt).toBe(
       now,
     );
-  });
-
-  it("rejects invalid input before writing", () => {
-    expect(() =>
-      repository.createTask({ ...taskInput, acceptanceCriteria: [] }),
-    ).toThrowError(expect.objectContaining({ code: "TASK_RESULT_INVALID" }));
-    expect(repository.listTasks({ limit: 10 }).items).toEqual([]);
   });
 });

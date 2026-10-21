@@ -80,7 +80,6 @@ interface TaskRow {
   requested_worktree_id: string | null;
   base_ref: string | null;
   allow_dirty: number;
-  acceptance_criteria_json: string;
   automation_enabled: number;
   status: TaskStatus;
   active_run_id: string | null;
@@ -131,9 +130,6 @@ function mapTask(row: TaskRow): Task {
     description: row.description,
     projectId: row.project_id,
     workspace,
-    acceptanceCriteria: JSON.parse(
-      row.acceptance_criteria_json,
-    ) as Task["acceptanceCriteria"],
     automationEnabled: row.automation_enabled === 1,
     status: row.status,
     activeRunId: row.active_run_id,
@@ -292,9 +288,9 @@ export class TaskRepository {
         .prepare(
           `INSERT INTO tasks (
           id, title, description, project_id, workspace_mode, requested_worktree_id, base_ref,
-          allow_dirty, acceptance_criteria_json, automation_enabled, status, active_run_id,
+          allow_dirty, automation_enabled, status, active_run_id,
           revision, created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', NULL, 1, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', NULL, 1, ?, ?, NULL)`,
         )
         .run(
           value.id,
@@ -305,7 +301,6 @@ export class TaskRepository {
           requestedWorktreeId,
           baseRef,
           allowDirty,
-          JSON.stringify(value.acceptanceCriteria),
           value.automationEnabled ? 1 : 0,
           now,
           now,
@@ -352,8 +347,7 @@ export class TaskRepository {
         .prepare(
           `UPDATE tasks SET title = ?, description = ?, workspace_mode = ?,
              requested_worktree_id = ?, base_ref = ?, allow_dirty = ?,
-             acceptance_criteria_json = ?, automation_enabled = ?,
-             revision = revision + 1, updated_at = ?
+             automation_enabled = ?, revision = revision + 1, updated_at = ?
            WHERE id = ? AND revision = ?`,
         )
         .run(
@@ -363,7 +357,6 @@ export class TaskRepository {
           requestedWorktreeId,
           baseRef,
           allowDirty,
-          JSON.stringify(value.acceptanceCriteria),
           value.automationEnabled ? 1 : 0,
           this.#now(),
           id,
@@ -846,7 +839,7 @@ export class TaskRepository {
       const runRow = this.#requireRun(validateId(runId, "runId"));
       const taskRow = this.#requireTask(runRow.task_id);
       const task = mapTask(taskRow);
-      const report = validateTaskRunReport(input, task.acceptanceCriteria);
+      const report = validateTaskRunReport(input);
       const reportJson = JSON.stringify(report);
       if (runRow.report_json) {
         if (runRow.report_json === reportJson)
