@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Simplified Chat transcripts to show final answers directly while folding thinking, tool calls, todos, and intermediate updates into a Codex-style `Working for…` / `Worked for…` summary.
 - Made Installed the first and default Extensions tab, loading the remote Marketplace only when opened.
 - Added safe `Remove from Pi` actions for user-configured local extension packages; this removes only their settings reference and never deletes local source files.
 - Moved Projects and Settings controls into the Projects rail and redesigned Settings as an Orca-inspired full-window page with grouped navigation and search.

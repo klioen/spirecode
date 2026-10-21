@@ -447,6 +447,8 @@ export const en = {
   "chat.history.moveToTrash": "Move to Trash",
   "chat.history.movingToTrash": "Moving to Trash…",
   "chat.thinking": "Thinking",
+  "chat.work.workingFor": "Working for {time}",
+  "chat.work.workedFor": "Worked for {time}",
   "chat.process.analyzing": "Analyzing task",
   "chat.process.multiple": "{actions} and other operations",
   "chat.process.action.runCommand": "Run command",

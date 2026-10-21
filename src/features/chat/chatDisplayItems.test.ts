@@ -2,106 +2,159 @@ import { expect, it } from "vitest";
 import { projectChatTimeline } from "./chatDisplayItems";
 import type { ChatTimelineItem } from "./types";
 
+const user = (id: string, createdAt: number): ChatTimelineItem => ({
+  type: "message",
+  id,
+  role: "user",
+  content: id,
+  status: "complete",
+  createdAt,
+});
+const assistant = (
+  id: string,
+  content: string,
+  createdAt: number,
+  status: "streaming" | "complete" = "complete",
+): ChatTimelineItem => ({
+  type: "message",
+  id,
+  role: "assistant",
+  content,
+  status,
+  createdAt,
+});
 const thinking: ChatTimelineItem = {
   type: "thinking",
   id: "thinking-1",
   content: "inspect raw reasoning",
   status: "complete",
 };
-const tool = (id: string): ChatTimelineItem => ({
+const tool = (
+  id: string,
+  status: "running" | "done" = "done",
+): ChatTimelineItem => ({
   type: "tool",
   toolCallId: id,
   name: "read",
   arguments: { path: `${id}.ts` },
-  status: "done",
+  status,
 });
-const message: ChatTimelineItem = {
-  type: "message",
-  id: "message-1",
-  role: "assistant",
-  content: "done",
-  status: "complete",
+const todo: ChatTimelineItem = {
+  type: "todo",
+  id: "todo-1",
+  todos: [{ id: "a", step: "Inspect", status: "in_progress" }],
 };
 
-it("does not project raw thinking", () => {
-  expect(projectChatTimeline([thinking])).toEqual([]);
+it("keeps a direct final answer without adding a work summary", () => {
+  const input = [user("user-1", 1_000), assistant("answer-1", "done", 2_000)];
+  expect(projectChatTimeline(input, false)).toEqual(input);
 });
 
-it("groups adjacent tools across hidden thinking", () => {
-  expect(
-    projectChatTimeline([tool("tool-1"), thinking, tool("tool-2")]),
-  ).toEqual([
-    {
-      type: "process",
-      id: "tool:tool-1:tool:tool-2",
-      steps: [tool("tool-1"), tool("tool-2")],
-    },
-  ]);
-});
-
-it("groups tools across invisible completed assistant placeholders", () => {
-  const emptyAssistant: ChatTimelineItem = {
-    type: "message",
-    id: "empty-assistant",
-    role: "assistant",
-    content: "  ",
-    status: "complete",
-  };
-
-  expect(
-    projectChatTimeline([
-      tool("tool-1"),
-      emptyAssistant,
-      tool("tool-2"),
-      emptyAssistant,
-      tool("tool-3"),
-    ]),
-  ).toEqual([
-    {
-      type: "process",
-      id: "tool:tool-1:tool:tool-3",
-      steps: [tool("tool-1"), tool("tool-2"), tool("tool-3")],
-    },
-  ]);
-});
-
-it("keeps an empty streaming assistant when no process follows it", () => {
-  const waiting: ChatTimelineItem = {
-    type: "message",
-    id: "waiting",
-    role: "assistant",
-    content: "",
-    status: "streaming",
-  };
-  expect(projectChatTimeline([waiting])).toEqual([waiting]);
-});
-
-it("uses todo snapshots as process boundaries", () => {
-  const todo: ChatTimelineItem = {
-    type: "todo",
-    id: "todo-1",
-    todos: [{ id: "a", step: "Inspect", status: "in_progress" }],
-  };
-  expect(projectChatTimeline([tool("tool-1"), todo, tool("tool-2")])).toEqual([
-    { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
+it("folds all intermediate work before the final answer", () => {
+  const input = [
+    user("user-1", 1_000),
+    thinking,
+    tool("tool-1"),
     todo,
-    { type: "process", id: "tool:tool-2", steps: [tool("tool-2")] },
+    assistant("update-1", "I am still checking", 20_000),
+    tool("tool-2"),
+    assistant("answer-1", "Final answer", 46_000),
+  ];
+
+  expect(projectChatTimeline(input, false)).toEqual([
+    input[0],
+    {
+      type: "work",
+      id: "work:user-1",
+      status: "worked",
+      startedAt: 1_000,
+      completedAt: 46_000,
+      items: input.slice(1, 6),
+    },
+    input[6],
   ]);
 });
 
-it("uses visible messages and notices as process boundaries", () => {
+it("shows active work until the final answer starts", () => {
+  const input = [user("user-1", 1_000), thinking, tool("tool-1", "running")];
+  expect(projectChatTimeline(input, true)).toEqual([
+    input[0],
+    {
+      type: "work",
+      id: "work:user-1",
+      status: "working",
+      startedAt: 1_000,
+      items: input.slice(1),
+    },
+  ]);
+});
+
+it("freezes worked time when a streaming final answer starts", () => {
+  const input = [
+    user("user-1", 1_000),
+    tool("tool-1"),
+    assistant("answer-1", "Streaming final", 11_000, "streaming"),
+  ];
+  expect(projectChatTimeline(input, true)).toEqual([
+    input[0],
+    {
+      type: "work",
+      id: "work:user-1",
+      status: "worked",
+      startedAt: 1_000,
+      completedAt: 11_000,
+      items: [input[1]],
+    },
+    input[2],
+  ]);
+});
+
+it("does not mistake assistant text followed by a tool for the final answer", () => {
+  const input = [
+    user("user-1", 1_000),
+    assistant("update-1", "First update", 2_000),
+    tool("tool-1"),
+  ];
+  expect(projectChatTimeline(input, false)).toEqual([
+    input[0],
+    {
+      type: "work",
+      id: "work:user-1",
+      status: "worked",
+      startedAt: 1_000,
+      completedAt: 2_000,
+      items: input.slice(1),
+    },
+  ]);
+});
+
+it("keeps notices outside the folded work and drops empty placeholders", () => {
   const notice: ChatTimelineItem = {
     type: "notice",
     id: "notice-1",
     kind: "retry",
     text: "retrying",
-    active: true,
+    active: false,
   };
-  expect(
-    projectChatTimeline([thinking, message, tool("tool-1"), notice]),
-  ).toEqual([
-    message,
-    { type: "process", id: "tool:tool-1", steps: [tool("tool-1")] },
+  const empty = assistant("empty", "  ", 2_000);
+  const input = [
+    user("user-1", 1_000),
+    tool("tool-1"),
+    empty,
     notice,
+    assistant("answer-1", "Final", 4_000),
+  ];
+  expect(projectChatTimeline(input, false)).toEqual([
+    input[0],
+    notice,
+    {
+      type: "work",
+      id: "work:user-1",
+      status: "worked",
+      startedAt: 1_000,
+      completedAt: 4_000,
+      items: [input[1]],
+    },
+    input[4],
   ]);
 });

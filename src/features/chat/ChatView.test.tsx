@@ -35,9 +35,10 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
           {
             type: "message",
             id: "m1",
-            role: "assistant",
-            content: "## Markdown result\n\nPlain **safe** text",
+            role: "user",
+            content: "Inspect the chat UI",
             status: "complete",
+            createdAt: 1_000,
           },
           {
             type: "thinking",
@@ -76,6 +77,7 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
             role: "assistant",
             content: "More output",
             status: "complete",
+            createdAt: 20_000,
           },
           {
             type: "tool",
@@ -84,6 +86,14 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
             status: "done",
             arguments: { path: "src/b.ts" },
             result: "updated",
+          },
+          {
+            type: "message",
+            id: "m3",
+            role: "assistant",
+            content: "## Markdown result\n\nPlain **safe** text",
+            status: "complete",
+            createdAt: 46_000,
           },
         ],
         queue: [],
@@ -155,7 +165,7 @@ describe("ChatView", () => {
     expect(screen.queryByText("Start a conversation with pi")).toBeNull();
   });
 
-  it("renders Markdown, a unified process group, and a direct single tool", async () => {
+  it("renders only the final answer until the work summary is expanded", async () => {
     render(
       <ChatView
         worktreeId="worktree-1"
@@ -170,18 +180,25 @@ describe("ChatView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("safe").tagName).toBe("STRONG");
 
-    expect(screen.queryByText("Thinking")).toBeNull();
+    const summary = screen.getByText("Worked for 45s");
+    const work = summary.closest("details");
+    expect(work).not.toHaveAttribute("open");
+    expect(screen.getByText("Thinking")).not.toBeVisible();
     expect(screen.queryByText("reasoning")).toBeNull();
-
-    const processGroup = screen
-      .getByText("Read file and Run command and other operations")
-      .closest("details");
-    expect(processGroup).not.toHaveAttribute("open");
     expect(screen.getByText("read")).not.toBeVisible();
+    expect(screen.getByText("edit")).not.toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Todo progress" }),
+    ).not.toBeVisible();
+    expect(screen.getByText("More output")).not.toBeVisible();
 
+    fireEvent.click(summary);
+    expect(screen.getByText("Thinking")).toBeVisible();
+    expect(screen.getByText("read")).toBeVisible();
     expect(screen.getByText("edit")).toBeVisible();
     expect(screen.getByRole("region", { name: "Todo progress" })).toBeVisible();
     expect(screen.getByText("1/2")).toBeVisible();
+    expect(screen.getByText("More output")).toBeVisible();
   });
 
   it("live-switches semantic notices while preserving external messages", async () => {
