@@ -165,6 +165,40 @@ describe("chat wire normalization", () => {
     ]);
   });
 
+  it("drops empty trailing thinking blocks after a final answer", () => {
+    const message = {
+      role: "assistant",
+      timestamp: 3,
+      content: [
+        { type: "text", text: "Final answer" },
+        { type: "thinking", thinking: "" },
+      ],
+    };
+
+    expect(normalizeMessages([message])).toEqual([
+      {
+        type: "message",
+        id: "message:assistant:3:text:0",
+        role: "assistant",
+        content: "Final answer",
+        status: "complete",
+        createdAt: 3,
+      },
+    ]);
+    expect(normalizeEvent({ type: "message_end", message })).toEqual([
+      {
+        type: "message_end",
+        message: {
+          id: "message:assistant:3:text:0",
+          role: "assistant",
+          content: "Final answer",
+          status: "complete",
+          createdAt: 3,
+        },
+      },
+    ]);
+  });
+
   it("preserves a visible error when an assistant failure has no content blocks", () => {
     expect(
       normalizeEvent({
