@@ -31,8 +31,8 @@ describe("ensureNpmOnPath", () => {
     const nvmBin = "/Users/tester/.nvm/versions/node/v24.1.0/bin";
     const access = vi.fn(async (candidate: string) => {
       if (
-        candidate === path.join(nvmBin, "npm") ||
-        candidate === path.join(nvmBin, "node")
+        candidate === path.posix.join(nvmBin, "npm") ||
+        candidate === path.posix.join(nvmBin, "node")
       )
         return;
       throw new Error("missing");
@@ -50,6 +50,33 @@ describe("ensureNpmOnPath", () => {
     });
 
     expect(env.PATH).toBe(`${nvmBin}:/usr/bin:/bin`);
+  });
+
+  it("uses Windows path semantics when resolving a Windows runtime", async () => {
+    const env: NodeJS.ProcessEnv = {
+      Path: "C:\\Windows\\System32",
+      ProgramFiles: "C:\\Program Files",
+    };
+    const nodeDirectory = "C:\\Program Files\\nodejs";
+    const access = vi.fn(async (candidate: string) => {
+      if (
+        candidate === path.win32.join(nodeDirectory, "npm.cmd") ||
+        candidate === path.win32.join(nodeDirectory, "node.exe")
+      )
+        return;
+      throw new Error("missing");
+    });
+
+    await ensureNpmOnPath({
+      env,
+      homeDirectory: "C:\\Users\\tester",
+      platform: "win32",
+      access,
+      readDirectory: vi.fn(),
+      executableDirectory: "C:\\Program Files\\SpireCode",
+    });
+
+    expect(env.Path).toBe(`${nodeDirectory};C:\\Windows\\System32`);
   });
 
   it("fails with an actionable error when no npm runtime is available", async () => {
