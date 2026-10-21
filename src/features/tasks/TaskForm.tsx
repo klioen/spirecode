@@ -164,7 +164,9 @@ export function TaskForm({
 
   return (
     <form className="task-form" onSubmit={(event) => void submit(event)}>
-      <h2>{task ? t("tasks.edit") : t("tasks.new")}</h2>
+      <header className="task-form-header">
+        <h2>{task ? t("tasks.edit") : t("tasks.new")}</h2>
+      </header>
       <label>
         {t("tasks.form.title")}
         <input
@@ -212,7 +214,7 @@ export function TaskForm({
           ))}
         </select>
       </label>
-      <fieldset>
+      <fieldset className="task-form-section task-workspace-section">
         <legend>{t("tasks.form.workspace")}</legend>
         {project?.kind === "git" ? (
           <label>
@@ -237,7 +239,7 @@ export function TaskForm({
           {t("tasks.form.existingWorktree")}
         </label>
         {workspaceMode === "new_managed" && project?.kind === "git" ? (
-          <label>
+          <label className="task-form-field">
             {t("tasks.form.baseBranch")}
             <select
               aria-label={t("tasks.form.baseBranch")}
@@ -258,7 +260,7 @@ export function TaskForm({
           </label>
         ) : (
           <>
-            <label>
+            <label className="task-form-field">
               {t("tasks.form.worktree")}
               <select
                 aria-label={t("tasks.form.worktree")}
@@ -278,7 +280,7 @@ export function TaskForm({
               </select>
             </label>
             {project?.worktrees.find(({ id }) => id === worktreeId)?.dirty ? (
-              <label>
+              <label className="task-checkbox-row">
                 <input
                   type="checkbox"
                   checked={allowDirty}
@@ -290,10 +292,10 @@ export function TaskForm({
           </>
         )}
       </fieldset>
-      <fieldset>
+      <fieldset className="task-form-section task-criteria-section">
         <legend>{t("tasks.acceptanceCriteria")}</legend>
         {criteria.map((criterion, index) => (
-          <div key={index}>
+          <div className="task-criterion-row" key={index}>
             <input
               aria-label={t("tasks.form.criterion", { index: index + 1 })}
               value={criterion}
@@ -306,6 +308,7 @@ export function TaskForm({
               }
             />
             <button
+              className="task-criterion-action"
               type="button"
               aria-label={t("tasks.form.removeCriterion", {
                 index: index + 1,
@@ -320,6 +323,7 @@ export function TaskForm({
               {t("tasks.form.remove")}
             </button>
             <button
+              className="task-criterion-action"
               type="button"
               aria-label={t("tasks.form.moveCriterionUp", {
                 index: index + 1,
@@ -341,13 +345,14 @@ export function TaskForm({
           </div>
         ))}
         <button
+          className="task-button task-button-secondary task-add-criterion"
           type="button"
           onClick={() => setCriteria((current) => [...current, ""])}
         >
           {t("tasks.form.addCriterion")}
         </button>
       </fieldset>
-      <label>
+      <label className="task-automation-toggle">
         <input
           type="checkbox"
           checked={automationEnabled}
@@ -355,22 +360,36 @@ export function TaskForm({
         />
         {t("tasks.form.startAutomation")}
       </label>
-      <p>{t("tasks.form.automationWarning")}</p>
-      {error ? <p role="alert">{error}</p> : null}
-      <button type="submit" disabled={submitting}>
-        {submitting
-          ? task
-            ? t("tasks.form.saving")
-            : t("tasks.form.creating")
-          : task
-            ? t("tasks.form.save")
-            : t("tasks.form.create")}
-      </button>
-      {onCancel ? (
-        <button type="button" onClick={onCancel}>
-          {t("tasks.form.cancel")}
-        </button>
+      <p className="task-form-hint">{t("tasks.form.automationWarning")}</p>
+      {error ? (
+        <p className="task-page-message task-page-error" role="alert">
+          {error}
+        </p>
       ) : null}
+      <footer className="task-form-actions">
+        {onCancel ? (
+          <button
+            className="task-button task-button-secondary"
+            type="button"
+            onClick={onCancel}
+          >
+            {t("tasks.form.cancel")}
+          </button>
+        ) : null}
+        <button
+          className="task-button task-button-primary"
+          type="submit"
+          disabled={submitting}
+        >
+          {submitting
+            ? task
+              ? t("tasks.form.saving")
+              : t("tasks.form.creating")
+            : task
+              ? t("tasks.form.save")
+              : t("tasks.form.create")}
+        </button>
+      </footer>
     </form>
   );
 }

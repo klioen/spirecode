@@ -1,3 +1,11 @@
+import {
+  RiArrowLeftLine,
+  RiChat3Line,
+  RiEditLine,
+  RiExternalLinkLine,
+  RiPlayLine,
+  RiRestartLine,
+} from "@remixicon/react";
 import { useState } from "react";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import type { TaskDetailValue, TaskRunSummary, TasksApi } from "./tasksApi";
@@ -56,86 +64,124 @@ export function TaskDetail({
     }
   };
 
+  const statusLabel = t(
+    task.status === "needs_review"
+      ? "tasks.status.needsReview"
+      : (`tasks.status.${task.status}` as TranslationKey),
+  );
+
   return (
     <article className="task-detail" aria-labelledby="task-detail-title">
-      {onBack ? (
-        <button type="button" onClick={onBack}>
-          {t("tasks.back")}
-        </button>
-      ) : null}
-      <h2 id="task-detail-title">{task.title}</h2>
-      {onEdit &&
-      ["backlog", "failed", "cancelled"].includes(task.status) &&
-      !task.activeRunId ? (
-        <button type="button" onClick={onEdit}>
-          {t("tasks.edit")}
-        </button>
-      ) : null}
-      <p>
-        {t("tasks.statusLabel", {
-          status: t(
-            task.status === "needs_review"
-              ? "tasks.status.needsReview"
-              : (`tasks.status.${task.status}` as TranslationKey),
-          ),
-        })}
-      </p>
-      <p>{task.description}</p>
-      <h3>{t("tasks.acceptanceCriteria")}</h3>
-      <ol>
-        {task.acceptanceCriteria.map((criterion) => (
-          <li key={criterion.id}>{criterion.text}</li>
-        ))}
-      </ol>
+      <header className="task-detail-header">
+        {onBack ? (
+          <button className="task-icon-button" type="button" onClick={onBack}>
+            <RiArrowLeftLine size={17} aria-hidden="true" />
+            {t("tasks.back")}
+          </button>
+        ) : null}
+        <div className="task-detail-title-row">
+          <div>
+            <h2 id="task-detail-title">{task.title}</h2>
+            <span className={`task-status-badge task-status-${task.status}`}>
+              {t("tasks.statusLabel", { status: statusLabel })}
+            </span>
+          </div>
+          {onEdit &&
+          ["backlog", "failed", "cancelled"].includes(task.status) &&
+          !task.activeRunId ? (
+            <button
+              className="task-button task-button-secondary"
+              type="button"
+              onClick={onEdit}
+            >
+              <RiEditLine size={14} aria-hidden="true" />
+              {t("tasks.edit")}
+            </button>
+          ) : null}
+        </div>
+      </header>
 
-      <h3>{t("tasks.runs")}</h3>
-      {task.runs.length === 0 ? <p>{t("tasks.noRuns")}</p> : null}
-      <ol>
-        {task.runs.map((run) => (
-          <li key={run.id}>
-            {t("tasks.attempt", {
-              attempt: run.attempt,
-              status: t(runStatusKeys[run.status]),
-            })}
-            {run.worktreeName ? ` · ${run.worktreeName}` : ""}
-            {run.error ? <p role="alert">{run.error.message}</p> : null}
-            {run.worktreeId && run.sessionId && onOpenSession ? (
-              <button
-                type="button"
-                onClick={() => onOpenSession(run.worktreeId!, run.sessionId!)}
-              >
-                {t("tasks.openSession")}
-              </button>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      <section className="task-detail-section task-detail-overview">
+        <p>{task.description}</p>
+        <h3>{t("tasks.acceptanceCriteria")}</h3>
+        <ol className="task-criteria-list">
+          {task.acceptanceCriteria.map((criterion) => (
+            <li key={criterion.id}>{criterion.text}</li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="task-detail-section">
+        <h3>{t("tasks.runs")}</h3>
+        {task.runs.length === 0 ? <p>{t("tasks.noRuns")}</p> : null}
+        <ol className="task-run-list">
+          {task.runs.map((run) => (
+            <li className="task-run-card" key={run.id}>
+              <div className="task-run-heading">
+                <strong>
+                  {t("tasks.attempt", {
+                    attempt: run.attempt,
+                    status: t(runStatusKeys[run.status]),
+                  })}
+                </strong>
+                {run.worktreeName ? <code>{run.worktreeName}</code> : null}
+              </div>
+              {run.error ? (
+                <p className="task-run-error" role="alert">
+                  {run.error.message}
+                </p>
+              ) : null}
+              {run.worktreeId && run.sessionId && onOpenSession ? (
+                <button
+                  className="task-button task-button-secondary"
+                  type="button"
+                  onClick={() => onOpenSession(run.worktreeId!, run.sessionId!)}
+                >
+                  <RiChat3Line size={14} aria-hidden="true" />
+                  {t("tasks.openSession")}
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </section>
 
       {latestRun?.status === "awaiting_report" ? (
-        <section aria-label={t("tasks.reportRequired")}>
+        <section
+          className="task-detail-section task-attention-card"
+          aria-label={t("tasks.reportRequired")}
+        >
           <h3>{t("tasks.agentStopped")}</h3>
           <p>{t("tasks.stillRunning")}</p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void act(() => api.continueForReport(task.id, task.revision))
-            }
-          >
-            {t("tasks.continueReport")}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void act(() => api.cancel(task.id, task.revision))}
-          >
-            {t("tasks.cancelTask")}
-          </button>
+          <div className="task-detail-actions">
+            <button
+              className="task-button task-button-primary"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void act(() => api.continueForReport(task.id, task.revision))
+              }
+            >
+              <RiPlayLine size={14} aria-hidden="true" />
+              {t("tasks.continueReport")}
+            </button>
+            <button
+              className="task-button task-button-secondary"
+              type="button"
+              disabled={busy}
+              onClick={() => void act(() => api.cancel(task.id, task.revision))}
+            >
+              {t("tasks.cancelTask")}
+            </button>
+          </div>
         </section>
       ) : null}
 
       {task.status === "needs_review" && latestRun?.report ? (
-        <section aria-label={t("tasks.result")}>
+        <section
+          className="task-detail-section task-result-card"
+          aria-label={t("tasks.result")}
+        >
           <h3>
             {t("tasks.resultLabel", {
               result: t(
@@ -175,6 +221,7 @@ export function TaskDetail({
           </ul>
           {latestRun.report.changeRequest ? (
             <a
+              className="task-external-link"
               href={latestRun.report.changeRequest.url}
               target="_blank"
               rel="noreferrer noopener"
@@ -190,23 +237,30 @@ export function TaskDetail({
               }}
             >
               {t("tasks.openDraft")}
+              <RiExternalLinkLine size={13} aria-hidden="true" />
             </a>
           ) : null}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void act(() => api.complete(task.id, task.revision))}
-          >
-            {t("tasks.acceptCompletion")}
-          </button>
-          <label>
-            {t("tasks.changeNote")}
+          <div className="task-detail-actions">
+            <button
+              className="task-button task-button-primary"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void act(() => api.complete(task.id, task.revision))
+              }
+            >
+              {t("tasks.acceptCompletion")}
+            </button>
+          </div>
+          <label className="task-change-note">
+            <span>{t("tasks.changeNote")}</span>
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
             />
           </label>
           <button
+            className="task-button task-button-secondary"
             type="button"
             disabled={busy || note.trim().length === 0}
             onClick={() =>
@@ -224,16 +278,26 @@ export function TaskDetail({
       task.status === "failed" ||
       task.status === "cancelled" ? (
         <button
+          className="task-button task-button-primary task-detail-run"
           type="button"
           disabled={busy}
           onClick={() => void act(() => api.run(task.id, task.revision))}
         >
+          {task.status === "backlog" ? (
+            <RiPlayLine size={14} aria-hidden="true" />
+          ) : (
+            <RiRestartLine size={14} aria-hidden="true" />
+          )}
           {task.status === "backlog"
             ? t("tasks.runTask")
             : t("tasks.retryTask")}
         </button>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <p className="task-page-message task-page-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </article>
   );
 }
