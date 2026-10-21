@@ -191,6 +191,23 @@ describe("ChatService", () => {
     expect(create).toHaveBeenNthCalledWith(2, root, { customTools });
   });
 
+  it("can durably name a newly loaded session before list discovery", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1", { sessionId: "task-run-1" });
+
+    const renamed = await service.nameLoadedSession(
+      "w1",
+      created.sessionId,
+      "SpireCode Task task-run-1",
+    );
+
+    expect(renamed.title).toBe("SpireCode Task task-run-1");
+    expect(
+      (records.get(created.sessionId)?.session as FakeSession).calls,
+    ).toContainEqual(["setSessionName", "SpireCode Task task-run-1"]);
+  });
+
   it("notifies multiple internal observers alongside the Renderer subscriber", async () => {
     const { root, records, adapter } = await fixture();
     const first: unknown[] = [];

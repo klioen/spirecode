@@ -220,6 +220,11 @@ describe("TaskService", () => {
         new RegExp(`^spire-task-run:${run.id}[\\s\\S]*Draft`),
       ),
     );
+    expect(
+      vi.mocked(dependencies.sendPrompt).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(dependencies.renameSession).mock.invocationCallOrder[0]!,
+    );
     expect(run).toMatchObject({
       status: "running",
       sagaPhase: "active",

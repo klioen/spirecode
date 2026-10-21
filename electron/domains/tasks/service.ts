@@ -713,11 +713,6 @@ export class TaskService {
           session.sessionId,
           session.sessionPath,
         );
-        await this.dependencies.renameSession(
-          run.worktreeId!,
-          session.sessionId,
-          taskSessionName(run.id),
-        );
       } else {
         await this.dependencies.attachSession(
           run.worktreeId!,
@@ -791,6 +786,11 @@ export class TaskService {
             true,
           );
       }
+      await this.dependencies.renameSession(
+        run.worktreeId!,
+        run.sessionId!,
+        taskSessionName(run.id),
+      );
       this.repository.upsertRunStep(run.id, "prompt", "done", {
         marker: run.promptMarker,
       });
