@@ -2316,6 +2316,10 @@ body.panel-resizing-vertical * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.task-list-metrics {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .task-list-item time {
   color: var(--text-subtle);
   font-size: 10px;
@@ -2529,9 +2533,32 @@ body.panel-resizing-vertical * {
   line-height: 1.55;
 }
 .task-detail-overview > p {
-  margin-bottom: 20px;
+  margin: 0 0 20px;
   color: var(--text-default);
   white-space: pre-wrap;
+}
+.task-metrics-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.task-metrics-grid > div {
+  padding: 10px 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: 7px;
+  background: var(--workspace-bg);
+}
+.task-metrics-grid dt {
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 600;
+}
+.task-metrics-grid dd {
+  margin: 5px 0 0;
+  color: var(--text-default);
+  font-size: 15px;
+  font-weight: 650;
 }
 .task-run-list {
   display: grid;

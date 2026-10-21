@@ -173,6 +173,7 @@ describe("TaskRepository", () => {
       items: [run],
       nextCursor: null,
     });
+    expect(repository.listAllRuns(taskInput.id)).toEqual([run]);
     expect(repository.getRun(run.id)).toEqual(run);
 
     const provisioning = repository.transitionRun(run.id, 1, "provisioning", {

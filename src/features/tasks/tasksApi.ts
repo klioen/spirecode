@@ -34,6 +34,8 @@ export interface TaskSummary {
   revision: number;
   createdAt: number;
   updatedAt: number;
+  durationMs: number;
+  tokenCount: number;
 }
 
 export interface TaskRunReport {

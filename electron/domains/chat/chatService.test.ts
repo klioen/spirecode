@@ -191,6 +191,16 @@ describe("ChatService", () => {
     expect(create).toHaveBeenNthCalledWith(2, root, { customTools });
   });
 
+  it("resolves a session file only within the adapter-owned session root", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1");
+
+    await expect(service.sessionPath("w1", created.sessionId)).resolves.toBe(
+      await realpath(records.get(created.sessionId)!.path!),
+    );
+  });
+
   it("can durably name a newly loaded session before list discovery", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(() => root, { adapter });

@@ -397,6 +397,16 @@ export class TaskRepository {
     return rows.map(mapRun);
   }
 
+  listAllRuns(taskId: string): TaskRun[] {
+    validateId(taskId, "taskId");
+    const rows = this.connection
+      .prepare(
+        "SELECT * FROM task_runs WHERE task_id = ? ORDER BY attempt DESC, id DESC",
+      )
+      .all(taskId) as unknown as RunRow[];
+    return rows.map(mapRun);
+  }
+
   listRuns(taskId: string, options: ListOptions): Page<TaskRun> {
     validateId(taskId, "taskId");
     const limit = requireLimit(options.limit);

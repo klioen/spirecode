@@ -13,6 +13,7 @@ import type {
   TaskStatus,
   TasksApi,
 } from "./tasksApi";
+import { formatTaskDuration, formatTaskTokens } from "./taskMetrics";
 import { DEFAULT_TASK_STATUSES, useTasksStore } from "./tasksStore";
 
 interface TaskPageProps {
@@ -33,7 +34,7 @@ const taskStatusKeys: Record<TaskStatus, TranslationKey> = {
 };
 
 export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
   const store = useTasksStore();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -324,6 +325,13 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
                     {task.workspace.mode === "new_managed"
                       ? task.workspace.baseRef
                       : task.workspace.worktreeId}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="task-list-metrics">
+                    {t("tasks.metrics.summary", {
+                      duration: formatTaskDuration(task.durationMs, language),
+                      tokens: formatTaskTokens(task.tokenCount),
+                    })}
                   </span>
                 </span>
               </span>
