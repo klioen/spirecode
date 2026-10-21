@@ -10,7 +10,6 @@ export const taskDetail = (
   projectId: "project-1",
   projectName: "SpireCode",
   workspace: { mode: "new_managed", baseRef: "origin/main" },
-  acceptanceCriteria: [{ id: "criterion-1", text: "Focused tests pass" }],
   automationEnabled: true,
   status: "backlog",
   activeRunId: null,

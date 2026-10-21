@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- Removed separate Task acceptance criteria from creation, editing, execution reports, UI, and persistent storage; the schema migration also deletes legacy criterion data while preserving Task summaries and test results.
 - **Breaking:** SpireCode no longer depends on or bundles packages from `github:klioen/pi-extensions`. Web access, subagents, memory, todo, plan, goal, and SDLC resources must now be installed and declared by users through standard Pi settings.
 - Removed the upstream `pi-extensions` redistribution-license blocker because SpireCode no longer downloads, stages, or distributes that repository's code. Production dependency and notice checks still apply to resources that SpireCode actually ships.
 

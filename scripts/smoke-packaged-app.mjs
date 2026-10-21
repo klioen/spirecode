@@ -259,7 +259,7 @@ const migration = db.prepare("SELECT version, name FROM schema_migrations ORDER 
 const integrity = db.prepare("PRAGMA quick_check").get();
 const tables = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('tasks','task_runs','task_run_steps','task_events','task_notifications')").get();
 db.close();
-process.exit(migration?.version === 2 && migration?.name === "migration-v2" && integrity?.quick_check === "ok" && tables?.count === 5 ? 0 : 2);`,
+process.exit(migration?.version === 3 && migration?.name === "migration-v3" && integrity?.quick_check === "ok" && tables?.count === 5 ? 0 : 2);`,
     ],
     { ELECTRON_RUN_AS_NODE: "1" },
   );

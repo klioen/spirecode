@@ -152,11 +152,13 @@ export function ProjectRail({
   onToggleProjects = () => undefined,
   onOpenSettings = () => undefined,
   onOpenTasks = () => undefined,
+  onOpenSession = () => undefined,
   tasksSelected = false,
 }: {
   onToggleProjects?: () => void;
   onOpenSettings?: () => void;
   onOpenTasks?: () => void;
+  onOpenSession?: () => void;
   tasksSelected?: boolean;
 }) {
   const { t } = useTranslation();
@@ -567,6 +569,7 @@ export function ProjectRail({
             <ProjectSessionList
               worktreeId={primaryWorkspace.id}
               onSelectWorktree={select}
+              onOpenSession={onOpenSession}
             />
           ) : (
             <div className="worktree-list">
@@ -673,6 +676,7 @@ export function ProjectRail({
                       <ProjectSessionList
                         worktreeId={worktree.id}
                         onSelectWorktree={select}
+                        onOpenSession={onOpenSession}
                       />
                     )}
                   </div>

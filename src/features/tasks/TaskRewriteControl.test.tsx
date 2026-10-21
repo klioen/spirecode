@@ -14,12 +14,10 @@ it("starts, applies, undoes, and cancels an isolated rewrite", async () => {
   const original = {
     title: "Original",
     description: "Original description",
-    acceptanceCriteria: ["Original criterion"],
   };
   const rewritten = {
     title: "Improved",
     description: "Clear description",
-    acceptanceCriteria: ["Observable result"],
   };
   const onApply = vi.fn();
   const { rerender } = render(

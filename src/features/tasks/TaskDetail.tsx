@@ -103,12 +103,6 @@ export function TaskDetail({
 
       <section className="task-detail-section task-detail-overview">
         <p>{task.description}</p>
-        <h3>{t("tasks.acceptanceCriteria")}</h3>
-        <ol className="task-criteria-list">
-          {task.acceptanceCriteria.map((criterion) => (
-            <li key={criterion.id}>{criterion.text}</li>
-          ))}
-        </ol>
       </section>
 
       <section className="task-detail-section">
@@ -194,22 +188,6 @@ export function TaskDetail({
             })}
           </h3>
           <p>{latestRun.report.summary}</p>
-          <ul>
-            {task.acceptanceCriteria.map((criterion) => {
-              const result = latestRun.report?.acceptanceCriteria.find(
-                ({ criterionId }) => criterionId === criterion.id,
-              );
-              return (
-                <li key={criterion.id}>
-                  {criterion.text}:{" "}
-                  {result
-                    ? t(resultStatusKeys[result.status])
-                    : t("tasks.notReported")}
-                  {result?.evidence ? ` — ${result.evidence}` : ""}
-                </li>
-              );
-            })}
-          </ul>
           <h4>{t("tasks.tests")}</h4>
           <ul>
             {latestRun.report.tests.map((test) => (

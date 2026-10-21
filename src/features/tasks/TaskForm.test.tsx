@@ -51,9 +51,12 @@ describe("TaskForm", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Description" }), {
       target: { value: "Renderer only" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Criterion 1" }), {
-      target: { value: " Tests pass " },
-    });
+    expect(
+      screen.queryByRole("textbox", { name: "Criterion 1" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add criterion" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create task" }));
 
     await waitFor(() =>
@@ -62,24 +65,16 @@ describe("TaskForm", () => {
         description: "Renderer only",
         projectId: "project-1",
         workspace: { mode: "new_managed", baseRef: "origin/main" },
-        acceptanceCriteria: ["Tests pass"],
         automationEnabled: true,
       }),
     );
   });
 
-  it("requires explicit dirty-worktree consent and preserves criteria order", async () => {
+  it("requires explicit dirty-worktree consent without requiring criteria", async () => {
     const api = createTasksApiMock();
     render(<TaskForm api={api} projects={projects} onCreated={vi.fn()} />);
     fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
       target: { value: "Use existing" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Criterion 1" }), {
-      target: { value: "First" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add criterion" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Criterion 2" }), {
-      target: { value: "Second" },
     });
     fireEvent.click(screen.getByRole("radio", { name: "Existing worktree" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Worktree" }), {
@@ -105,7 +100,6 @@ describe("TaskForm", () => {
             worktreeId: "dirty",
             allowDirty: true,
           },
-          acceptanceCriteria: ["First", "Second"],
           automationEnabled: false,
         }),
       ),

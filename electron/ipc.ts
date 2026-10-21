@@ -722,7 +722,6 @@ function taskCreateInput(
     "description",
     "projectId",
     "workspace",
-    "acceptanceCriteria",
     "automationEnabled",
   ]);
   if (Buffer.byteLength(JSON.stringify(input), "utf8") > 96 * 1024)
@@ -735,11 +734,6 @@ function taskCreateInput(
     true,
   );
   const projectId = boundedString(input.projectId, "projectId", 128);
-  if (!Array.isArray(input.acceptanceCriteria))
-    throw new TypeError("acceptanceCriteria must be an array");
-  const acceptanceCriteria = input.acceptanceCriteria.map((criterion) =>
-    boundedString(criterion, "acceptanceCriteria", 2 * 1024),
-  );
   if (typeof input.automationEnabled !== "boolean")
     throw new TypeError("automationEnabled must be a boolean");
   const workspace = taskWorkspace(input.workspace);
@@ -748,7 +742,6 @@ function taskCreateInput(
     description,
     projectId,
     workspace,
-    acceptanceCriteria,
     automationEnabled: input.automationEnabled,
   };
 }
@@ -757,13 +750,7 @@ function taskUpdateInput(
   args: Args,
 ): import("./domains/tasks/service.js").UpdateTaskRequest {
   const patch = strictRecord(args.patch, "patch");
-  exactKeys(patch, [
-    "title",
-    "description",
-    "workspace",
-    "acceptanceCriteria",
-    "automationEnabled",
-  ]);
+  exactKeys(patch, ["title", "description", "workspace", "automationEnabled"]);
   if (Object.keys(patch).length === 0) throw new TypeError("patch is empty");
   if (Buffer.byteLength(JSON.stringify(patch), "utf8") > 96 * 1024)
     throw new TypeError("Task patch is too large");
@@ -777,20 +764,6 @@ function taskUpdateInput(
       true,
     );
   if ("workspace" in patch) result.workspace = taskWorkspace(patch.workspace);
-  if ("acceptanceCriteria" in patch) {
-    if (!Array.isArray(patch.acceptanceCriteria))
-      throw new TypeError("acceptanceCriteria must be an array");
-    result.acceptanceCriteria = patch.acceptanceCriteria.map((criterion) => {
-      const value = strictRecord(criterion, "acceptanceCriteria");
-      exactKeys(value, ["id", "text"]);
-      return {
-        ...(value.id === undefined
-          ? {}
-          : { id: boundedString(value.id, "criterion.id", 128) }),
-        text: boundedString(value.text, "criterion.text", 2 * 1024),
-      };
-    });
-  }
   if ("automationEnabled" in patch) {
     if (typeof patch.automationEnabled !== "boolean")
       throw new TypeError("automationEnabled must be a boolean");
@@ -811,9 +784,7 @@ function taskNotificationListInput(args: Args): {
 
 function taskRewriteInput(args: Args): TaskRewriteDraft {
   const input = strictRecord(args.input, "input");
-  exactKeys(input, ["title", "description", "acceptanceCriteria"]);
-  if (!Array.isArray(input.acceptanceCriteria))
-    throw new TypeError("acceptanceCriteria must be an array");
+  exactKeys(input, ["title", "description"]);
   return {
     title: boundedString(input.title, "title", 200),
     description: boundedString(
@@ -822,11 +793,6 @@ function taskRewriteInput(args: Args): TaskRewriteDraft {
       64 * 1024,
       true,
     ),
-    acceptanceCriteria: input.acceptanceCriteria
-      .map((criterion) =>
-        boundedString(criterion, "acceptanceCriteria", 2 * 1024, true).trim(),
-      )
-      .filter(Boolean),
   };
 }
 
@@ -902,6 +868,12 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
   }
   if (command === "task_create") {
     taskCreateInput(args);
+    return args;
+  }
+  if (command === "task_update") {
+    text(args, "taskId");
+    safeInteger(args, "expectedRevision", 1);
+    taskUpdateInput(args);
     return args;
   }
   if (command === "task_rewrite_start") {

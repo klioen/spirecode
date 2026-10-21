@@ -19,8 +19,6 @@ export type TaskRunStatus =
   | "failed"
   | "cancelled";
 
-export type TaskCriterion = { id: string; text: string };
-
 export type TaskWorkspace =
   | { mode: "new_managed"; baseRef: string }
   | { mode: "existing"; worktreeId: string; allowDirty: boolean };
@@ -41,11 +39,6 @@ export interface TaskSummary {
 export interface TaskRunReport {
   outcome: "success" | "blocked" | "failed";
   summary: string;
-  acceptanceCriteria: Array<{
-    criterionId: string;
-    status: "passed" | "failed" | "not_run";
-    evidence: string;
-  }>;
   tests: Array<{
     command: string;
     status: "passed" | "failed" | "not_run";
@@ -73,7 +66,6 @@ export interface TaskRunSummary {
 
 export interface TaskDetailValue extends TaskSummary {
   description: string;
-  acceptanceCriteria: TaskCriterion[];
   automationEnabled: boolean;
   completedAt: number | null;
   runs: TaskRunSummary[];
@@ -91,7 +83,6 @@ export interface CreateTaskInput {
   description: string;
   projectId: string;
   workspace: TaskWorkspace;
-  acceptanceCriteria: string[];
   automationEnabled: boolean;
 }
 
@@ -99,9 +90,7 @@ export type UpdateTaskInput = Partial<
   Pick<
     CreateTaskInput,
     "title" | "description" | "workspace" | "automationEnabled"
-  > & {
-    acceptanceCriteria: Array<{ id?: string; text: string }>;
-  }
+  >
 >;
 
 export interface TaskNotificationValue {
@@ -116,7 +105,6 @@ export interface TaskNotificationValue {
 export interface TaskRewriteInput {
   title: string;
   description: string;
-  acceptanceCriteria: string[];
 }
 
 export type TaskEvent =
