@@ -138,7 +138,11 @@ export function normalizeMessages(messages: unknown): unknown[] {
       let hasText = false;
       blocks.forEach((block, blockIndex) => {
         if (!isRecord(block)) return;
-        if (block.type === "thinking" && typeof block.thinking === "string") {
+        if (
+          block.type === "thinking" &&
+          typeof block.thinking === "string" &&
+          block.thinking.trim() !== ""
+        ) {
           items.push({
             type: "thinking",
             id: `${base}:thinking:${blockIndex}`,
@@ -279,7 +283,11 @@ function normalizeMessageEvent(
   let hasText = false;
   blocks.forEach((block, index) => {
     if (!isRecord(block)) return;
-    if (block.type === "thinking" && typeof block.thinking === "string") {
+    if (
+      block.type === "thinking" &&
+      typeof block.thinking === "string" &&
+      block.thinking.trim() !== ""
+    ) {
       events.push({
         type: `thinking_${blockEventSuffix}`,
         thinking: {
