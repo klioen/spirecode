@@ -51,6 +51,45 @@ async function commit(root: string): Promise<void> {
   ]);
 }
 
+async function managedProjectFixture(): Promise<{
+  statePath: string;
+  service: ProjectService;
+  projectId: string;
+  worktree: WorktreeSummary;
+}> {
+  const root = await tempDir();
+  const repository = path.join(root, "repository");
+  const managedPath = path.join(root, "managed");
+  await init(repository);
+  await commit(repository);
+  await git(repository, [
+    "worktree",
+    "add",
+    "-q",
+    "-b",
+    "feature",
+    managedPath,
+  ]);
+  const statePath = path.join(root, "state.json");
+  const service = await ProjectService.load(statePath);
+  const project = await service.openPath(repository);
+  const canonicalManaged = await import("node:fs/promises").then((fs) =>
+    fs.realpath(managedPath),
+  );
+  const worktree: WorktreeSummary = {
+    id: randomUUID(),
+    projectId: project.id,
+    name: "feature",
+    path: canonicalManaged,
+    branch: "feature",
+    baseRef: "main",
+    kind: "managed",
+    lastOpenedAt: 20,
+  };
+  await service.addWorktree(project.id, worktree, 2);
+  return { statePath, service, projectId: project.id, worktree };
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(
@@ -191,6 +230,137 @@ describe("ProjectService", () => {
     expect(laterProject).toMatchObject({ groupId: null, lastOpenedAt: 400 });
     expect(catalog.projectOrder[0]).toBe(laterProject!.id);
     expect(catalog.projects.map(({ id }) => id)).toEqual(catalog.projectOrder);
+  });
+
+  it("reuses a managed worktree owner for session discovery and explicit opening", async () => {
+    const { statePath, service, projectId, worktree } =
+      await managedProjectFixture();
+
+    const opened = await service.openPath(worktree.path);
+    expect(opened.id).toBe(projectId);
+    expect(await service.list()).toHaveLength(1);
+    const sessionTime = opened.lastOpenedAt + 100;
+
+    const reloaded = await ProjectService.load(statePath, {
+      discoverSessionProjects: async () => [
+        { path: worktree.path, lastOpenedAt: sessionTime },
+      ],
+    });
+    const catalog = await reloaded.catalog();
+    expect(catalog.projects).toHaveLength(1);
+    expect(catalog.projects[0]).toMatchObject({
+      id: projectId,
+      lastOpenedAt: sessionTime,
+    });
+    expect(
+      catalog.projects[0]?.worktrees.find(({ id }) => id === worktree.id),
+    ).toMatchObject({ lastOpenedAt: sessionTime });
+  });
+
+  it("reconciles an existing worktree duplicate when session discovery fails", async () => {
+    const { statePath, service, projectId, worktree } =
+      await managedProjectFixture();
+    const seeded = await service.catalog();
+    const duplicateProjectId = randomUUID();
+    const duplicateWorktreeId = randomUUID();
+    const duplicateTime =
+      seeded.projects.find(({ id }) => id === projectId)!.lastOpenedAt + 100;
+    seeded.projects.push({
+      id: duplicateProjectId,
+      kind: "git",
+      name: "managed",
+      path: worktree.path,
+      lastOpenedAt: duplicateTime,
+      worktrees: [
+        {
+          id: duplicateWorktreeId,
+          projectId: duplicateProjectId,
+          name: "feature",
+          path: worktree.path,
+          branch: "feature",
+          baseRef: "feature",
+          kind: "main",
+          lastOpenedAt: duplicateTime,
+        },
+      ],
+      nextWorktreeSequence: 1,
+      groupId: null,
+    });
+    seeded.projectOrder.push(duplicateProjectId);
+    seeded.activeWorktreeId = duplicateWorktreeId;
+    await writeFile(statePath, JSON.stringify(seeded));
+
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const reloaded = await ProjectService.load(statePath, {
+      discoverSessionProjects: async () => {
+        throw new Error("session discovery failed");
+      },
+    });
+    const catalog = await reloaded.catalog();
+
+    expect(catalog.projects).toHaveLength(1);
+    expect(catalog.projectOrder).toEqual([projectId]);
+    expect(catalog.activeWorktreeId).toBe(worktree.id);
+    expect(catalog.projects[0]).toMatchObject({
+      id: projectId,
+      lastOpenedAt: duplicateTime,
+    });
+    expect(
+      catalog.projects[0]?.worktrees.find(({ id }) => id === worktree.id),
+    ).toMatchObject({ lastOpenedAt: duplicateTime });
+  });
+
+  it("preserves a project with additional worktrees during duplicate reconciliation", async () => {
+    const { statePath, service, projectId, worktree } =
+      await managedProjectFixture();
+    const seeded = await service.catalog();
+    const duplicateProjectId = randomUUID();
+    const duplicateWorktreeId = randomUUID();
+    const extraPath = path.join(path.dirname(worktree.path), "extra");
+    await mkdir(extraPath);
+    seeded.projects.push({
+      id: duplicateProjectId,
+      kind: "git",
+      name: "managed",
+      path: worktree.path,
+      lastOpenedAt: 900,
+      worktrees: [
+        {
+          id: duplicateWorktreeId,
+          projectId: duplicateProjectId,
+          name: "feature",
+          path: worktree.path,
+          branch: "feature",
+          baseRef: "feature",
+          kind: "main",
+          lastOpenedAt: 900,
+        },
+        {
+          id: randomUUID(),
+          projectId: duplicateProjectId,
+          name: "extra",
+          path: extraPath,
+          branch: "extra",
+          baseRef: "feature",
+          kind: "external",
+          lastOpenedAt: 900,
+        },
+      ],
+      nextWorktreeSequence: 2,
+      groupId: null,
+    });
+    seeded.projectOrder.push(duplicateProjectId);
+    await writeFile(statePath, JSON.stringify(seeded));
+
+    const reloaded = await ProjectService.load(statePath, {
+      discoverSessionProjects: async () => [],
+    });
+    const catalog = await reloaded.catalog();
+
+    expect(catalog.projects.map(({ id }) => id)).toEqual([
+      projectId,
+      duplicateProjectId,
+    ]);
   });
 
   it("re-adds a closed session project as Ungrouped on the next load", async () => {

@@ -581,7 +581,7 @@ body.panel-resizing-vertical * {
   transform: rotate(90deg);
 }
 .worktree-list {
-  padding-left: 14px;
+  padding-left: 28px;
 }
 .worktree-entry {
   min-width: 0;
@@ -628,7 +628,7 @@ body.panel-resizing-vertical * {
   min-width: 0;
   height: 28px;
   flex: 1;
-  padding: 0 8px 0 24px;
+  padding: 0 8px 0 52px;
   border: 0;
   border-radius: 5px;
   display: flex;
@@ -661,7 +661,7 @@ body.panel-resizing-vertical * {
 }
 .project-session-state {
   min-height: 28px;
-  padding: 6px 8px 6px 24px;
+  padding: 6px 8px 6px 52px;
   display: flex;
   align-items: center;
   gap: 7px;

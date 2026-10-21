@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Corrected Projects tree indentation and stopped Pi session discovery from duplicating SpireCode-managed worktrees as standalone Ungrouped projects.
 - Fixed `Remove from Pi` for relative local package sources by resolving the configured package path before asking Pi's PackageManager to remove the settings reference.
 - Restored Marketplace extension installation for desktop-launched apps by locating the user's Node.js/npm runtime before invoking Pi's package manager.
 - Widened Chat history so long session titles have more room in the popover row.
