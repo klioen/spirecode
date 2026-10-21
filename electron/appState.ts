@@ -40,6 +40,10 @@ import {
 } from "./domains/tasks/database.js";
 import { TaskRepository } from "./domains/tasks/repository.js";
 import {
+  taskRunDurationMs,
+  TaskSessionMetricsReader,
+} from "./domains/tasks/sessionMetrics.js";
+import {
   TaskService,
   type TaskDetail,
   type TaskSessionIntegration,
@@ -68,6 +72,7 @@ export class AppState {
   readonly watchers = new WatcherRegistry();
   readonly windowCloseGuard = new WindowCloseGuard();
   readonly diagnostics: DiagnosticsService;
+  readonly #taskSessionMetrics = new TaskSessionMetricsReader();
   readonly extensionCatalog: ExtensionCatalogService;
   readonly extensionPackages: ExtensionPackageService;
   readonly taskDatabase: TaskDatabase | null;
@@ -212,7 +217,13 @@ export class AppState {
             summary.sessionId,
             taskSessionName(integration.sessionId),
           );
-          return { sessionId: summary.sessionId, sessionPath: null };
+          return {
+            sessionId: summary.sessionId,
+            sessionPath: await this.chat.sessionPath(
+              worktreeId,
+              summary.sessionId,
+            ),
+          };
         },
         findSession: async (worktreeId, name, sessionId) => {
           const matches = (await this.chat.list(worktreeId)).filter(
@@ -223,7 +234,13 @@ export class AppState {
             throw new Error("Multiple task sessions use the same durable name");
           const session = matches[0];
           return session
-            ? { sessionId: session.sessionId, sessionPath: null }
+            ? {
+                sessionId: session.sessionId,
+                sessionPath: await this.chat.sessionPath(
+                  worktreeId,
+                  session.sessionId,
+                ),
+              }
             : null;
         },
         renameSession: async (worktreeId, sessionId, name) => {
@@ -681,6 +698,11 @@ export class AppState {
     } catch {
       // Closed projects remain visible in global Task history.
     }
+    const runs = this.taskRepository?.listAllRuns(task.id) ?? [];
+    const now = Date.now();
+    const tokenCounts = await Promise.all(
+      runs.map((run) => this.taskRunTokenCount(run)),
+    );
     return {
       id: task.id,
       title: task.title,
@@ -692,7 +714,29 @@ export class AppState {
       revision: task.revision,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
+      durationMs: runs.reduce(
+        (total, run) => total + taskRunDurationMs(run, now),
+        0,
+      ),
+      tokenCount: tokenCounts.reduce((total, count) => total + count, 0),
     };
+  }
+
+  private async taskRunTokenCount(
+    run: import("./domains/tasks/types.js").TaskRun,
+  ): Promise<number> {
+    let sessionPath = run.sessionPath;
+    if (!sessionPath && run.worktreeId && run.sessionId) {
+      try {
+        sessionPath = await this.chat.sessionPath(
+          run.worktreeId,
+          run.sessionId,
+        );
+      } catch {
+        // Deleted or unavailable sessions contribute zero to aggregate metrics.
+      }
+    }
+    return this.#taskSessionMetrics.tokenCount(sessionPath);
   }
 
   private async taskMutation(detail: TaskDetail) {

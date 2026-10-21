@@ -16,6 +16,8 @@ export const taskDetail = (
   revision: 1,
   createdAt: 1,
   updatedAt: 1,
+  durationMs: 0,
+  tokenCount: 0,
   completedAt: null,
   runs: [],
   ...overrides,

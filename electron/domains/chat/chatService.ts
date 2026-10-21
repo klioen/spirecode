@@ -161,6 +161,31 @@ export class ChatService {
     return this.requireUsable(worktreeId, sessionId).status;
   }
 
+  async sessionPath(worktreeId: string, sessionId: string): Promise<string> {
+    const cwd = await this.root(worktreeId);
+    try {
+      const target = await (
+        await this.adapter()
+      ).resolveDeleteTarget(cwd, sessionId);
+      if (!target?.info.path) throw notFound();
+      const [targetCwd, sessionPath, sessionRoot] = await Promise.all([
+        realpath(target.info.cwd),
+        realpath(target.info.path),
+        realpath(target.sessionRoot),
+      ]);
+      if (targetCwd !== cwd) throw notFound();
+      if (
+        !(await stat(sessionRoot)).isDirectory() ||
+        !(await stat(sessionPath)).isFile() ||
+        !isWithin(sessionRoot, sessionPath)
+      )
+        throw notFound();
+      return sessionPath;
+    } catch (error) {
+      throw mapChatError(error, "Unable to resolve chat session path");
+    }
+  }
+
   sessionContainsText(
     worktreeId: string,
     sessionId: string,

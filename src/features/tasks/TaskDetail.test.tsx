@@ -50,12 +50,16 @@ describe("TaskDetail", () => {
     render(
       <TaskDetail
         api={createTasksApiMock()}
-        task={taskDetail()}
+        task={taskDetail({ durationMs: 3_661_000, tokenCount: 98_765 })}
         onChange={vi.fn()}
       />,
     );
 
     expect(screen.getByText("Build the renderer feature")).toBeInTheDocument();
+    expect(screen.getByText("Duration")).toBeInTheDocument();
+    expect(screen.getByText("1h 1m 1s")).toBeInTheDocument();
+    expect(screen.getByText("Tokens")).toBeInTheDocument();
+    expect(screen.getByText("98.8K")).toBeInTheDocument();
   });
 
   it("treats awaiting_report as running and never as completed", async () => {
