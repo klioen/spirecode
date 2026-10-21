@@ -719,6 +719,13 @@ body.panel-resizing-vertical * {
   background: var(--control-hover);
   color: var(--text-default);
 }
+.worktree-add {
+  opacity: 0;
+}
+.project-heading:hover .worktree-add,
+.worktree-add:focus-visible {
+  opacity: 1;
+}
 .worktree-menu-button,
 .project-menu-button {
   opacity: 0;
