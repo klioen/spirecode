@@ -21,6 +21,9 @@ describe("Electron host allowlists", () => {
         "chat_session_set_model",
         "chat_session_set_thinking_level",
         "chat_session_rename",
+        "task_list",
+        "task_create",
+        "task_rewrite_start",
         "settings_memory_read",
         "settings_memory_models_list",
         "settings_memory_config_get",
@@ -47,6 +50,7 @@ describe("Electron host allowlists", () => {
 
   it("accepts only declared event topics", () => {
     for (const topic of TOPICS) expect(isTopic(topic)).toBe(true);
+    expect(isTopic("task://event")).toBe(true);
     expect(isTopic("electron://raw-ipc")).toBe(false);
     expect(isTopic("terminal://write")).toBe(false);
   });

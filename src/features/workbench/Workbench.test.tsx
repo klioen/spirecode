@@ -12,14 +12,17 @@ vi.mock("../projects/ProjectRail", () => ({
   ProjectRail: ({
     onToggleProjects,
     onOpenSettings,
+    onOpenTasks,
   }: {
     onToggleProjects: () => void;
     onOpenSettings: () => void;
+    onOpenTasks: () => void;
   }) => (
     <aside>
       Projects
       <button onClick={onToggleProjects}>Toggle projects panel</button>
       <button onClick={onOpenSettings}>Settings</button>
+      <button onClick={onOpenTasks}>Tasks</button>
     </aside>
   ),
 }));
@@ -32,6 +35,9 @@ vi.mock("../changes/changesRefresh", () => ({
 }));
 vi.mock("../editor/EditorPane", () => ({
   EditorPane: () => <main>Editor</main>,
+}));
+vi.mock("../tasks/TaskPage", () => ({
+  TaskPage: () => <main>Task page</main>,
 }));
 vi.mock("./BreadcrumbSwitcher", () => ({
   BreadcrumbSwitcher: ({
@@ -359,6 +365,20 @@ describe("Workbench panel handles", () => {
       screen.queryByRole("main", { name: "Settings page" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Projects")).toBeInTheDocument();
+    expect(screen.getByText("Editor")).toBeInTheDocument();
+  });
+
+  it("opens the global Task surface without losing the workspace", () => {
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getByText("Task page")).toBeInTheDocument();
+    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize files panel" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
     expect(screen.getByText("Editor")).toBeInTheDocument();
   });
 

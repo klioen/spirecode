@@ -280,6 +280,31 @@ export class WorktreeService {
     });
   }
 
+  async validateManagedIdentity(
+    worktreeId: string,
+    expectedName: string,
+    expectedBaseRef: string | null,
+  ): Promise<WorktreeSummary> {
+    const worktree = await this.projects.worktree(worktreeId);
+    const project = await this.projects.project(worktree.projectId);
+    gitOnly(project);
+    managedOnly(worktree);
+    if (
+      worktree.name !== expectedName ||
+      (expectedBaseRef !== null && worktree.baseRef !== expectedBaseRef)
+    )
+      throw ownerConflict("managed worktree identity changed");
+    await this.ensureOwner(this.managedRoot(project), project);
+    const [actualPath, expectedPath, branch] = await Promise.all([
+      realpath(worktree.path),
+      realpath(path.join(this.managedRoot(project), expectedName)),
+      gitText(worktree.path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+    ]);
+    if (actualPath !== expectedPath || branch.trim() !== worktree.branch)
+      throw ownerConflict("managed worktree checkout changed");
+    return worktree;
+  }
+
   async inspectDelete(worktreeId: string): Promise<DeleteInspection> {
     const worktree = await this.projects.worktree(worktreeId);
     gitOnly(await this.projects.project(worktree.projectId));

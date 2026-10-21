@@ -1,4 +1,5 @@
-import { dialog, shell, type BrowserWindow } from "electron";
+import { dialog, Notification, shell, type BrowserWindow } from "electron";
+import { mkdirSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -19,6 +20,7 @@ import {
 import { TerminalService } from "./domains/terminal/service.js";
 import { WorktreeService } from "./domains/worktrees/index.js";
 import { gitText } from "./core/gitProcess.js";
+import { CommandError } from "./core/errors.js";
 import { KeyedLock } from "./core/keyedLock.js";
 import { WindowCloseGuard } from "./windowCloseGuard.js";
 import { DiagnosticsService } from "./domains/diagnostics/service.js";
@@ -31,6 +33,23 @@ import {
 import { ExtensionCatalogService } from "./domains/extensions/catalog.js";
 import { ExtensionPackageService } from "./domains/extensions/service.js";
 import { ensureNpmOnPath } from "./domains/extensions/packageManagerEnvironment.js";
+import { Type } from "typebox";
+import {
+  openTaskDatabase,
+  type TaskDatabase,
+} from "./domains/tasks/database.js";
+import { TaskRepository } from "./domains/tasks/repository.js";
+import {
+  TaskService,
+  type TaskDetail,
+  type TaskSessionIntegration,
+} from "./domains/tasks/service.js";
+import {
+  createDefaultTaskRewriteService,
+  TaskRewriteError,
+  TaskRewriteService,
+  type TaskRewriteDraft,
+} from "./domains/tasks/piRewrite.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -50,6 +69,12 @@ export class AppState {
   readonly diagnostics: DiagnosticsService;
   readonly extensionCatalog: ExtensionCatalogService;
   readonly extensionPackages: ExtensionPackageService;
+  readonly taskDatabase: TaskDatabase | null;
+  readonly taskRepository: TaskRepository | null;
+  readonly tasks: TaskService | null;
+  readonly taskUnavailableReason: string | null;
+  readonly taskRewrite: Promise<TaskRewriteService>;
+  private activeTaskRewriteId: string | null = null;
 
   private constructor(
     readonly projects: ProjectService,
@@ -95,6 +120,164 @@ export class AppState {
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
+
+    let taskSubsystem: {
+      database: TaskDatabase;
+      repository: TaskRepository;
+      service: TaskService;
+    } | null = null;
+    let openedTaskDatabase: TaskDatabase | null = null;
+    let taskUnavailableReason: string | null = null;
+    try {
+      const taskDatabase = openTaskDatabase(
+        path.join(dataDirectory, "tasks.sqlite3"),
+      );
+      openedTaskDatabase = taskDatabase;
+      const taskRepository = new TaskRepository(taskDatabase.connection);
+      const tasks = new TaskService(taskRepository, {
+        getProject: async (projectId) => {
+          try {
+            const project = await projects.project(projectId);
+            return { id: project.id, kind: project.kind };
+          } catch {
+            return null;
+          }
+        },
+        getWorktree: async (worktreeId) => {
+          let worktree;
+          try {
+            worktree = await projects.worktree(worktreeId);
+          } catch {
+            return null;
+          }
+          const project = await projects.project(worktree.projectId);
+          const dirty =
+            project.kind === "git"
+              ? (await this.git.status(worktreeId)).changes.length > 0
+              : false;
+          return {
+            id: worktree.id,
+            projectId: worktree.projectId,
+            dirty,
+            busy: false,
+          };
+        },
+        createWorktree: async (projectId, name, baseRef) => {
+          const worktree = await this.createWorktree(projectId, name, baseRef);
+          return {
+            id: worktree.id,
+            projectId: worktree.projectId,
+            dirty: false,
+            busy: false,
+          };
+        },
+        findManagedWorktree: async (projectId, name) => {
+          const project = await projects.project(projectId);
+          const worktree = project.worktrees.find(
+            (candidate) =>
+              candidate.kind === "managed" && candidate.name === name,
+          );
+          return worktree
+            ? {
+                id: worktree.id,
+                projectId: worktree.projectId,
+                dirty: false,
+                busy: false,
+              }
+            : null;
+        },
+        validateManagedWorktree: async (
+          worktreeId,
+          expectedName,
+          expectedBaseRef,
+        ) => {
+          await this.worktrees.validateManagedIdentity(
+            worktreeId,
+            expectedName,
+            expectedBaseRef,
+          );
+        },
+        createSession: async (worktreeId, integration) => {
+          const summary = await this.chat.create(worktreeId, {
+            customTools: [taskReportTool(integration)],
+            sessionId: integration.sessionId,
+            onEvent: (event) => {
+              if (typeof event.type === "string")
+                integration.onEvent({ type: event.type });
+            },
+          });
+          return { sessionId: summary.sessionId, sessionPath: null };
+        },
+        findSession: async (worktreeId, name, sessionId) => {
+          const matches = (await this.chat.list(worktreeId)).filter(
+            (session) =>
+              session.sessionId === sessionId || session.title === name,
+          );
+          if (matches.length > 1)
+            throw new Error("Multiple task sessions use the same durable name");
+          const session = matches[0];
+          return session
+            ? { sessionId: session.sessionId, sessionPath: null }
+            : null;
+        },
+        renameSession: async (worktreeId, sessionId, name) => {
+          await this.chat.rename(worktreeId, sessionId, name);
+        },
+        attachSession: async (worktreeId, sessionId, integration) => {
+          await this.chat.ensureLoaded(worktreeId, sessionId, {
+            customTools: [taskReportTool(integration)],
+            onEvent: (event) => {
+              if (typeof event.type === "string")
+                integration.onEvent({ type: event.type });
+            },
+          });
+        },
+        sessionStatus: async (worktreeId, sessionId) =>
+          this.chat.sessionStatus(worktreeId, sessionId),
+        sessionHasPrompt: (worktreeId, sessionId, marker) =>
+          this.chat.sessionContainsText(worktreeId, sessionId, marker),
+        sendPrompt: (worktreeId, sessionId, prompt) =>
+          this.chat.send(worktreeId, sessionId, prompt),
+        abortSession: async (worktreeId, sessionId) => {
+          await this.chat.abort(worktreeId, sessionId);
+        },
+        notify: (request) => this.notifyTask(request),
+      });
+      taskSubsystem = {
+        database: taskDatabase,
+        repository: taskRepository,
+        service: tasks,
+      };
+    } catch (error) {
+      openedTaskDatabase?.close();
+      taskUnavailableReason =
+        error instanceof Error ? error.message : "Task database unavailable";
+      console.warn("Task module is unavailable", error);
+    }
+    this.taskDatabase = taskSubsystem?.database ?? null;
+    this.taskRepository = taskSubsystem?.repository ?? null;
+    this.tasks = taskSubsystem?.service ?? null;
+    this.taskUnavailableReason = taskUnavailableReason;
+
+    const rewriteDirectory = path.join(dataDirectory, "task-rewrite");
+    try {
+      mkdirSync(rewriteDirectory, { recursive: true });
+      this.taskRewrite = createDefaultTaskRewriteService({
+        controlledCwd: rewriteDirectory,
+      });
+    } catch (error) {
+      console.warn("Task rewrite service is unavailable", error);
+      this.taskRewrite = Promise.resolve(
+        new TaskRewriteService({
+          create: async () => {
+            throw new TaskRewriteError(
+              "TASK_REWRITE_UNAVAILABLE",
+              "Task rewrite service is unavailable",
+            );
+          },
+        }),
+      );
+    }
   }
 
   static async create(
@@ -124,6 +307,11 @@ export class AppState {
           );
         }
       }
+    }
+    try {
+      await state.tasks?.recover();
+    } catch (error) {
+      console.warn("Task recovery was unavailable", error);
     }
     return state;
   }
@@ -210,6 +398,15 @@ export class AppState {
   }
 
   async closeProject(projectId: string) {
+    if (
+      this.taskRepository
+        ?.listActiveRuns()
+        .some((run) => run.projectId === projectId)
+    )
+      throw new CommandError(
+        "TASK_WORKSPACE_BUSY",
+        "Cancel the active Task before closing its project.",
+      );
     const project = await this.projects.project(projectId);
     let failure: unknown;
     for (const worktree of project.worktrees) {
@@ -272,6 +469,15 @@ export class AppState {
   }
 
   async deleteWorktree(worktreeId: string, force: boolean) {
+    if (
+      this.taskRepository
+        ?.listActiveRuns()
+        .some((run) => run.worktreeId === worktreeId)
+    )
+      throw new CommandError(
+        "TASK_WORKSPACE_BUSY",
+        "Cancel the active Task before deleting its workspace.",
+      );
     const inspection = await this.worktrees.inspectDelete(worktreeId);
     if (!force && (inspection.dirty || inspection.terminalCount > 0))
       return this.worktrees.delete(worktreeId, false);
@@ -297,15 +503,276 @@ export class AppState {
     }
   }
 
+  async deleteChatSession(
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<void> {
+    const run = this.taskRepository?.findRunBySessionId(sessionId);
+    if (
+      run &&
+      [
+        "queued",
+        "provisioning",
+        "prompting",
+        "running",
+        "awaiting_report",
+      ].includes(run.status)
+    )
+      throw new CommandError(
+        "TASK_SESSION_BUSY",
+        "Cancel the active Task before deleting its session.",
+      );
+    await this.chat.delete(worktreeId, sessionId);
+  }
+
+  async taskList(options: {
+    limit: number;
+    cursor?: string | null;
+    statuses?: import("./domains/tasks/types.js").TaskStatus[];
+  }) {
+    const tasks = this.requireTasks();
+    const page = await tasks.list(options);
+    const counts = tasks.counts();
+    return {
+      items: await Promise.all(
+        page.items.map((task) => this.taskSummary(task)),
+      ),
+      nextCursor: page.nextCursor,
+      ...counts,
+    };
+  }
+
+  async taskGet(taskId: string) {
+    return this.taskDetail(await this.requireTasks().get(taskId));
+  }
+
+  async taskCreate(
+    input: import("./domains/tasks/service.js").CreateTaskRequest,
+  ) {
+    return this.taskMutation(await this.requireTasks().create(input));
+  }
+
+  async taskUpdate(
+    taskId: string,
+    expectedRevision: number,
+    patch: import("./domains/tasks/service.js").UpdateTaskRequest,
+  ) {
+    return this.taskMutation(
+      await this.requireTasks().update(taskId, expectedRevision, patch),
+    );
+  }
+
+  taskNotificationsList(options: { limit: number; cursor?: string | null }) {
+    return this.requireTasks().listNotifications(options);
+  }
+
+  taskNotificationMarkRead(
+    taskId: string,
+    runId: string | null,
+    kind: string,
+  ): void {
+    this.requireTasks().markNotificationRead(taskId, runId, kind);
+  }
+
+  async taskRun(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().run(taskId, expectedRevision),
+    );
+  }
+
+  async taskCancel(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().cancel(taskId, expectedRevision),
+    );
+  }
+
+  async taskComplete(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().complete(taskId, expectedRevision),
+    );
+  }
+
+  async taskRequestChanges(
+    taskId: string,
+    expectedRevision: number,
+    note: string,
+  ) {
+    return this.taskMutation(
+      await this.requireTasks().requestChanges(taskId, expectedRevision, note),
+    );
+  }
+
+  async taskContinueForReport(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().continueForReport(taskId, expectedRevision),
+    );
+  }
+
+  startTaskRewrite(rewriteId: string, input: TaskRewriteDraft): void {
+    if (this.activeTaskRewriteId)
+      throw new TaskRewriteError(
+        "TASK_REWRITE_BUSY",
+        "A task rewrite is already active",
+      );
+    this.activeTaskRewriteId = rewriteId;
+    void this.taskRewrite
+      .then((service) => service.rewrite(input))
+      .then(
+        (payload) => {
+          if (this.activeTaskRewriteId !== rewriteId) return;
+          this.send("task://event", {
+            kind: "rewrite_result",
+            rewriteId,
+            payload,
+          });
+        },
+        (error: unknown) => {
+          if (this.activeTaskRewriteId !== rewriteId) return;
+          this.send("task://event", {
+            kind: "rewrite_failed",
+            rewriteId,
+            payload: { message: taskRewriteErrorMessage(error) },
+          });
+        },
+      )
+      .finally(() => {
+        if (this.activeTaskRewriteId === rewriteId)
+          this.activeTaskRewriteId = null;
+      });
+  }
+
+  async abortTaskRewrite(rewriteId: string): Promise<void> {
+    if (this.activeTaskRewriteId !== rewriteId) return;
+    await (await this.taskRewrite).abort();
+  }
+
   async dispose(): Promise<void> {
     this.terminals.dispose();
     const cleanup = await Promise.allSettled([
+      this.tasks?.dispose() ?? Promise.resolve(),
+      this.taskRewrite.then((service) => service.dispose()),
       this.watchers.dispose(),
       withTimeout(this.chat.disposeAll(), 5_000),
     ]);
+    this.taskDatabase?.close();
     for (const result of cleanup)
       if (result.status === "rejected")
         console.warn("Application cleanup was incomplete", result.reason);
+  }
+
+  private requireTasks(): TaskService {
+    if (this.tasks) return this.tasks;
+    throw new CommandError(
+      "TASK_DATABASE_UNAVAILABLE",
+      "Tasks are unavailable because the task database could not be opened.",
+    );
+  }
+
+  private async taskSummary(task: import("./domains/tasks/types.js").Task) {
+    let projectName: string | undefined;
+    try {
+      projectName = (await this.projects.project(task.projectId)).name;
+    } catch {
+      // Closed projects remain visible in global Task history.
+    }
+    return {
+      id: task.id,
+      title: task.title,
+      projectId: task.projectId,
+      ...(projectName ? { projectName } : {}),
+      workspace: task.workspace,
+      status: task.status,
+      activeRunId: task.activeRunId,
+      revision: task.revision,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+    };
+  }
+
+  private async taskMutation(detail: TaskDetail) {
+    const value = await this.taskDetail(detail);
+    this.send("task://event", {
+      kind: "changed",
+      taskId: detail.task.id,
+      revision: detail.task.revision,
+    });
+    return value;
+  }
+
+  private async taskDetail(detail: TaskDetail) {
+    return {
+      ...(await this.taskSummary(detail.task)),
+      description: detail.task.description,
+      acceptanceCriteria: detail.task.acceptanceCriteria,
+      automationEnabled: detail.task.automationEnabled,
+      completedAt: detail.task.completedAt,
+      runs: detail.runs.map((run) => ({
+        id: run.id,
+        attempt: run.attempt,
+        status: run.status,
+        worktreeId: run.worktreeId,
+        worktreeName: run.worktreeName,
+        sessionId: run.sessionId,
+        error: run.error,
+        report: run.report,
+        createdAt: run.createdAt,
+        settledAt: run.settledAt,
+      })),
+    };
+  }
+
+  private async notifyTask(request: {
+    taskId: string;
+    runId: string;
+    kind: "needs_review" | "awaiting_report" | "failed";
+  }): Promise<void> {
+    const task = this.taskRepository?.getTask(request.taskId);
+    if (!task) return;
+    this.send("task://event", {
+      kind: "notification",
+      taskId: request.taskId,
+      runId: request.runId,
+      revision: task.revision,
+    });
+    if (
+      !Notification.isSupported() ||
+      (this.window.isFocused() && !this.window.isMinimized())
+    )
+      return;
+    const chinese = (await this.settings.language()) === "zh-CN";
+    const body = chinese
+      ? request.kind === "needs_review"
+        ? "任务已准备好，等待审查。"
+        : request.kind === "awaiting_report"
+          ? "智能体已停止，但未提交任务结果报告。"
+          : "任务需要处理。"
+      : request.kind === "needs_review"
+        ? "A task is ready for review."
+        : request.kind === "awaiting_report"
+          ? "An agent stopped without submitting its task report."
+          : "A task needs attention.";
+    const notification = new Notification({
+      title: task.title.slice(0, 120),
+      body,
+    });
+    notification.on("click", () => {
+      if (this.window.isMinimized()) this.window.restore();
+      this.window.show();
+      this.window.focus();
+      this.send("task://event", {
+        kind: "notification",
+        taskId: request.taskId,
+        runId: request.runId,
+        revision: task.revision,
+        payload: { navigate: true },
+      });
+    });
+    notification.show();
+    this.taskRepository?.markNotificationSystemSent(
+      request.taskId,
+      request.runId,
+      request.kind,
+    );
   }
 
   private async ensureWatcher(
@@ -334,6 +801,113 @@ export class AppState {
   private send(topic: string, payload: unknown): void {
     if (!this.window.isDestroyed())
       this.window.webContents.send(`spire:event:${topic}`, payload);
+  }
+}
+
+function taskReportTool(integration: TaskSessionIntegration) {
+  return {
+    name: integration.reportTool.name,
+    label: "Report task result",
+    description: integration.reportTool.description,
+    parameters: Type.Object(
+      {
+        runId: Type.String(),
+        outcome: Type.Union([
+          Type.Literal("success"),
+          Type.Literal("blocked"),
+          Type.Literal("failed"),
+        ]),
+        summary: Type.String(),
+        acceptanceCriteria: Type.Array(
+          Type.Object(
+            {
+              criterionId: Type.String(),
+              status: Type.Union([
+                Type.Literal("passed"),
+                Type.Literal("failed"),
+                Type.Literal("not_run"),
+              ]),
+              evidence: Type.String(),
+            },
+            { additionalProperties: false },
+          ),
+        ),
+        tests: Type.Array(
+          Type.Object(
+            {
+              command: Type.String(),
+              status: Type.Union([
+                Type.Literal("passed"),
+                Type.Literal("failed"),
+                Type.Literal("not_run"),
+              ]),
+              summary: Type.String(),
+            },
+            { additionalProperties: false },
+          ),
+        ),
+        changeRequest: Type.Optional(
+          Type.Object(
+            {
+              kind: Type.Union([
+                Type.Literal("github_pr"),
+                Type.Literal("gitlab_mr"),
+                Type.Literal("other"),
+              ]),
+              url: Type.String(),
+              draft: Type.Literal(true),
+            },
+            { additionalProperties: false },
+          ),
+        ),
+      },
+      { additionalProperties: false },
+    ),
+    async execute(_toolCallId: string, params: unknown) {
+      try {
+        const detail = await integration.reportResult(
+          params as Parameters<TaskSessionIntegration["reportResult"]>[0],
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Task result recorded for ${detail.task.id}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                error instanceof Error ? error.message : "Invalid task report",
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  };
+}
+
+function taskRewriteErrorMessage(error: unknown): string {
+  if (!(error instanceof TaskRewriteError))
+    return "Unable to optimize the task description.";
+  switch (error.code) {
+    case "TASK_REWRITE_BUSY":
+      return "Another task description is already being optimized.";
+    case "TASK_REWRITE_ABORTED":
+      return "Task description optimization was canceled.";
+    case "TASK_REWRITE_TIMEOUT":
+      return "Task description optimization timed out.";
+    case "TASK_RESULT_INVALID":
+      return "The optimized task description was invalid.";
+    case "TASK_REWRITE_NO_RESULT":
+      return "The agent did not return an optimized task description.";
+    case "TASK_REWRITE_UNAVAILABLE":
+      return "Task description optimization is unavailable.";
   }
 }
 

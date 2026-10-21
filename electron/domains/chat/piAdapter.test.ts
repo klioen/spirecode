@@ -141,6 +141,12 @@ function sdkFixture(options: {
     ],
   };
   const calls: unknown[] = [];
+  const sessionInputs: Array<{
+    services: unknown;
+    sessionManager: unknown;
+    model?: unknown;
+    customTools?: unknown[];
+  }> = [];
   const fixture = sessionFixture();
   const sdk = {
     ModelRuntime: {
@@ -150,7 +156,7 @@ function sdkFixture(options: {
       },
     },
     SessionManager: {
-      create: () => manager,
+      create: vi.fn(() => manager),
       list: async () => [],
       open: () => manager,
     },
@@ -169,13 +175,18 @@ function sdkFixture(options: {
         cwd: input.cwd,
         modelRuntime: options.servicesRuntime ?? runtime,
         settingsManager: settings,
+        resourceLoader: {
+          getExtensions: () => ({ extensions: [] }),
+        },
       };
     },
     createAgentSessionFromServices: async (input: {
       services: unknown;
       sessionManager: unknown;
       model?: unknown;
+      customTools?: unknown[];
     }) => {
+      sessionInputs.push(input);
       calls.push(["session", input.sessionManager, input.model]);
       return {
         session: fixture.session,
@@ -214,10 +225,70 @@ function sdkFixture(options: {
     },
     diagnostics: [],
   });
-  return { sdk, calls, fixture, runtime, manager, loadResources };
+  return {
+    sdk,
+    calls,
+    fixture,
+    runtime,
+    manager,
+    loadResources,
+    sessionInputs,
+  };
 }
 
 describe("piAdapter", () => {
+  it("passes optional custom tools through create and open session loading", async () => {
+    const { sdk, loadResources, sessionInputs } = sdkFixture({});
+    const adapter = await createPiAdapter(sdk, { loadResources });
+    const createTools = [{ name: "task_report" }];
+    const openTools = [{ name: "task_resume" }];
+
+    await adapter.create("/repo", {
+      customTools: createTools,
+      sessionId: "task-run-id",
+    });
+    await adapter.open(
+      {
+        sessionId: "s1",
+        cwd: "/repo",
+        title: "Task",
+        path: "/sessions/current/session.jsonl",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "/repo",
+      { customTools: openTools },
+    );
+
+    expect(sessionInputs.map((input) => input.customTools)).toEqual([
+      createTools,
+      openTools,
+    ]);
+    expect(sdk.SessionManager.create).toHaveBeenCalledWith("/repo", undefined, {
+      id: "task-run-id",
+    });
+  });
+
+  it("fails closed when an extension owns a custom tool name", async () => {
+    const { sdk, loadResources } = sdkFixture({});
+    const createServices = sdk.createAgentSessionServices;
+    sdk.createAgentSessionServices = async (input) => ({
+      ...(await createServices(input)),
+      resourceLoader: {
+        getExtensions: () => ({
+          extensions: [{ tools: new Map([["task_report_result", {}]]) }],
+        }),
+      },
+    });
+    const adapter = await createPiAdapter(sdk, { loadResources });
+
+    await expect(
+      adapter.create("/repo", {
+        customTools: [{ name: "task_report_result" }],
+      }),
+    ).rejects.toThrow("Custom tool name conflicts with extension");
+  });
+
   it("resolves the configured default after extension providers load", async () => {
     const configuredModel = { provider: "traex", id: "gpt-5.6-sol" };
     const { sdk, calls, runtime, manager, loadResources } = sdkFixture({

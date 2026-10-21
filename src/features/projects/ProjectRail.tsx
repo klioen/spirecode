@@ -41,6 +41,8 @@ import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { Tooltip } from "../../components/Tooltip";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
+import { TaskNavItem } from "../tasks/TaskNavItem";
+import { useTasksStore } from "../tasks/tasksStore";
 import { ProjectSessionList } from "./ProjectSessionList";
 import { projectsApi } from "./projectsApi";
 import {
@@ -149,13 +151,19 @@ function ProjectDropSection({
 export function ProjectRail({
   onToggleProjects = () => undefined,
   onOpenSettings = () => undefined,
+  onOpenTasks = () => undefined,
+  tasksSelected = false,
 }: {
   onToggleProjects?: () => void;
   onOpenSettings?: () => void;
+  onOpenTasks?: () => void;
+  tasksSelected?: boolean;
 }) {
   const { t } = useTranslation();
   const store = useProjectsStore();
   const activeChatWorktrees = useActiveChatWorktrees();
+  const incompleteTaskCount = useTasksStore((state) => state.incompleteCount);
+  const activeTaskCount = useTasksStore((state) => state.activeCount);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [menuWorktreeId, setMenuWorktreeId] = useState<string | null>(null);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
@@ -719,6 +727,13 @@ export function ProjectRail({
           </button>
         </Tooltip>
       </div>
+      <TaskNavItem
+        label={t("tasks.heading")}
+        incompleteCount={incompleteTaskCount}
+        activeCount={activeTaskCount}
+        selected={tasksSelected}
+        onSelect={onOpenTasks}
+      />
       <div className="project-rail-heading">
         <span>{t("projects.heading")}</span>
         <div className="project-rail-actions">

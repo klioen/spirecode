@@ -7,6 +7,7 @@ import type {
   ResourceDiagnostic,
   Skill,
   Theme,
+  ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
   ModelRuntime,
@@ -61,15 +62,24 @@ export interface PiSessionInfo {
   updatedAt: number;
 }
 
+export interface PiSessionLoadOptions {
+  customTools?: unknown[];
+  sessionId?: string;
+}
+
 export interface PiAdapter {
-  create(cwd: string): Promise<PiSessionRecord>;
+  create(cwd: string, options?: PiSessionLoadOptions): Promise<PiSessionRecord>;
   list(cwd: string): Promise<PiSessionInfo[]>;
   resolveDeleteTarget(
     cwd: string,
     sessionId: string,
   ): Promise<{ info: PiSessionInfo; sessionRoot: string } | undefined>;
   rename(info: PiSessionInfo, cwd: string, title: string): Promise<void>;
-  open(info: PiSessionInfo, cwd: string): Promise<PiSessionRecord>;
+  open(
+    info: PiSessionInfo,
+    cwd: string,
+    options?: PiSessionLoadOptions,
+  ): Promise<PiSessionRecord>;
 }
 
 interface PiModel {
@@ -101,6 +111,11 @@ interface PiSessionManager {
 interface PiServices {
   modelRuntime: PiModelRuntime;
   settingsManager: PiSettingsManager;
+  resourceLoader?: {
+    getExtensions(): {
+      extensions: Array<{ tools: Map<string, unknown> }>;
+    };
+  };
   diagnostics?: Array<{ type: "info" | "warning" | "error"; message: string }>;
 }
 
@@ -125,7 +140,11 @@ interface PiResourceLoaderOptions {
 export interface PiSdk {
   ModelRuntime: { create(): Promise<PiModelRuntime> };
   SessionManager: {
-    create(cwd: string): PiSessionManager;
+    create(
+      cwd: string,
+      sessionDir?: string,
+      options?: { id?: string },
+    ): PiSessionManager;
     list(cwd: string): Promise<Array<Record<string, unknown>>>;
     open(
       path: string,
@@ -143,6 +162,7 @@ export interface PiSdk {
     services: PiServices;
     sessionManager: PiSessionManager;
     model?: unknown;
+    customTools?: ToolDefinition[];
   }): Promise<{
     session: AgentSession;
     extensionsResult?: {
@@ -346,6 +366,7 @@ export async function createPiAdapter(
     sessionManager: PiSessionManager,
     cwd: string,
     metadata: Partial<PiSessionInfo> = {},
+    loadOptions: PiSessionLoadOptions = {},
   ): Promise<PiSessionRecord> => {
     const resources = await loadResources(cwd);
     const selectedSkills = options.selectSkills
@@ -366,6 +387,19 @@ export async function createPiAdapter(
       },
     });
     assertResourcesLoaded(services);
+    if (loadOptions.customTools?.length) {
+      const extensionToolNames = new Set(
+        (services.resourceLoader?.getExtensions().extensions ?? []).flatMap(
+          (extension) => [...extension.tools.keys()],
+        ),
+      );
+      for (const tool of loadOptions.customTools) {
+        const name =
+          isRecord(tool) && typeof tool.name === "string" ? tool.name : null;
+        if (name && extensionToolNames.has(name))
+          throw new Error(`Custom tool name conflicts with extension: ${name}`);
+      }
+    }
     const hasExistingMessages =
       sessionManager.buildSessionContext().messages.length > 0;
     const model = hasExistingMessages
@@ -375,6 +409,9 @@ export async function createPiAdapter(
       services,
       sessionManager,
       model,
+      ...(loadOptions.customTools !== undefined
+        ? { customTools: loadOptions.customTools as ToolDefinition[] }
+        : {}),
     });
     const { session } = created;
     let activity: string | null = null;
@@ -412,7 +449,17 @@ export async function createPiAdapter(
   };
 
   return {
-    create: (cwd) => load(sdk.SessionManager.create(cwd), cwd),
+    create: (cwd, loadOptions = {}) =>
+      load(
+        sdk.SessionManager.create(
+          cwd,
+          undefined,
+          loadOptions.sessionId ? { id: loadOptions.sessionId } : undefined,
+        ),
+        cwd,
+        {},
+        loadOptions,
+      ),
     async list(cwd) {
       return (await sdk.SessionManager.list(cwd)).map((info) => ({
         sessionId: String(info.id ?? info.sessionId ?? ""),
@@ -461,12 +508,13 @@ export async function createPiAdapter(
         title,
       );
     },
-    async open(info, cwd) {
+    async open(info, cwd, loadOptions) {
       if (!info.path) throw new Error("Session path is unavailable");
       return load(
         sdk.SessionManager.open(info.path, undefined, cwd),
         cwd,
         info,
+        loadOptions,
       );
     },
   };

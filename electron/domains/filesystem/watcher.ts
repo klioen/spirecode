@@ -141,10 +141,13 @@ export class WatcherRegistry {
       schedule();
     };
     try {
+      const backend = watcherBackendForPlatform(process.platform);
       stopWatcher =
-        watcherBackendForPlatform(process.platform) === "native-recursive"
+        backend === "native-recursive"
           ? createNativeRecursiveWatcher(watchPaths, collect, handleError)
           : await createChokidarWatcher(watchPaths, collect, handleError);
+      if (backend === "native-recursive")
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
     } catch (error) {
       closed = true;
       if (timer) clearTimeout(timer);
