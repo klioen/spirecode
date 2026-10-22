@@ -284,6 +284,54 @@ describe("WorktreeService", () => {
     ).resolves.toContain("refs/heads/worktree1");
   });
 
+  it("rejects a managed checkout replaced by a symbolic link", async () => {
+    const value = await fixture();
+    const created = await value.service.create(
+      value.project.id,
+      "worktree1",
+      "origin/main",
+    );
+    await git(value.project.path, ["worktree", "remove", created.path]);
+    await symlink(value.project.path, created.path);
+
+    await expect(
+      value.service.validateManagedIdentity(
+        created.id,
+        created.name,
+        created.baseRef,
+      ),
+    ).rejects.toMatchObject({ code: "WORKTREE_OWNER_CONFLICT" });
+    await expect(value.service.inspectDelete(created.id)).rejects.toMatchObject(
+      {
+        code: "WORKTREE_OWNER_CONFLICT",
+      },
+    );
+  });
+
+  it("safely removes a stale managed catalog record after its checkout is already gone", async () => {
+    const value = await fixture();
+    const created = await value.service.create(
+      value.project.id,
+      "worktree1",
+      "origin/main",
+    );
+    await git(value.project.path, ["worktree", "remove", created.path]);
+
+    await expect(value.service.inspectDelete(created.id)).resolves.toEqual({
+      dirty: false,
+      terminalCount: 0,
+      branch: "worktree1",
+      missing: true,
+    });
+    await expect(value.service.delete(created.id, false)).resolves.toEqual({
+      ok: true,
+    });
+    expect(value.worktrees).toHaveLength(0);
+    await expect(
+      git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
+    ).resolves.toContain("refs/heads/worktree1");
+  });
+
   it("rolls back both checkout and branch after post-create failure", async () => {
     const value = await fixture();
     vi.mocked(value.projects.addWorktree).mockRejectedValueOnce(

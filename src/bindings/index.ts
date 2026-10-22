@@ -117,6 +117,8 @@ export const commands = {
     command<unknown>("task_cancel", { taskId, expectedRevision }),
   taskComplete: (taskId: string, expectedRevision: number) =>
     command<unknown>("task_complete", { taskId, expectedRevision }),
+  taskCleanupWorkspace: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_cleanup_workspace", { taskId, expectedRevision }),
   taskRequestChanges: (
     taskId: string,
     expectedRevision: number,

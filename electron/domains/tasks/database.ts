@@ -7,7 +7,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: new (path: string) => DatabaseConnection;
 };
 
-export const CURRENT_TASK_SCHEMA_VERSION = 3;
+export const CURRENT_TASK_SCHEMA_VERSION = 4;
 
 export type TaskDatabaseErrorCode =
   | "TASK_DATABASE_UNAVAILABLE"
@@ -50,6 +50,11 @@ CREATE TABLE tasks (
   automation_enabled INTEGER NOT NULL CHECK (automation_enabled IN (0,1)),
   status TEXT NOT NULL CHECK (status IN ('backlog','queued','running','needs_review','completed','failed','cancelled')),
   active_run_id TEXT,
+  resolved_worktree_id TEXT,
+  owns_managed_worktree INTEGER NOT NULL DEFAULT 0 CHECK (owns_managed_worktree IN (0,1)),
+  workspace_cleanup_status TEXT NOT NULL DEFAULT 'retained' CHECK (workspace_cleanup_status IN ('retained','intent','removed','blocked')),
+  workspace_cleaned_at INTEGER,
+  workspace_cleanup_error_code TEXT,
   revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -129,6 +134,25 @@ WHERE report_json IS NOT NULL
 ALTER TABLE tasks DROP COLUMN acceptance_criteria_json;
 `;
 
+const MIGRATION_4 = `
+ALTER TABLE tasks ADD COLUMN resolved_worktree_id TEXT;
+ALTER TABLE tasks ADD COLUMN owns_managed_worktree INTEGER NOT NULL DEFAULT 0 CHECK (owns_managed_worktree IN (0,1));
+ALTER TABLE tasks ADD COLUMN workspace_cleanup_status TEXT NOT NULL DEFAULT 'retained' CHECK (workspace_cleanup_status IN ('retained','intent','removed','blocked'));
+ALTER TABLE tasks ADD COLUMN workspace_cleaned_at INTEGER;
+ALTER TABLE tasks ADD COLUMN workspace_cleanup_error_code TEXT;
+UPDATE tasks
+SET resolved_worktree_id = (
+      SELECT worktree_id FROM task_runs
+      WHERE task_runs.task_id = tasks.id AND worktree_id IS NOT NULL
+      ORDER BY attempt DESC LIMIT 1
+    ),
+    owns_managed_worktree = COALESCE((
+      SELECT owns_managed_worktree FROM task_runs
+      WHERE task_runs.task_id = tasks.id AND worktree_id IS NOT NULL
+      ORDER BY attempt DESC LIMIT 1
+    ), 0);
+`;
+
 function tableExists(connection: DatabaseConnection, name: string): boolean {
   return Boolean(
     connection
@@ -180,6 +204,11 @@ function migrate(
           "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
         )
         .run(3, "migration-v3", now());
+      connection
+        .prepare(
+          "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        )
+        .run(4, "migration-v4", now());
       connection.exec("COMMIT");
       return CURRENT_TASK_SCHEMA_VERSION;
     } catch (error) {
@@ -229,6 +258,7 @@ function migrate(
       connection.exec("BEGIN IMMEDIATE");
       if (targetVersion === 2) connection.exec(MIGRATION_2);
       else if (targetVersion === 3) connection.exec(MIGRATION_3);
+      else if (targetVersion === 4) connection.exec(MIGRATION_4);
       else throw new Error(`No Task migration for schema ${targetVersion}`);
       connection
         .prepare(
@@ -283,6 +313,7 @@ function createMigrationBackup(
 function removeOlderMigrationBackups(
   databasePath: string,
   retainedBackupPath: string | null,
+  maximumVersion = CURRENT_TASK_SCHEMA_VERSION,
 ): void {
   const directory = dirname(databasePath);
   const prefix = `${basename(databasePath)}.pre-v`;
@@ -290,7 +321,7 @@ function removeOlderMigrationBackups(
     if (!entry.startsWith(prefix) || !entry.endsWith(".bak")) continue;
     const version = entry.slice(prefix.length, -".bak".length);
     if (!/^\d+$/.test(version)) continue;
-    if (Number(version) > CURRENT_TASK_SCHEMA_VERSION) continue;
+    if (Number(version) > maximumVersion) continue;
     const candidate = join(directory, entry);
     if (candidate === retainedBackupPath) continue;
     let metadata;
@@ -351,7 +382,7 @@ export function openTaskDatabase(
       options.now ?? Date.now,
       databasePath,
     );
-    if (schemaVersion >= 3) removeOlderMigrationBackups(databasePath, null);
+    if (schemaVersion >= 3) removeOlderMigrationBackups(databasePath, null, 3);
     return new TaskDatabase(connection, schemaVersion);
   } catch (error) {
     if (connection) {

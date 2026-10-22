@@ -435,6 +435,11 @@ async function invoke(
         text(args, "taskId"),
         safeInteger(args, "expectedRevision", 1),
       );
+    case "task_cleanup_workspace":
+      return state.taskCleanupWorkspace(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
     case "task_request_changes":
       return state.taskRequestChanges(
         text(args, "taskId"),
@@ -603,6 +608,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_run: ["taskId", "expectedRevision"],
   task_cancel: ["taskId", "expectedRevision"],
   task_complete: ["taskId", "expectedRevision"],
+  task_cleanup_workspace: ["taskId", "expectedRevision"],
   task_request_changes: ["taskId", "expectedRevision", "note"],
   task_continue_for_report: ["taskId", "expectedRevision"],
   task_notifications_list: ["cursor", "limit"],

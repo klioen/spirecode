@@ -30,6 +30,8 @@ export type TaskServiceErrorCode =
   | "TASK_WORKSPACE_NOT_FOUND"
   | "TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED"
   | "TASK_WORKSPACE_BUSY"
+  | "TASK_WORKSPACE_NOT_MANAGED"
+  | "TASK_WORKSPACE_REFERENCED"
   | "TASK_PROMPT_FAILED"
   | "TASK_RESULT_INVALID"
   | "TASK_FAILED";
@@ -56,6 +58,7 @@ export interface TaskWorktreeBinding {
   projectId: string;
   dirty: boolean;
   busy: boolean;
+  missing?: boolean;
 }
 
 export interface TaskSessionBinding {
@@ -79,6 +82,9 @@ export interface TaskNotificationRequest {
 export interface TaskServiceDependencies {
   getProject(projectId: string): Promise<TaskProjectBinding | null>;
   getWorktree(worktreeId: string): Promise<TaskWorktreeBinding | null>;
+  inspectWorktreeForCleanup(
+    worktreeId: string,
+  ): Promise<TaskWorktreeBinding | null>;
   createWorktree(
     projectId: string,
     name: string,
@@ -112,6 +118,11 @@ export interface TaskServiceDependencies {
     sessionId: string,
     integration: TaskSessionIntegration,
   ): Promise<void>;
+  loadSession(
+    worktreeId: string,
+    sessionId: string,
+    integration: TaskSessionIntegration,
+  ): Promise<void>;
   sessionStatus(
     worktreeId: string,
     sessionId: string,
@@ -127,6 +138,8 @@ export interface TaskServiceDependencies {
     prompt: string,
   ): Promise<{ accepted: boolean }>;
   abortSession(worktreeId: string, sessionId: string): Promise<void>;
+  isWorktreeBusy(worktreeId: string): Promise<boolean>;
+  deleteWorktree(worktreeId: string): Promise<void>;
   notify(request: TaskNotificationRequest): void | Promise<void>;
 }
 
@@ -157,6 +170,7 @@ export interface TaskServiceOptions {
 interface StartRunOptions {
   changeNote?: string;
   reuseWorktree?: TaskRun;
+  reuseSession?: TaskRun;
 }
 
 /** Main-owned Task orchestration. All Git, workspace, and session effects are injected. */
@@ -293,11 +307,13 @@ export class TaskService {
           "Task cannot be run from its current state",
         );
       await this.#requireProject(task.projectId);
-      const reuseWorktree = this.repository
-        .listRuns(taskId, { limit: 1 })
-        .items.find((run) => run.worktreeId !== null);
+      const reuseWorktree = task.resolvedWorktreeId
+        ? this.repository
+            .listAllRuns(taskId)
+            .find((run) => run.worktreeId === task.resolvedWorktreeId)
+        : undefined;
       this.#assertWorktreeAvailable(
-        reuseWorktree?.worktreeId ??
+        task.resolvedWorktreeId ??
           (task.workspace.mode === "existing"
             ? task.workspace.worktreeId
             : null),
@@ -350,6 +366,137 @@ export class TaskService {
     return this.get(taskId);
   }
 
+  cleanupWorkspace(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<TaskDetail> {
+    this.#assertAvailable();
+    return this.#singleFlight(taskId, () =>
+      this.#cleanupWorkspace(taskId, expectedRevision),
+    );
+  }
+
+  async #cleanupWorkspace(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<TaskDetail> {
+    let task = this.#requireTask(taskId);
+    if (task.revision !== expectedRevision)
+      throw new TaskServiceError(
+        "TASK_CONFLICT",
+        "Task revision does not match",
+      );
+    if (
+      task.status !== "completed" ||
+      task.activeRunId ||
+      !task.resolvedWorktreeId ||
+      !task.ownsManagedWorktree ||
+      task.workspaceCleanupStatus === "removed"
+    )
+      throw new TaskServiceError(
+        "TASK_INVALID_STATE",
+        "Task workspace cannot be cleaned up",
+      );
+    if (task.workspaceCleanupStatus !== "intent")
+      task = this.repository.beginWorkspaceCleanup(task.id, task.revision);
+
+    const block = (code: TaskServiceErrorCode, message: string) => {
+      const current = this.#requireTask(taskId);
+      this.repository.blockWorkspaceCleanup(taskId, current.revision, code);
+      this.repository.appendEvent(taskId, null, "workspace.cleanup_blocked", {
+        code,
+        message,
+      });
+      return this.get(taskId);
+    };
+
+    const worktreeId = task.resolvedWorktreeId!;
+    let worktree: TaskWorktreeBinding | null;
+    try {
+      worktree = await this.dependencies.inspectWorktreeForCleanup(worktreeId);
+    } catch {
+      return block(
+        "TASK_WORKSPACE_NOT_MANAGED",
+        "Managed workspace ownership could not be verified",
+      );
+    }
+    if (!worktree) {
+      const current = this.#requireTask(taskId);
+      this.repository.finishWorkspaceCleanup(taskId, current.revision);
+      this.repository.appendEvent(taskId, null, "workspace.cleaned");
+      return this.get(taskId);
+    }
+    if (worktree.projectId !== task.projectId)
+      return block(
+        "TASK_WORKSPACE_NOT_MANAGED",
+        "Workspace ownership does not match the Task",
+      );
+    const ownerRun = this.repository
+      .listAllRuns(taskId)
+      .find((run) => run.worktreeId === worktreeId && run.ownsManagedWorktree);
+    if (!ownerRun?.worktreeName)
+      return block(
+        "TASK_WORKSPACE_NOT_MANAGED",
+        "Managed workspace identity is missing",
+      );
+    if (!worktree.missing)
+      try {
+        await this.dependencies.validateManagedWorktree(
+          worktreeId,
+          ownerRun.worktreeName,
+          ownerRun.baseRef,
+        );
+      } catch {
+        return block(
+          "TASK_WORKSPACE_NOT_MANAGED",
+          "Managed workspace ownership could not be verified",
+        );
+      }
+    const referenced = this.repository
+      .listTasksByResolvedWorktreeId(worktreeId)
+      .some(
+        (candidate) =>
+          candidate.id !== taskId &&
+          candidate.workspaceCleanupStatus !== "removed",
+      );
+    if (referenced)
+      return block(
+        "TASK_WORKSPACE_REFERENCED",
+        "Workspace is referenced by another Task",
+      );
+    if (worktree.dirty)
+      return block(
+        "TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED",
+        "Dirty managed workspace was retained",
+      );
+    if (worktree.busy || (await this.dependencies.isWorktreeBusy(worktreeId)))
+      return block(
+        "TASK_WORKSPACE_BUSY",
+        "Busy managed workspace was retained",
+      );
+    try {
+      await this.dependencies.deleteWorktree(worktreeId);
+    } catch (error) {
+      const worktreeCode =
+        typeof error === "object" && error !== null && "code" in error
+          ? String(error.code)
+          : "";
+      const code: TaskServiceErrorCode =
+        worktreeCode === "WORKTREE_DIRTY"
+          ? "TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED"
+          : worktreeCode === "WORKTREE_BUSY"
+            ? "TASK_WORKSPACE_BUSY"
+            : worktreeCode === "WORKTREE_CONFLICT"
+              ? "TASK_WORKSPACE_NOT_MANAGED"
+              : "TASK_FAILED";
+      return block(code, "Workspace cleanup failed");
+    }
+    const current = this.#requireTask(taskId);
+    this.repository.finishWorkspaceCleanup(taskId, current.revision);
+    this.repository.appendEvent(taskId, null, "workspace.cleaned");
+    return this.get(taskId);
+  }
+
   requestChanges(
     taskId: string,
     expectedRevision: number,
@@ -375,15 +522,21 @@ export class TaskService {
           "Change note is invalid",
         );
       const previous = this.repository.listRuns(taskId, { limit: 1 }).items[0];
-      if (!previous?.worktreeId)
+      const reuseWorktree = task.resolvedWorktreeId
+        ? this.repository
+            .listAllRuns(taskId)
+            .find((run) => run.worktreeId === task.resolvedWorktreeId)
+        : undefined;
+      if (!previous?.sessionId || !reuseWorktree?.worktreeId)
         throw new TaskServiceError(
           "TASK_WORKSPACE_NOT_FOUND",
-          "Previous workspace is missing",
+          "Previous workspace or session is missing",
         );
-      this.#assertWorktreeAvailable(previous.worktreeId, taskId);
+      this.#assertWorktreeAvailable(reuseWorktree.worktreeId, taskId);
       const run = this.#createRun(task, {
         changeNote: normalized,
-        reuseWorktree: previous,
+        reuseWorktree,
+        reuseSession: previous,
       });
       this.repository.upsertRunStep(run.id, "request_changes", "done", {
         note: normalized,
@@ -456,6 +609,15 @@ export class TaskService {
 
   async recover(): Promise<void> {
     this.#assertAvailable();
+    for (const task of this.repository.listWorkspaceCleanupIntents()) {
+      try {
+        await this.#singleFlight(task.id, () =>
+          this.#cleanupWorkspace(task.id, task.revision),
+        );
+      } catch {
+        // The durable blocked state explains why a cleanup could not resume.
+      }
+    }
     for (const active of this.repository.listActiveRuns()) {
       try {
         await this.#singleFlight(active.taskId, () =>
@@ -504,6 +666,8 @@ export class TaskService {
         previous?.baseRef ??
         (task.workspace.mode === "new_managed" ? task.workspace.baseRef : null),
       worktreeId,
+      sessionId: options.reuseSession?.sessionId,
+      sessionPath: options.reuseSession?.sessionPath,
     }).run;
   }
 
@@ -580,6 +744,53 @@ export class TaskService {
       this.repository.upsertRunStep(run.id, "cancel", "done");
       this.repository.appendEvent(task.id, run.id, "run.cancelled_recovered");
       return this.get(cancelled.task.id);
+    }
+    const failureStop = steps.find((step) => step.step === "failure_stop");
+    if (failureStop) {
+      const details = failureStop.details;
+      const code =
+        typeof details === "object" &&
+        details !== null &&
+        "code" in details &&
+        typeof details.code === "string"
+          ? (details.code as TaskServiceErrorCode)
+          : "TASK_FAILED";
+      const message =
+        typeof details === "object" &&
+        details !== null &&
+        "failureMessage" in details &&
+        typeof details.failureMessage === "string"
+          ? details.failureMessage
+          : "Task orchestration failed";
+      const retryable =
+        typeof details === "object" &&
+        details !== null &&
+        "retryable" in details &&
+        details.retryable === true;
+      let sessionAlreadyStopped = failureStop.state === "done";
+      if (!sessionAlreadyStopped && run.worktreeId && run.sessionId)
+        try {
+          await this.dependencies.loadSession(
+            run.worktreeId,
+            run.sessionId,
+            this.#integration(run.id),
+          );
+        } catch (loadError) {
+          if (
+            typeof loadError === "object" &&
+            loadError !== null &&
+            "code" in loadError &&
+            loadError.code === "CHAT_SESSION_NOT_FOUND"
+          )
+            sessionAlreadyStopped = true;
+          else throw loadError;
+        }
+      await this.#stopAndFail(
+        run,
+        new TaskServiceError(code, message, retryable),
+        sessionAlreadyStopped,
+      );
+      return this.get(task.id);
     }
     if (!changeNote) {
       const requestStep = steps.find((step) => step.step === "request_changes");
@@ -715,23 +926,14 @@ export class TaskService {
     }
 
     if (
-      run.status === "running" &&
+      (run.status === "running" ||
+        (run.status === "awaiting_report" && run.report)) &&
       (await this.dependencies.sessionStatus(
         run.worktreeId!,
         run.sessionId!,
       )) === "idle"
-    ) {
-      const settled = this.repository.transitionRun(
-        run.id,
-        run.revision,
-        "awaiting_report",
-        { sagaPhase: "active", settledAt: Date.now() },
-      );
-      this.repository.appendEvent(task.id, run.id, "run.awaiting_report");
-      await this.#notify(task.id, run.id, "awaiting_report");
-      await this.#scheduleQueued();
-      return this.get(settled.task.id);
-    }
+    )
+      return this.#settleRun(run.id);
 
     if (run.status === "prompting") {
       this.repository.upsertRunStep(run.id, "prompt", "intent", {
@@ -805,9 +1007,28 @@ export class TaskService {
         };
         const run = this.#requireRun(runId);
         const result = this.repository.reportRun(runId, run.revision, report);
-        this.repository.appendEvent(result.task.id, runId, "run.reported");
-        await this.#notify(result.task.id, runId, "needs_review");
-        await this.#scheduleQueued();
+        this.repository.appendEvent(
+          result.task.id,
+          runId,
+          "run.report_received",
+        );
+        if (
+          result.run.status === "awaiting_report" &&
+          result.run.worktreeId &&
+          result.run.sessionId
+        ) {
+          try {
+            if (
+              (await this.dependencies.sessionStatus(
+                result.run.worktreeId,
+                result.run.sessionId,
+              )) === "idle"
+            )
+              return this.#settleRun(runId);
+          } catch {
+            // The report is durable; recovery will re-open and inspect the session.
+          }
+        }
         return this.get(result.task.id);
       },
       onEvent: (event) => {
@@ -815,22 +1036,7 @@ export class TaskService {
           const run = this.repository.getRun(runId);
           if (!run) return;
           if (event.type === "agent_settled" && run.status === "running") {
-            const result = this.repository.transitionRun(
-              run.id,
-              run.revision,
-              "awaiting_report",
-              {
-                sagaPhase: "active",
-                settledAt: Date.now(),
-              },
-            );
-            this.repository.appendEvent(
-              result.task.id,
-              run.id,
-              "run.awaiting_report",
-            );
-            await this.#notify(result.task.id, run.id, "awaiting_report");
-            await this.#scheduleQueued();
+            await this.#settleRun(run.id);
           } else if (
             event.type === "agent_start" &&
             run.status === "awaiting_report"
@@ -861,6 +1067,36 @@ export class TaskService {
     return integration;
   }
 
+  async #settleRun(runId: string): Promise<TaskDetail> {
+    const run = this.#requireRun(runId);
+    if (
+      run.status !== "running" &&
+      !(run.status === "awaiting_report" && run.report)
+    )
+      return this.get(run.taskId);
+    if (run.report) {
+      const result = this.repository.finalizeRunReport(
+        run.id,
+        run.revision,
+        Date.now(),
+      );
+      this.repository.appendEvent(result.task.id, run.id, "run.reported");
+      await this.#notify(result.task.id, run.id, "needs_review");
+      await this.#scheduleQueued();
+      return this.get(result.task.id);
+    }
+    const result = this.repository.transitionRun(
+      run.id,
+      run.revision,
+      "awaiting_report",
+      { sagaPhase: "active", settledAt: Date.now() },
+    );
+    this.repository.appendEvent(result.task.id, run.id, "run.awaiting_report");
+    await this.#notify(result.task.id, run.id, "awaiting_report");
+    await this.#scheduleQueued();
+    return this.get(result.task.id);
+  }
+
   async #notify(
     taskId: string,
     runId: string,
@@ -878,8 +1114,67 @@ export class TaskService {
     const run = this.repository.getRun(runId);
     if (!run || ["reported", "failed", "cancelled"].includes(run.status))
       return;
-    const error = this.#serviceError(cause);
+    if (
+      this.repository
+        .listRunSteps(run.id)
+        .some((step) => step.step === "failure_stop")
+    )
+      return;
+    await this.#stopAndFail(run, this.#serviceError(cause));
+  }
+
+  async #stopAndFail(
+    initialRun: TaskRun,
+    error: TaskServiceError,
+    stopAlreadyDone = false,
+  ): Promise<void> {
+    let run = initialRun;
+    const failureDetails = {
+      code: error.code,
+      failureMessage: error.message.slice(0, 1_000),
+      retryable: error.retryable,
+    };
     try {
+      if (run.worktreeId && run.sessionId && stopAlreadyDone)
+        this.repository.upsertRunStep(
+          run.id,
+          "failure_stop",
+          "done",
+          failureDetails,
+        );
+      if (run.worktreeId && run.sessionId && !stopAlreadyDone) {
+        this.repository.upsertRunStep(
+          run.id,
+          "failure_stop",
+          "intent",
+          failureDetails,
+        );
+        try {
+          const status = await this.dependencies.sessionStatus(
+            run.worktreeId,
+            run.sessionId,
+          );
+          if (status === "streaming")
+            await this.dependencies.abortSession(run.worktreeId, run.sessionId);
+          this.repository.upsertRunStep(
+            run.id,
+            "failure_stop",
+            "done",
+            failureDetails,
+          );
+          run = this.#requireRun(run.id);
+        } catch (stopError) {
+          this.repository.upsertRunStep(run.id, "failure_stop", "failed", {
+            ...failureDetails,
+            stopMessage:
+              stopError instanceof Error
+                ? stopError.message.slice(0, 1_000)
+                : "Unable to stop Task session",
+          });
+          this.repository.appendEvent(run.taskId, run.id, "run.stop_failed");
+          return;
+        }
+      }
       const result = this.repository.failRun(run.id, run.revision, {
         code: error.code,
         message: error.message,

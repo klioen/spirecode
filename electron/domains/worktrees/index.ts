@@ -40,6 +40,7 @@ export interface DeleteInspection {
   dirty: boolean;
   terminalCount: number;
   branch: string;
+  missing?: boolean;
 }
 
 export interface DeleteResult {
@@ -294,21 +295,67 @@ export class WorktreeService {
       (expectedBaseRef !== null && worktree.baseRef !== expectedBaseRef)
     )
       throw ownerConflict("managed worktree identity changed");
-    await this.ensureOwner(this.managedRoot(project), project);
-    const [actualPath, expectedPath, branch] = await Promise.all([
-      realpath(worktree.path),
-      realpath(path.join(this.managedRoot(project), expectedName)),
-      gitText(worktree.path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+    const managedRoot = this.managedRoot(project);
+    await this.ensureOwner(managedRoot, project);
+    const metadata = await lstat(worktree.path);
+    if (metadata.isSymbolicLink())
+      throw ownerConflict("managed worktree checkout is a symbolic link");
+    const [actualPath, canonicalRoot, branch, worktreeCommon, projectCommon] =
+      await Promise.all([
+        realpath(worktree.path),
+        realpath(managedRoot),
+        gitText(worktree.path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+        gitText(worktree.path, ["rev-parse", "--git-common-dir"]),
+        gitText(project.path, ["rev-parse", "--git-common-dir"]),
+      ]);
+    const [actualCommon, expectedCommon] = await Promise.all([
+      realpath(path.resolve(worktree.path, worktreeCommon.trim())),
+      realpath(path.resolve(project.path, projectCommon.trim())),
     ]);
-    if (actualPath !== expectedPath || branch.trim() !== worktree.branch)
+    if (
+      actualPath !== path.join(canonicalRoot, expectedName) ||
+      path.dirname(actualPath) !== canonicalRoot ||
+      actualCommon !== expectedCommon ||
+      branch.trim() !== worktree.branch
+    )
       throw ownerConflict("managed worktree checkout changed");
     return worktree;
   }
 
   async inspectDelete(worktreeId: string): Promise<DeleteInspection> {
     const worktree = await this.projects.worktree(worktreeId);
-    gitOnly(await this.projects.project(worktree.projectId));
+    const project = await this.projects.project(worktree.projectId);
+    gitOnly(project);
     managedOnly(worktree);
+    const managedRoot = this.managedRoot(project);
+    await this.ensureOwner(managedRoot, project);
+    if (
+      path.resolve(worktree.path) !== path.resolve(managedRoot, worktree.name)
+    )
+      throw ownerConflict("managed worktree path changed");
+    try {
+      await lstat(worktree.path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const listed = await gitText(project.path, [
+        "worktree",
+        "list",
+        "--porcelain",
+      ]);
+      if (listed.includes(`worktree ${worktree.path}\n`))
+        throw ownerConflict("missing managed checkout is still registered");
+      return {
+        dirty: false,
+        terminalCount: await this.terminals.countWorktree(worktreeId),
+        branch: worktree.branch,
+        missing: true,
+      };
+    }
+    await this.validateManagedIdentity(
+      worktreeId,
+      worktree.name,
+      worktree.baseRef,
+    );
     const output = await runGit(worktree.path, [
       "status",
       "--porcelain=v2",
@@ -344,12 +391,13 @@ export class WorktreeService {
         );
       }
       if (force) await this.terminals.closeWorktree(worktreeId);
-      await runGit(project.path, [
-        "worktree",
-        "remove",
-        ...(force ? ["--force"] : []),
-        current.path,
-      ]);
+      if (!inspection.missing)
+        await runGit(project.path, [
+          "worktree",
+          "remove",
+          ...(force ? ["--force"] : []),
+          current.path,
+        ]);
       try {
         await this.projects.removeWorktree(worktreeId);
       } catch (error) {

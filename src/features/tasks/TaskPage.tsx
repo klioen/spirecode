@@ -1,4 +1,9 @@
-import { RiAddLine, RiNotification3Line, RiTaskLine } from "@remixicon/react";
+import {
+  RiAddLine,
+  RiDeleteBinLine,
+  RiNotification3Line,
+  RiTaskLine,
+} from "@remixicon/react";
 import { useEffect, useState } from "react";
 import {
   formatDateTime,
@@ -48,6 +53,8 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
     null,
   );
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [cleaningWorkspaces, setCleaningWorkspaces] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
 
   useEffect(() => {
     void store.load(api);
@@ -158,6 +165,57 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
           <h1>{t("tasks.heading")}</h1>
         </div>
         <div className="task-page-actions">
+          {store.items.some(
+            (task) =>
+              task.status === "completed" &&
+              task.ownsManagedWorktree &&
+              task.resolvedWorktreeId &&
+              task.workspaceCleanupStatus !== "removed",
+          ) ? (
+            <button
+              className="task-button task-button-secondary"
+              type="button"
+              disabled={cleaningWorkspaces}
+              onClick={() => {
+                setCleaningWorkspaces(true);
+                setCleanupResult(null);
+                const candidates = store.items.filter(
+                  (task) =>
+                    task.status === "completed" &&
+                    task.ownsManagedWorktree &&
+                    task.resolvedWorktreeId &&
+                    task.workspaceCleanupStatus !== "removed",
+                );
+                void (async () => {
+                  let cleaned = 0;
+                  for (const task of candidates) {
+                    try {
+                      const result = await api.cleanupWorkspace(
+                        task.id,
+                        task.revision,
+                      );
+                      if (result.workspaceCleanupStatus === "removed")
+                        cleaned += 1;
+                    } catch {
+                      // Clean-only bulk cleanup retains every unsafe workspace.
+                    }
+                  }
+                  setCleanupResult(
+                    t("tasks.cleanupResult", {
+                      cleaned,
+                      skipped: candidates.length - cleaned,
+                    }),
+                  );
+                  await store.load(api);
+                })().finally(() => setCleaningWorkspaces(false));
+              }}
+            >
+              <RiDeleteBinLine size={15} aria-hidden="true" />
+              {cleaningWorkspaces
+                ? t("tasks.cleaningWorkspaces")
+                : t("tasks.cleanupSafeWorkspaces")}
+            </button>
+          ) : null}
           <button
             className="task-button task-button-secondary"
             type="button"
@@ -180,6 +238,11 @@ export function TaskPage({ api, projects, onOpenSession }: TaskPageProps) {
           </button>
         </div>
       </header>
+      {cleanupResult ? (
+        <p className="task-page-message" role="status">
+          {cleanupResult}
+        </p>
+      ) : null}
       {showNotifications ? (
         <section
           className="task-notifications"

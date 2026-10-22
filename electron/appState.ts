@@ -168,6 +168,31 @@ export class AppState {
             busy: false,
           };
         },
+        inspectWorktreeForCleanup: async (worktreeId) => {
+          let worktree;
+          try {
+            worktree = await projects.worktree(worktreeId);
+          } catch (error) {
+            if (
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              error.code === "NOT_FOUND"
+            )
+              return null;
+            throw error;
+          }
+          const inspection = await this.worktrees.inspectDelete(worktreeId);
+          return {
+            id: worktree.id,
+            projectId: worktree.projectId,
+            dirty: inspection.dirty,
+            busy:
+              inspection.terminalCount > 0 ||
+              this.chat.worktreeBusy(worktreeId),
+            missing: inspection.missing,
+          };
+        },
         createWorktree: async (projectId, name, baseRef) => {
           const worktree = await this.createWorktree(projectId, name, baseRef);
           return {
@@ -247,6 +272,15 @@ export class AppState {
           await this.chat.rename(worktreeId, sessionId, name);
         },
         attachSession: async (worktreeId, sessionId, integration) => {
+          await this.chat.rebindSessionTools(worktreeId, sessionId, {
+            customTools: [taskReportTool(integration)],
+            onEvent: (event) => {
+              if (typeof event.type === "string")
+                integration.onEvent({ type: event.type });
+            },
+          });
+        },
+        loadSession: async (worktreeId, sessionId, integration) => {
           await this.chat.ensureLoaded(worktreeId, sessionId, {
             customTools: [taskReportTool(integration)],
             onEvent: (event) => {
@@ -263,6 +297,15 @@ export class AppState {
           this.chat.send(worktreeId, sessionId, prompt),
         abortSession: async (worktreeId, sessionId) => {
           await this.chat.abort(worktreeId, sessionId);
+        },
+        isWorktreeBusy: async (worktreeId) => {
+          const inspection = await this.worktrees.inspectDelete(worktreeId);
+          return (
+            inspection.terminalCount > 0 || this.chat.worktreeBusy(worktreeId)
+          );
+        },
+        deleteWorktree: async (worktreeId) => {
+          await this.deleteWorktree(worktreeId, false);
         },
         notify: (request) => this.notifyTask(request),
       });
@@ -502,6 +545,11 @@ export class AppState {
         "Cancel the active Task before deleting its workspace.",
       );
     const inspection = await this.worktrees.inspectDelete(worktreeId);
+    if (!force && this.chat.worktreeBusy(worktreeId))
+      throw new CommandError(
+        "WORKTREE_BUSY",
+        "Stop active chat sessions before deleting this worktree.",
+      );
     if (!force && (inspection.dirty || inspection.terminalCount > 0))
       return this.worktrees.delete(worktreeId, false);
     this.terminals.closeWorktree(worktreeId);
@@ -615,6 +663,12 @@ export class AppState {
     );
   }
 
+  async taskCleanupWorkspace(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().cleanupWorkspace(taskId, expectedRevision),
+    );
+  }
+
   async taskRequestChanges(
     taskId: string,
     expectedRevision: number,
@@ -711,6 +765,11 @@ export class AppState {
       workspace: task.workspace,
       status: task.status,
       activeRunId: task.activeRunId,
+      resolvedWorktreeId: task.resolvedWorktreeId,
+      ownsManagedWorktree: task.ownsManagedWorktree,
+      workspaceCleanupStatus: task.workspaceCleanupStatus,
+      workspaceCleanedAt: task.workspaceCleanedAt,
+      workspaceCleanupErrorCode: task.workspaceCleanupErrorCode,
       revision: task.revision,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
@@ -736,7 +795,12 @@ export class AppState {
         // Deleted or unavailable sessions contribute zero to aggregate metrics.
       }
     }
-    return this.#taskSessionMetrics.tokenCount(sessionPath);
+    return run.startedAt === null
+      ? 0
+      : this.#taskSessionMetrics.tokenCount(sessionPath, {
+          startedAt: run.startedAt,
+          endedAt: run.finishedAt ?? Date.now() + 1,
+        });
   }
 
   private async taskMutation(detail: TaskDetail) {

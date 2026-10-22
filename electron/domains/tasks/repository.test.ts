@@ -276,13 +276,13 @@ describe("TaskRepository", () => {
 
     const recorded = repository.reportRun(run.id, running.run.revision, report);
     expect(recorded.run).toMatchObject({
-      status: "reported",
+      status: "running",
       report,
-      reportedAt: now,
+      reportedAt: null,
     });
     expect(recorded.task).toMatchObject({
-      status: "needs_review",
-      activeRunId: null,
+      status: "running",
+      activeRunId: run.id,
     });
     expect(repository.reportRun(run.id, 1, report)).toEqual(recorded);
     expect(() =>
@@ -293,6 +293,20 @@ describe("TaskRepository", () => {
     ).toThrowError(
       expect.objectContaining({ code: "TASK_RESULT_ALREADY_REPORTED" }),
     );
+
+    const finalized = repository.finalizeRunReport(
+      run.id,
+      recorded.run.revision,
+    );
+    expect(finalized.run).toMatchObject({
+      status: "reported",
+      report,
+      reportedAt: now,
+    });
+    expect(finalized.task).toMatchObject({
+      status: "needs_review",
+      activeRunId: null,
+    });
   });
 
   it("stores bounded events, steps, and deduplicated notifications", () => {

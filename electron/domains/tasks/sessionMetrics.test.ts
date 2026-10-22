@@ -68,6 +68,39 @@ describe("task session metrics", () => {
     expect(parseSessionTokenCount(contents)).toBe(169);
   });
 
+  it("attributes a reused session's usage to non-overlapping run windows", () => {
+    const contents = [
+      JSON.stringify({
+        type: "message",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        message: { role: "assistant", usage: { totalTokens: 100 } },
+      }),
+      JSON.stringify({
+        type: "message",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        message: { role: "assistant", usage: { totalTokens: 40 } },
+      }),
+      JSON.stringify({
+        type: "message",
+        message: { role: "assistant", usage: { totalTokens: 999 } },
+      }),
+    ].join("\n");
+    const origin = Date.parse("2026-01-01T00:00:00.000Z");
+
+    expect(
+      parseSessionTokenCount(contents, {
+        startedAt: origin,
+        endedAt: origin + 2_000,
+      }),
+    ).toBe(100);
+    expect(
+      parseSessionTokenCount(contents, {
+        startedAt: origin + 2_000,
+        endedAt: origin + 4_000,
+      }),
+    ).toBe(40);
+  });
+
   it("reads and refreshes cached session usage while tolerating missing sessions", async () => {
     const directory = await mkdtemp(join(tmpdir(), "spire-task-metrics-"));
     directories.push(directory);
