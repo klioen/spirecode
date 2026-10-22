@@ -6,6 +6,7 @@ import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
 import type { TaskRewriteDraft } from "./domains/tasks/piRewrite.js";
+import { validateId } from "./domains/tasks/validation.js";
 import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
 import type {
   AppLanguage,
@@ -453,12 +454,16 @@ async function invoke(
       );
     case "task_notifications_list":
       return state.taskNotificationsList(taskNotificationListInput(args));
-    case "task_notification_mark_read":
+    case "task_notifications_mark_all_read":
+      return state.taskNotificationsMarkAllRead();
+    case "task_notification_mark_read": {
+      const input = taskNotificationReadInput(args);
       return state.taskNotificationMarkRead(
-        text(args, "taskId"),
-        "runId" in args ? text(args, "runId", true) || null : null,
-        text(args, "kind"),
+        input.taskId,
+        input.runId,
+        input.kind,
       );
+    }
     case "task_rewrite_start":
       state.startTaskRewrite(text(args, "rewriteId"), taskRewriteInput(args));
       return undefined;
@@ -601,7 +606,14 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   chat_session_abort: ["worktreeId", "sessionId"],
   chat_session_rename: ["worktreeId", "sessionId", "title"],
   chat_session_delete: ["worktreeId", "sessionId"],
-  task_list: ["cursor", "limit", "statuses"],
+  task_list: [
+    "cursor",
+    "limit",
+    "statuses",
+    "query",
+    "projectId",
+    "attentionOnly",
+  ],
   task_get: ["taskId"],
   task_create: ["input"],
   task_update: ["taskId", "expectedRevision", "patch"],
@@ -612,6 +624,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_request_changes: ["taskId", "expectedRevision", "note"],
   task_continue_for_report: ["taskId", "expectedRevision"],
   task_notifications_list: ["cursor", "limit"],
+  task_notifications_mark_all_read: [],
   task_notification_mark_read: ["taskId", "runId", "kind"],
   task_rewrite_start: ["rewriteId", "input"],
   task_rewrite_abort: ["rewriteId"],
@@ -696,6 +709,9 @@ function taskListInput(args: Args): {
   limit: number;
   cursor?: string;
   statuses?: import("./domains/tasks/types.js").TaskStatus[];
+  query?: string;
+  projectId?: string;
+  attentionOnly?: boolean;
 } {
   const limit = safeInteger(args, "limit", 1);
   if (limit > 100) throw new TypeError("limit is too large");
@@ -712,10 +728,20 @@ function taskListInput(args: Args): {
       throw new TypeError("statuses is invalid");
     statuses = args.statuses as import("./domains/tasks/types.js").TaskStatus[];
   }
+  const query = "query" in args ? text(args, "query", true) : undefined;
+  if (query !== undefined && Buffer.byteLength(query, "utf8") > 256)
+    throw new TypeError("query is too large");
+  const projectId = "projectId" in args ? text(args, "projectId") : undefined;
+  if (projectId) validateId(projectId, "projectId");
+  const attentionOnly =
+    "attentionOnly" in args ? boolean(args, "attentionOnly") : undefined;
   return {
     limit,
     ...(cursor ? { cursor } : {}),
     ...(statuses ? { statuses } : {}),
+    ...(query !== undefined ? { query } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(attentionOnly !== undefined ? { attentionOnly } : {}),
   };
 }
 
@@ -786,6 +812,21 @@ function taskNotificationListInput(args: Args): {
   if (limit > 100) throw new TypeError("limit is too large");
   const cursor = "cursor" in args ? text(args, "cursor") : undefined;
   return { limit, ...(cursor ? { cursor } : {}) };
+}
+
+function taskNotificationReadInput(args: Args): {
+  taskId: string;
+  runId: string | null;
+  kind: string;
+} {
+  return {
+    taskId: text(args, "taskId"),
+    runId:
+      !("runId" in args) || args.runId === null
+        ? null
+        : text(args, "runId", true) || null,
+    kind: text(args, "kind"),
+  };
 }
 
 function taskRewriteInput(args: Args): TaskRewriteDraft {
@@ -870,6 +911,14 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
 
   if (command === "task_list") {
     taskListInput(args);
+    return args;
+  }
+  if (command === "task_notifications_list") {
+    taskNotificationListInput(args);
+    return args;
+  }
+  if (command === "task_notification_mark_read") {
+    taskNotificationReadInput(args);
     return args;
   }
   if (command === "task_create") {

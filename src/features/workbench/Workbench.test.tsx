@@ -50,12 +50,29 @@ vi.mock("../editor/EditorPane", () => ({
 vi.mock("../tasks/TaskPage", () => ({
   TaskPage: ({
     onOpenSession,
+    onOpenChanges,
   }: {
     onOpenSession?: (worktreeId: string, sessionId: string) => void;
+    onOpenChanges?: (worktreeId: string) => void;
   }) => (
     <main>
       Task page
-      <button onClick={() => onOpenSession?.("task-worktree", "task-session")}>
+      <button
+        onClick={() =>
+          void Promise.resolve(onOpenChanges?.("task-worktree")).catch(
+            () => undefined,
+          )
+        }
+      >
+        Task changes
+      </button>
+      <button
+        onClick={() =>
+          void Promise.resolve(
+            onOpenSession?.("task-worktree", "task-session"),
+          ).catch(() => undefined)
+        }
+      >
         Task session
       </button>
     </main>
@@ -558,4 +575,18 @@ describe("Workbench panel handles", () => {
     fireEvent.click(reopen);
     expect(screen.getByText("Projects")).toBeInTheDocument();
   });
+});
+
+it("opens a Task workspace's Changes panel through canonical selection", async () => {
+  render(<Workbench />);
+  fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+  fireEvent.click(screen.getByRole("button", { name: "Task changes" }));
+  await waitFor(() =>
+    expect(projectsApi.selectWorktree).toHaveBeenCalledWith("task-worktree"),
+  );
+  await waitFor(() =>
+    expect(screen.queryByText("Task page")).not.toBeInTheDocument(),
+  );
+  expect(useWorkbenchStore.getState().rightView).toBe("changes");
+  expect(useWorkbenchStore.getState().rightCollapsed).toBe(false);
 });

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -61,7 +62,6 @@ export function Workbench() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const taskSessionNavigationGeneration = useRef(0);
-  const [taskProjects, setTaskProjects] = useState<TaskProjectOption[]>([]);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("extensions");
   useEffect(() => {
@@ -117,52 +117,55 @@ export function Workbench() {
       }
     });
   }, []);
-  useEffect(() => {
-    if (!tasksOpen) return;
-    let cancelled = false;
-    void Promise.all(
-      projects.map(async (project): Promise<TaskProjectOption> => {
-        const branches =
-          project.kind === "git"
-            ? await commands.gitListOriginBranches(project.id)
-            : { defaultRef: null, branches: [] };
-        const worktrees = await Promise.all(
-          project.worktrees.map(async (worktree) => {
-            const status =
-              project.kind === "git"
-                ? await commands.gitStatus(worktree.id)
-                : { changes: [] };
-            return {
-              id: worktree.id,
-              name: worktree.name,
-              dirty: status.changes.length > 0,
-            };
-          }),
-        );
-        return {
-          id: project.id,
-          name: project.name,
-          kind: project.kind,
-          defaultBaseRef: branches.defaultRef ?? undefined,
-          baseRefs: branches.branches.map((branch) => ({
-            value: branch.ref,
-            label: branch.name,
-          })),
-          worktrees,
-        };
-      }),
-    ).then(
-      (options) => {
-        if (!cancelled) setTaskProjects(options);
-      },
-      () => {
-        if (!cancelled) setTaskProjects([]);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [projects, tasksOpen]);
+  const taskProjects = useMemo<TaskProjectOption[]>(
+    () =>
+      projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        kind: project.kind,
+        baseRefs: [],
+        worktrees: project.worktrees.map((worktree) => ({
+          id: worktree.id,
+          name: worktree.name,
+        })),
+      })),
+    [projects],
+  );
+  const loadTaskProject = useCallback(
+    async (projectId: string): Promise<TaskProjectOption> => {
+      const project = projects.find((item) => item.id === projectId);
+      if (!project) throw new Error(t("tasks.projectUnavailable"));
+      const branches =
+        project.kind === "git"
+          ? await commands.gitListOriginBranches(project.id)
+          : { defaultRef: null, branches: [] };
+      const worktrees = await Promise.all(
+        project.worktrees.map(async (worktree) => {
+          const status =
+            project.kind === "git"
+              ? await commands.gitStatus(worktree.id)
+              : { changes: [] };
+          return {
+            id: worktree.id,
+            name: worktree.name,
+            dirty: status.changes.length > 0,
+          };
+        }),
+      );
+      return {
+        id: project.id,
+        name: project.name,
+        kind: project.kind,
+        defaultBaseRef: branches.defaultRef ?? undefined,
+        baseRefs: branches.branches.map((branch) => ({
+          value: branch.ref,
+          label: branch.name,
+        })),
+        worktrees,
+      };
+    },
+    [projects, t],
+  );
   const active = useMemo(() => {
     for (const project of projects) {
       const worktree = project.worktrees.find(
@@ -316,25 +319,43 @@ export function Workbench() {
           <TaskPage
             api={tasksApi}
             projects={taskProjects}
-            onOpenSession={(worktreeId, sessionId) => {
-              const generation = taskSessionNavigationGeneration.current + 1;
-              taskSessionNavigationGeneration.current = generation;
-              void projectsApi.selectWorktree(worktreeId).then(
-                (worktree) => {
-                  if (taskSessionNavigationGeneration.current !== generation)
-                    return;
-                  useProjectsStore.getState().addWorktree(worktree);
-                  useEditorStore
-                    .getState()
-                    .openChat(worktreeId, sessionId, "Task");
-                  setTasksOpen(false);
-                },
-                (error: unknown) => {
-                  if (taskSessionNavigationGeneration.current !== generation)
-                    return;
-                  useProjectsStore.getState().setError(commandError(error));
-                },
-              );
+            preferredProjectId={active?.project.id}
+            loadProject={loadTaskProject}
+            onOpenChanges={async (worktreeId) => {
+              const generation = ++taskSessionNavigationGeneration.current;
+              try {
+                const worktree = await projectsApi.selectWorktree(worktreeId);
+                if (taskSessionNavigationGeneration.current !== generation)
+                  return;
+                useProjectsStore.getState().addWorktree(worktree);
+                useWorkbenchStore.getState().setRightView("changes");
+                if (useWorkbenchStore.getState().rightCollapsed)
+                  useWorkbenchStore.getState().toggleRight();
+                setTasksOpen(false);
+              } catch (error) {
+                if (taskSessionNavigationGeneration.current !== generation)
+                  return;
+                useProjectsStore.getState().setError(commandError(error));
+                throw error;
+              }
+            }}
+            onOpenSession={async (worktreeId, sessionId) => {
+              const generation = ++taskSessionNavigationGeneration.current;
+              try {
+                const worktree = await projectsApi.selectWorktree(worktreeId);
+                if (taskSessionNavigationGeneration.current !== generation)
+                  return;
+                useProjectsStore.getState().addWorktree(worktree);
+                useEditorStore
+                  .getState()
+                  .openChat(worktreeId, sessionId, "Task");
+                setTasksOpen(false);
+              } catch (error) {
+                if (taskSessionNavigationGeneration.current !== generation)
+                  return;
+                useProjectsStore.getState().setError(commandError(error));
+                throw error;
+              }
             }}
           />
         ) : active ? (

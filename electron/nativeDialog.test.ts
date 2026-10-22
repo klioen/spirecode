@@ -11,14 +11,14 @@ describe("unsavedChangesDialogOptions", () => {
       cancelId: 0,
       noLink: true,
       title: "Unsaved changes",
-      message: "1 file has unsaved changes.",
-      detail: "Discarding will permanently lose those changes.",
+      message: "1 item has unsaved changes.",
+      detail: "Unsaved file changes and task drafts will be permanently lost.",
     });
     expect(unsavedChangesDialogOptions("en", 2).message).toBe(
-      "2 files have unsaved changes.",
+      "2 items have unsaved changes.",
     );
     expect(unsavedChangesDialogOptions("en", 10_000).message).toBe(
-      "10,000 files have unsaved changes.",
+      "10,000 items have unsaved changes.",
     );
   });
 
@@ -30,11 +30,11 @@ describe("unsavedChangesDialogOptions", () => {
       cancelId: 0,
       noLink: true,
       title: "未保存的更改",
-      message: "2 个文件有未保存的更改。",
-      detail: "放弃更改将永久丢失这些内容。",
+      message: "2 项内容有未保存的更改。",
+      detail: "未保存的文件更改和任务草稿将永久丢失。",
     });
     expect(unsavedChangesDialogOptions("zh-CN", 10_000).message).toBe(
-      "10,000 个文件有未保存的更改。",
+      "10,000 项内容有未保存的更改。",
     );
   });
 });

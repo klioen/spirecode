@@ -3,6 +3,30 @@ import { describe, expect, it } from "vitest";
 import { validateCommandArgs, validateDirtyFileCount } from "./ipc.js";
 
 describe("IPC command argument validation", () => {
+  it("validates bounded Task search, project filters and no-argument read-all", () => {
+    const input = {
+      limit: 50,
+      query: "fix",
+      projectId: "10000000-0000-4000-8000-000000000001",
+      attentionOnly: true,
+    };
+    expect(validateCommandArgs("task_list", input)).toEqual(input);
+    expect(() =>
+      validateCommandArgs("task_list", { limit: 50, query: "x".repeat(257) }),
+    ).toThrow();
+    expect(() =>
+      validateCommandArgs("task_list", { limit: 50, attentionOnly: "yes" }),
+    ).toThrow();
+    expect(validateCommandArgs("task_notifications_mark_all_read", {})).toEqual(
+      {},
+    );
+    expect(() =>
+      validateCommandArgs("task_notifications_mark_all_read", {
+        sql: "DELETE",
+      }),
+    ).toThrow();
+  });
+
   it("allows an empty relative path only for reading the worktree root", () => {
     expect(
       validateCommandArgs("fs_read_dir", {
@@ -492,6 +516,57 @@ describe("Task IPC validation", () => {
         patch: { acceptanceCriteria: [] },
       }),
     ).toThrow("unexpected fields");
+  });
+
+  it("accepts first-page and paginated notification requests with bounded numeric limits", () => {
+    expect(
+      validateCommandArgs("task_notifications_list", { limit: 50 }),
+    ).toEqual({ limit: 50 });
+    expect(
+      validateCommandArgs("task_notifications_list", {
+        limit: 1,
+        cursor: "opaque-cursor",
+      }),
+    ).toEqual({ limit: 1, cursor: "opaque-cursor" });
+    expect(
+      validateCommandArgs("task_notifications_list", { limit: 100 }),
+    ).toEqual({ limit: 100 });
+    for (const limit of [undefined, 0, 101, 1.5, Number.NaN, "50"]) {
+      expect(() =>
+        validateCommandArgs("task_notifications_list", { limit }),
+      ).toThrow();
+    }
+    for (const cursor of [null, "", "x".repeat(4097), 42]) {
+      expect(() =>
+        validateCommandArgs("task_notifications_list", { limit: 50, cursor }),
+      ).toThrow();
+    }
+    expect(() =>
+      validateCommandArgs("task_notifications_list", {
+        limit: 50,
+        path: "/tmp/tasks",
+      }),
+    ).toThrow("Unexpected argument");
+  });
+
+  it("accepts notification reads with nullable or omitted run IDs while rejecting invalid values", () => {
+    const input = { taskId: "task-1", kind: "needs_review" };
+    expect(validateCommandArgs("task_notification_mark_read", input)).toEqual(
+      input,
+    );
+    for (const runId of [null, "", "run-1"]) {
+      expect(
+        validateCommandArgs("task_notification_mark_read", { ...input, runId }),
+      ).toEqual({ ...input, runId });
+    }
+    for (const runId of [undefined, false, 42, "x".repeat(4097)]) {
+      expect(() =>
+        validateCommandArgs("task_notification_mark_read", { ...input, runId }),
+      ).toThrow();
+    }
+    expect(() =>
+      validateCommandArgs("task_notification_mark_read", { taskId: "task-1" }),
+    ).toThrow();
   });
 
   it("rejects broad, malformed, and oversized Task input", () => {

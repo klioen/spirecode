@@ -1,3 +1,7 @@
+import {
+  subscribeTaskDrafts,
+  taskDraftCount,
+} from "../features/tasks/taskDrafts";
 import { useEffect } from "react";
 import "../features/theme/themeStore";
 import { setHostDirtyFileCount } from "../bindings";
@@ -42,7 +46,10 @@ export default function App() {
   useEffect(() => {
     let lastCount = -1;
     const publishDirtyCount = () => {
-      const count = useEditorStore.getState().dirtyFileCount();
+      const count = Math.min(
+        10_000,
+        useEditorStore.getState().dirtyFileCount() + taskDraftCount(),
+      );
       if (count === lastCount) return;
       try {
         setHostDirtyFileCount(count);
@@ -52,7 +59,12 @@ export default function App() {
       }
     };
     publishDirtyCount();
-    return useEditorStore.subscribe(publishDirtyCount);
+    const stopEditor = useEditorStore.subscribe(publishDirtyCount);
+    const stopDrafts = subscribeTaskDrafts(publishDirtyCount);
+    return () => {
+      stopEditor();
+      stopDrafts();
+    };
   }, []);
 
   return <Workbench />;

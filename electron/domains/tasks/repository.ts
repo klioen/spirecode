@@ -57,6 +57,14 @@ export interface ListTasksOptions {
   limit: number;
   cursor?: string | null;
   statuses?: readonly TaskStatus[];
+  query?: string;
+  projectId?: string;
+  attentionOnly?: boolean;
+}
+
+export interface TaskQueueSnapshot {
+  occupiedSlots: number;
+  busyWorktreeIds: Set<string>;
 }
 
 export interface ListOptions {
@@ -282,7 +290,7 @@ export class TaskRepository {
     return row;
   }
 
-  createTask(input: CreateTaskInput): Task {
+  createTask(input: CreateTaskInput, initialRun?: CreateRunInput): Task {
     return this.#transaction(() => {
       const value = validateCreateTaskInput(input);
       const now = this.#now();
@@ -317,6 +325,7 @@ export class TaskRepository {
           now,
           now,
         );
+      if (initialRun) this.#insertRun(value.id, 1, initialRun);
       return mapTask(this.#requireTask(value.id));
     });
   }
@@ -432,6 +441,25 @@ export class TaskRepository {
     return rows.map(mapRun);
   }
 
+  executionQueueSnapshot(): TaskQueueSnapshot {
+    const rows = this.connection
+      .prepare(
+        `SELECT worktree_id, status FROM task_runs
+      WHERE status IN ('queued','provisioning','prompting','running','awaiting_report') AND status <> 'queued'`,
+      )
+      .all() as unknown as Array<{
+      worktree_id: string | null;
+      status: TaskRunStatus;
+    }>;
+    return {
+      occupiedSlots: rows.filter((run) => run.status !== "awaiting_report")
+        .length,
+      busyWorktreeIds: new Set(
+        rows.flatMap((run) => (run.worktree_id ? [run.worktree_id] : [])),
+      ),
+    };
+  }
+
   listAllRuns(taskId: string): TaskRun[] {
     validateId(taskId, "taskId");
     const rows = this.connection
@@ -490,6 +518,41 @@ export class TaskRepository {
       clauses.push(`status IN (${statuses.map(() => "?").join(",")})`);
       parameters.push(...statuses);
     }
+    if (options.query !== undefined) {
+      if (
+        typeof options.query !== "string" ||
+        Buffer.byteLength(options.query, "utf8") > 256
+      )
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "query is too large",
+        );
+      const query = options.query.trim();
+      if (query) {
+        clauses.push(
+          "(title LIKE ? ESCAPE '!' OR description LIKE ? ESCAPE '!')",
+        );
+        const pattern = `%${query.replace(/[!%_]/g, "!$&")}%`;
+        parameters.push(pattern, pattern);
+      }
+    }
+    if (options.projectId) {
+      validateId(options.projectId, "projectId");
+      clauses.push("project_id = ?");
+      parameters.push(options.projectId);
+    }
+    if (
+      options.attentionOnly !== undefined &&
+      typeof options.attentionOnly !== "boolean"
+    )
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "attentionOnly is invalid",
+      );
+    if (options.attentionOnly)
+      clauses.push(
+        "(status IN ('backlog','needs_review','failed') OR (status = 'running' AND EXISTS (SELECT 1 FROM task_runs WHERE task_runs.id = tasks.active_run_id AND task_runs.status = 'awaiting_report')))",
+      );
     if (cursor) {
       const [updatedAt, id] = cursor;
       if (typeof updatedAt !== "number" || typeof id !== "string") {
@@ -540,102 +603,110 @@ export class TaskRepository {
     expectedTaskRevision: number,
     input: CreateRunInput,
   ): { task: Task; run: TaskRun } {
-    return this.#transaction(() => {
-      validateId(taskId, "taskId");
-      validateId(input.id, "run.id");
-      validateId(input.projectId, "run.projectId");
-      const taskRow = this.#requireTask(taskId);
-      if (taskRow.revision !== expectedTaskRevision) {
-        throw new TaskRepositoryError(
-          "TASK_CONFLICT",
-          "Task revision does not match",
-        );
-      }
-      if (taskRow.active_run_id) {
-        throw new TaskRepositoryError(
-          "TASK_ACTIVE_RUN_EXISTS",
-          "Task already has an active run",
-        );
-      }
-      assertTaskTransition(taskRow.status, "queued");
-      if (
-        typeof input.promptMarker !== "string" ||
-        input.promptMarker.length < 1 ||
-        input.promptMarker.length > 200
-      ) {
-        throw new TaskRepositoryError(
-          "TASK_RESULT_INVALID",
-          "promptMarker is invalid",
-        );
-      }
-      if (input.sessionId) validateId(input.sessionId, "run.sessionId");
-      if (
-        input.sessionPath !== undefined &&
-        input.sessionPath !== null &&
-        (typeof input.sessionPath !== "string" ||
-          input.sessionPath.length > 16 * 1024)
+    return this.#transaction(() =>
+      this.#insertRun(taskId, expectedTaskRevision, input),
+    );
+  }
+
+  #insertRun(
+    taskId: string,
+    expectedTaskRevision: number,
+    input: CreateRunInput,
+  ): { task: Task; run: TaskRun } {
+    validateId(taskId, "taskId");
+    validateId(input.id, "run.id");
+    validateId(input.projectId, "run.projectId");
+    const taskRow = this.#requireTask(taskId);
+    if (taskRow.revision !== expectedTaskRevision) {
+      throw new TaskRepositoryError(
+        "TASK_CONFLICT",
+        "Task revision does not match",
+      );
+    }
+    if (taskRow.active_run_id) {
+      throw new TaskRepositoryError(
+        "TASK_ACTIVE_RUN_EXISTS",
+        "Task already has an active run",
+      );
+    }
+    assertTaskTransition(taskRow.status, "queued");
+    if (
+      typeof input.promptMarker !== "string" ||
+      input.promptMarker.length < 1 ||
+      input.promptMarker.length > 200
+    ) {
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "promptMarker is invalid",
+      );
+    }
+    if (input.sessionId) validateId(input.sessionId, "run.sessionId");
+    if (
+      input.sessionPath !== undefined &&
+      input.sessionPath !== null &&
+      (typeof input.sessionPath !== "string" ||
+        input.sessionPath.length > 16 * 1024)
+    )
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "sessionPath is invalid",
+      );
+    const attemptRow = this.connection
+      .prepare(
+        "SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_runs WHERE task_id = ?",
       )
-        throw new TaskRepositoryError(
-          "TASK_RESULT_INVALID",
-          "sessionPath is invalid",
-        );
-      const attemptRow = this.connection
-        .prepare(
-          "SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_runs WHERE task_id = ?",
-        )
-        .get(taskId) as { attempt: number };
-      const now = this.#now();
-      this.connection
-        .prepare(
-          `INSERT INTO task_runs (
-          id, task_id, attempt, status, saga_phase, project_id, worktree_id,
-          owns_managed_worktree, worktree_name, base_ref, session_id, session_path,
-          prompt_marker, report_json, error_code, error_message, error_retryable,
-          revision, created_at, started_at, settled_at, reported_at, finished_at
-        ) VALUES (?, ?, ?, 'queued', 'created', ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 1, ?, NULL, NULL, NULL, NULL)`,
-        )
-        .run(
-          input.id,
-          taskId,
-          attemptRow.attempt,
-          input.projectId,
-          input.worktreeId ?? null,
-          input.ownsManagedWorktree ? 1 : 0,
-          input.worktreeName ?? null,
-          input.baseRef ?? null,
-          input.sessionId ?? null,
-          input.sessionPath ?? null,
-          input.promptMarker,
-          now,
-        );
-      const result = this.connection
-        .prepare(
-          `UPDATE tasks SET status = 'queued', active_run_id = ?,
-          owns_managed_worktree = CASE
-            WHEN resolved_worktree_id IS NULL AND ? IS NOT NULL THEN ?
-            ELSE owns_managed_worktree END,
-          resolved_worktree_id = COALESCE(resolved_worktree_id, ?),
-          revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`,
-        )
-        .run(
-          input.id,
-          input.worktreeId ?? null,
-          input.ownsManagedWorktree ? 1 : 0,
-          input.worktreeId ?? null,
-          now,
-          taskId,
-          expectedTaskRevision,
-        );
-      if (result.changes !== 1)
-        throw new TaskRepositoryError(
-          "TASK_CONFLICT",
-          "Task revision does not match",
-        );
-      return {
-        task: mapTask(this.#requireTask(taskId)),
-        run: mapRun(this.#requireRun(input.id)),
-      };
-    });
+      .get(taskId) as { attempt: number };
+    const now = this.#now();
+    this.connection
+      .prepare(
+        `INSERT INTO task_runs (
+        id, task_id, attempt, status, saga_phase, project_id, worktree_id,
+        owns_managed_worktree, worktree_name, base_ref, session_id, session_path,
+        prompt_marker, report_json, error_code, error_message, error_retryable,
+        revision, created_at, started_at, settled_at, reported_at, finished_at
+      ) VALUES (?, ?, ?, 'queued', 'created', ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 1, ?, NULL, NULL, NULL, NULL)`,
+      )
+      .run(
+        input.id,
+        taskId,
+        attemptRow.attempt,
+        input.projectId,
+        input.worktreeId ?? null,
+        input.ownsManagedWorktree ? 1 : 0,
+        input.worktreeName ?? null,
+        input.baseRef ?? null,
+        input.sessionId ?? null,
+        input.sessionPath ?? null,
+        input.promptMarker,
+        now,
+      );
+    const result = this.connection
+      .prepare(
+        `UPDATE tasks SET status = 'queued', active_run_id = ?,
+        owns_managed_worktree = CASE
+          WHEN resolved_worktree_id IS NULL AND ? IS NOT NULL THEN ?
+          ELSE owns_managed_worktree END,
+        resolved_worktree_id = COALESCE(resolved_worktree_id, ?),
+        revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`,
+      )
+      .run(
+        input.id,
+        input.worktreeId ?? null,
+        input.ownsManagedWorktree ? 1 : 0,
+        input.worktreeId ?? null,
+        now,
+        taskId,
+        expectedTaskRevision,
+      );
+    if (result.changes !== 1)
+      throw new TaskRepositoryError(
+        "TASK_CONFLICT",
+        "Task revision does not match",
+      );
+    return {
+      task: mapTask(this.#requireTask(taskId)),
+      run: mapRun(this.#requireRun(input.id)),
+    };
   }
 
   transitionRun(
@@ -1301,6 +1372,24 @@ export class TaskRepository {
             ])
           : null,
     };
+  }
+
+  unreadNotificationCount(): number {
+    return (
+      this.connection
+        .prepare(
+          "SELECT COUNT(*) AS count FROM task_notifications WHERE app_read_at IS NULL",
+        )
+        .get() as { count: number }
+    ).count;
+  }
+
+  markAllNotificationsRead(): void {
+    this.connection
+      .prepare(
+        "UPDATE task_notifications SET app_read_at = ? WHERE app_read_at IS NULL",
+      )
+      .run(this.#now());
   }
 
   markNotificationSystemSent(

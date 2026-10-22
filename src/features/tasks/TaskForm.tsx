@@ -7,12 +7,16 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useTranslation } from "../../i18n";
-import type {
-  CreateTaskInput,
-  TaskDetailValue,
-  TaskRewriteInput,
-  TasksApi,
-} from "./tasksApi";
+import type { CreateTaskInput, TaskDetailValue, TasksApi } from "./tasksApi";
+import {
+  clearTaskDraft,
+  lastTaskProjectId,
+  newTaskDraftKey,
+  readTaskDraft,
+  saveTaskDraft,
+  taskDraftCount,
+  TASK_DRAFT_LIMIT,
+} from "./taskDrafts";
 import { TaskRewriteControl } from "./TaskRewriteControl";
 
 export interface TaskProjectOption {
@@ -192,6 +196,8 @@ interface TaskFormProps {
   onCreated: (task: TaskDetailValue) => void;
   onCancel?: () => void;
   task?: TaskDetailValue;
+  preferredProjectId?: string;
+  loadProject?: (projectId: string) => Promise<TaskProjectOption>;
 }
 
 export function TaskForm({
@@ -200,78 +206,206 @@ export function TaskForm({
   onCreated,
   onCancel,
   task,
+  preferredProjectId,
+  loadProject,
 }: TaskFormProps) {
   const { t } = useTranslation();
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [description, setDescription] = useState(task?.description ?? "");
+  const draftKey = task?.id ?? newTaskDraftKey;
+  const [draft] = useState(() => readTaskDraft(draftKey));
+  const defaultProject =
+    projects.find((project) => project.id === preferredProjectId) ??
+    projects.find((project) => project.id === lastTaskProjectId()) ??
+    projects.find((project) => project.kind === "git") ??
+    projects[0];
+  const [title, setTitle] = useState(draft?.title ?? task?.title ?? "");
+  const [description, setDescription] = useState(
+    draft?.description ?? task?.description ?? "",
+  );
   const [projectId, setProjectId] = useState(
-    task?.projectId ??
-      projects.find(({ kind }) => kind === "git")?.id ??
-      projects[0]?.id ??
-      "",
+    draft?.projectId ?? task?.projectId ?? defaultProject?.id ?? "",
   );
   const [workspaceMode, setWorkspaceMode] = useState<
     "new_managed" | "existing"
-  >(task?.workspace.mode ?? "new_managed");
-  const [baseRefByProject, setBaseRefByProject] = useState<
-    Record<string, string>
-  >({});
+  >(
+    draft?.workspaceMode ??
+      task?.workspace.mode ??
+      (defaultProject?.kind === "directory" ? "existing" : "new_managed"),
+  );
+  const [selectedBaseRef, setBaseRef] = useState(
+    draft?.baseRef ??
+      (task?.workspace.mode === "new_managed" ? task.workspace.baseRef : ""),
+  );
   const [worktreeId, setWorktreeId] = useState(
-    task?.workspace.mode === "existing" ? task.workspace.worktreeId : "",
+    draft?.worktreeId ??
+      (task?.workspace.mode === "existing"
+        ? task.workspace.worktreeId
+        : defaultProject?.kind === "directory"
+          ? (defaultProject.worktrees[0]?.id ?? "")
+          : ""),
   );
-  const [allowDirty, setAllowDirty] = useState(
-    task?.workspace.mode === "existing" ? task.workspace.allowDirty : false,
-  );
+  const [allowDirty, setAllowDirty] = useState(false);
   const [automationEnabled, setAutomationEnabled] = useState(
-    task?.automationEnabled ?? true,
+    draft?.automationEnabled ?? task?.automationEnabled ?? true,
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const project = projects.find(({ id }) => id === projectId);
+  const [configuration, setConfiguration] = useState<TaskProjectOption | null>(
+    null,
+  );
+  const [loadingProject, setLoadingProject] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectRetry, setProjectRetry] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    workspaceMode === "existing",
+  );
+  const titleRef = useRef<HTMLInputElement>(null);
+  const submitted = useRef(false);
+  const mounted = useRef(true);
+  const project =
+    configuration?.id === projectId
+      ? configuration
+      : projects.find((item) => item.id === projectId);
   const baseRef =
-    baseRefByProject[projectId] ??
-    (task?.workspace.mode === "new_managed" ? task.workspace.baseRef : null) ??
-    project?.defaultBaseRef ??
-    project?.baseRefs[0]?.value ??
+    selectedBaseRef ||
+    project?.defaultBaseRef ||
+    project?.baseRefs[0]?.value ||
     "";
-  const rewriteValue: TaskRewriteInput = { title, description };
+  const workspaceLocked = Boolean(task?.resolvedWorktreeId);
+  const draftBlocked =
+    taskDraftCount() >= TASK_DRAFT_LIMIT && !readTaskDraft(draftKey);
+  const dirty = task
+    ? title !== task.title ||
+      description !== task.description ||
+      automationEnabled !== task.automationEnabled ||
+      (!workspaceLocked &&
+        (workspaceMode !== task.workspace.mode ||
+          (task.workspace.mode === "existing"
+            ? worktreeId !== task.workspace.worktreeId
+            : baseRef !== task.workspace.baseRef)))
+    : Boolean(title || description) ||
+      !automationEnabled ||
+      Boolean(projectId && defaultProject && projectId !== defaultProject.id) ||
+      (workspaceMode === "existing" && project?.kind !== "directory") ||
+      Boolean(selectedBaseRef && selectedBaseRef !== project?.defaultBaseRef);
 
-  const applyRewrite = (next: TaskRewriteInput) => {
-    setTitle(next.title);
-    setDescription(next.description);
+  useEffect(() => {
+    mounted.current = true;
+    titleRef.current?.focus();
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!projectId && defaultProject) setProjectId(defaultProject.id);
+  }, [projectId, defaultProject?.id]);
+  useEffect(() => {
+    if (!loadProject || !projectId) return;
+    let cancelled = false;
+    setLoadingProject(true);
+    setProjectError(null);
+    void loadProject(projectId)
+      .then(
+        (value) => {
+          if (!cancelled) setConfiguration(value);
+        },
+        (caught: unknown) => {
+          if (!cancelled)
+            setProjectError(
+              caught instanceof Error
+                ? caught.message
+                : t("tasks.form.projectLoadFailed"),
+            );
+        },
+      )
+      .finally(() => {
+        if (!cancelled) setLoadingProject(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProject, projectId, projectRetry, t]);
+  useEffect(() => {
+    if (project?.kind === "directory") {
+      setWorkspaceMode("existing");
+      if (!worktreeId && project.worktrees.length === 1)
+        setWorktreeId(project.worktrees[0]!.id);
+    }
+  }, [project?.kind, project?.worktrees, worktreeId]);
+  useEffect(() => {
+    if (submitted.current) return;
+    if (dirty)
+      saveTaskDraft(draftKey, {
+        title,
+        description,
+        projectId,
+        workspaceMode,
+        baseRef,
+        worktreeId,
+        automationEnabled,
+      });
+    else clearTaskDraft(draftKey);
+  }, [
+    draftKey,
+    dirty,
+    title,
+    description,
+    projectId,
+    workspaceMode,
+    baseRef,
+    worktreeId,
+    automationEnabled,
+  ]);
+
+  const discard = () => {
+    if (dirty && !window.confirm(t("tasks.form.discardConfirm"))) return;
+    submitted.current = true;
+    clearTaskDraft(draftKey);
+    onCancel?.();
   };
-
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || draftBlocked) return;
     if (!title.trim() || !project) {
       setError(t("tasks.form.required"));
       return;
     }
-    if (workspaceMode === "new_managed" && !baseRef) {
+    if (new TextEncoder().encode(title.trim()).length > 200) {
+      setError(t("tasks.form.titleTooLong"));
+      titleRef.current?.focus();
+      return;
+    }
+    if (loadingProject || projectError) {
+      setError(t("tasks.form.projectLoadFailed"));
+      return;
+    }
+    if (!workspaceLocked && workspaceMode === "new_managed" && !baseRef) {
+      setAdvancedOpen(true);
       setError(t("tasks.form.baseRequired"));
       return;
     }
-    if (workspaceMode === "existing" && !worktreeId) {
+    if (!workspaceLocked && workspaceMode === "existing" && !worktreeId) {
+      setAdvancedOpen(true);
       setError(t("tasks.form.worktreeRequired"));
       return;
     }
     if (
       workspaceMode === "existing" &&
-      project.worktrees.find(({ id }) => id === worktreeId)?.dirty &&
+      project.worktrees.find((item) => item.id === worktreeId)?.dirty &&
       !allowDirty
     ) {
+      setAdvancedOpen(true);
       setError(t("tasks.form.dirtyRequired"));
       return;
     }
-
     const input: CreateTaskInput = {
       title: title.trim(),
       description,
       projectId: project.id,
-      workspace:
-        workspaceMode === "new_managed"
+      workspace: workspaceLocked
+        ? task!.workspace.mode === "existing"
+          ? { ...task!.workspace, allowDirty }
+          : task!.workspace
+        : workspaceMode === "new_managed"
           ? { mode: "new_managed", baseRef }
           : { mode: "existing", worktreeId, allowDirty },
       automationEnabled,
@@ -279,18 +413,17 @@ export function TaskForm({
     setSubmitting(true);
     setError(null);
     try {
-      if (!task) {
-        onCreated(await api.create(input));
-        return;
-      }
-      onCreated(
-        await api.update(task.id, task.revision, {
-          title: input.title,
-          description: input.description,
-          workspace: input.workspace,
-          automationEnabled: input.automationEnabled,
-        }),
-      );
+      const value = task
+        ? await api.update(task.id, task.revision, {
+            title: input.title,
+            description,
+            workspace: input.workspace,
+            automationEnabled,
+          })
+        : await api.create(input);
+      submitted.current = true;
+      clearTaskDraft(draftKey);
+      if (mounted.current) onCreated(value);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -300,18 +433,46 @@ export function TaskForm({
       setSubmitting(false);
     }
   };
-
   return (
     <form className="task-form" onSubmit={(event) => void submit(event)}>
       <header className="task-form-header">
-        <h2>{task ? t("tasks.edit") : t("tasks.new")}</h2>
+        <h2>{t(task ? "tasks.edit" : "tasks.new")}</h2>
+        {draft ? (
+          <p className="task-draft-restored" role="status">
+            {t("tasks.form.draftRestored")}
+          </p>
+        ) : null}
       </header>
+      {draftBlocked ? (
+        <p className="task-page-message task-page-error" role="alert">
+          {t("tasks.form.draftLimit")}
+        </p>
+      ) : null}
+      <ProjectPicker
+        projects={projects}
+        value={projectId}
+        disabled={Boolean(task) || submitting || draftBlocked}
+        onChange={(id) => {
+          setProjectId(id);
+          setConfiguration(null);
+          setBaseRef("");
+          setWorktreeId("");
+          setAllowDirty(false);
+          const directory =
+            projects.find((item) => item.id === id)?.kind === "directory";
+          setWorkspaceMode(directory ? "existing" : "new_managed");
+          setAdvancedOpen(directory);
+        }}
+      />
       <label>
         {t("tasks.form.title")}
         <input
+          ref={titleRef}
           aria-label={t("tasks.form.title")}
+          aria-required="true"
           value={title}
           maxLength={200}
+          disabled={submitting || draftBlocked}
           onChange={(event) => setTitle(event.target.value)}
         />
       </label>
@@ -320,111 +481,140 @@ export function TaskForm({
         <textarea
           aria-label={t("tasks.form.description")}
           value={description}
+          maxLength={64 * 1024}
+          disabled={submitting || draftBlocked}
           onChange={(event) => setDescription(event.target.value)}
         />
       </label>
       <TaskRewriteControl
         api={api}
-        value={rewriteValue}
-        onApply={applyRewrite}
-      />
-      <ProjectPicker
-        projects={projects}
-        value={projectId}
-        disabled={Boolean(task)}
-        onChange={(nextProjectId) => {
-          setProjectId(nextProjectId);
-          setWorktreeId("");
-          setAllowDirty(false);
-          if (
-            projects.find(({ id }) => id === nextProjectId)?.kind ===
-            "directory"
-          )
-            setWorkspaceMode("existing");
+        value={{ title, description }}
+        onApply={(next) => {
+          setTitle(next.title);
+          setDescription(next.description);
         }}
+        disabled={submitting || draftBlocked}
       />
-      <fieldset className="task-form-section task-workspace-section">
-        <legend>{t("tasks.form.workspace")}</legend>
-        {project?.kind === "git" ? (
+      {loadingProject ? (
+        <p className="task-form-hint" role="status">
+          {t("tasks.form.loadingProject")}
+        </p>
+      ) : null}
+      {projectError ? (
+        <p className="task-page-message task-page-error" role="alert">
+          {projectError}
+          <button
+            className="task-button task-button-secondary"
+            type="button"
+            onClick={() => setProjectRetry((value) => value + 1)}
+          >
+            {t("tasks.retry")}
+          </button>
+        </p>
+      ) : null}
+      <details
+        className="task-form-section task-workspace-advanced"
+        open={advancedOpen}
+        onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+      >
+        <summary>
+          {t("tasks.form.advancedWorkspace")}
+          <span>
+            {workspaceLocked
+              ? t("tasks.form.workspaceLocked")
+              : t(
+                  workspaceMode === "new_managed"
+                    ? "tasks.form.newManaged"
+                    : "tasks.form.existingWorktree",
+                )}
+          </span>
+        </summary>
+        <fieldset
+          className="task-workspace-section"
+          disabled={
+            submitting || draftBlocked || loadingProject || workspaceLocked
+          }
+        >
+          <legend>{t("tasks.form.workspace")}</legend>
+          {project?.kind === "git" ? (
+            <label>
+              <input
+                type="radio"
+                name="workspace"
+                value="new_managed"
+                checked={workspaceMode === "new_managed"}
+                onChange={() => setWorkspaceMode("new_managed")}
+              />
+              {t("tasks.form.newManaged")}
+            </label>
+          ) : null}
           <label>
             <input
               type="radio"
               name="workspace"
-              value="new_managed"
-              checked={workspaceMode === "new_managed"}
-              onChange={() => setWorkspaceMode("new_managed")}
+              value="existing"
+              checked={workspaceMode === "existing"}
+              onChange={() => setWorkspaceMode("existing")}
             />
-            {t("tasks.form.newManaged")}
+            {t("tasks.form.existingWorktree")}
           </label>
-        ) : null}
-        <label>
-          <input
-            type="radio"
-            name="workspace"
-            value="existing"
-            checked={workspaceMode === "existing"}
-            onChange={() => setWorkspaceMode("existing")}
-          />
-          {t("tasks.form.existingWorktree")}
-        </label>
-        {workspaceMode === "new_managed" && project?.kind === "git" ? (
-          <label className="task-form-field">
-            {t("tasks.form.baseBranch")}
-            <select
-              aria-label={t("tasks.form.baseBranch")}
-              value={baseRef}
-              onChange={(event) =>
-                setBaseRefByProject((current) => ({
-                  ...current,
-                  [projectId]: event.target.value,
-                }))
-              }
-            >
-              {project?.baseRefs.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <>
+          {workspaceMode === "new_managed" && project?.kind === "git" ? (
             <label className="task-form-field">
-              {t("tasks.form.worktree")}
+              {t("tasks.form.baseBranch")}
               <select
-                aria-label={t("tasks.form.worktree")}
-                value={worktreeId}
-                onChange={(event) => {
-                  setWorktreeId(event.target.value);
-                  setAllowDirty(false);
-                }}
+                aria-label={t("tasks.form.baseBranch")}
+                value={baseRef}
+                onChange={(event) => setBaseRef(event.target.value)}
               >
-                <option value="">{t("tasks.form.selectWorktree")}</option>
-                {project?.worktrees.map((worktree) => (
-                  <option key={worktree.id} value={worktree.id}>
-                    {worktree.name}
-                    {worktree.dirty ? ` (${t("tasks.form.dirty")})` : ""}
+                {project.baseRefs.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
             </label>
-            {project?.worktrees.find(({ id }) => id === worktreeId)?.dirty ? (
-              <label className="task-checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={allowDirty}
-                  onChange={(event) => setAllowDirty(event.target.checked)}
-                />
-                {t("tasks.form.allowDirty")}
+          ) : (
+            <>
+              <label className="task-form-field">
+                {t("tasks.form.worktree")}
+                <select
+                  aria-label={t("tasks.form.worktree")}
+                  value={worktreeId}
+                  onChange={(event) => {
+                    setWorktreeId(event.target.value);
+                    setAllowDirty(false);
+                  }}
+                >
+                  <option value="">{t("tasks.form.selectWorktree")}</option>
+                  {project?.worktrees.map((worktree) => (
+                    <option key={worktree.id} value={worktree.id}>
+                      {worktree.name}
+                      {worktree.dirty ? ` (${t("tasks.form.dirty")})` : ""}
+                    </option>
+                  ))}
+                </select>
               </label>
-            ) : null}
-          </>
-        )}
-      </fieldset>
+            </>
+          )}
+        </fieldset>
+        {workspaceMode === "existing" &&
+        project?.worktrees.find((item) => item.id === worktreeId)?.dirty ? (
+          <label className="task-checkbox-row">
+            <input
+              type="checkbox"
+              checked={allowDirty}
+              disabled={submitting || draftBlocked}
+              onChange={(event) => setAllowDirty(event.target.checked)}
+            />
+            {t("tasks.form.allowDirty")}
+          </label>
+        ) : null}
+      </details>
       <label className="task-automation-toggle">
         <input
           type="checkbox"
           checked={automationEnabled}
+          disabled={submitting || draftBlocked}
           onChange={(event) => setAutomationEnabled(event.target.checked)}
         />
         {t("tasks.form.startAutomation")}
@@ -440,7 +630,8 @@ export function TaskForm({
           <button
             className="task-button task-button-secondary"
             type="button"
-            onClick={onCancel}
+            disabled={submitting}
+            onClick={discard}
           >
             {t("tasks.form.cancel")}
           </button>
@@ -448,15 +639,24 @@ export function TaskForm({
         <button
           className="task-button task-button-primary"
           type="submit"
-          disabled={submitting}
+          disabled={
+            submitting ||
+            draftBlocked ||
+            loadingProject ||
+            Boolean(projectError)
+          }
         >
-          {submitting
-            ? task
-              ? t("tasks.form.saving")
-              : t("tasks.form.creating")
-            : task
-              ? t("tasks.form.save")
-              : t("tasks.form.create")}
+          {t(
+            submitting
+              ? task
+                ? "tasks.form.saving"
+                : "tasks.form.creating"
+              : task
+                ? "tasks.form.save"
+                : automationEnabled
+                  ? "tasks.form.createAndQueue"
+                  : "tasks.form.createOnly",
+          )}
         </button>
       </footer>
     </form>

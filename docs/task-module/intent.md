@@ -2,6 +2,9 @@
 
 Author: user。 Status: accepted。
 
+Current queue admission and report-visibility behavior is amended by `docs/task-background-dispatch/change.md`; lifecycle/session/cleanup behavior is amended by `docs/task-lifecycle-cleanup/spec.md`.
+Current state-driven UI and bounded read-model filters are amended by `docs/task-ui-workbench/change.md`.
+
 ## Problem
 
 SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须先选择 workspace、手动创建或切换 worktree、创建 Chat，再把需求转写为 prompt。应用没有一个跨 Project 的全局任务入口，也没有把“需求、执行尝试、workspace、Pi session、结果报告、人工验收”作为可恢复的一条业务链管理。

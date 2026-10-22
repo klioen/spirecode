@@ -91,6 +91,7 @@ beforeEach(() => {
     isWorktreeBusy: vi.fn(async () => false),
     deleteWorktree: vi.fn(async () => undefined),
     notify: vi.fn(async () => undefined),
+    onChanged: vi.fn(),
   };
   service = new TaskService(repository, dependencies, {
     randomUUID: () => {
@@ -128,7 +129,239 @@ function createInput(automationEnabled = true) {
   };
 }
 
+async function createRunningTask(input: Parameters<TaskService["create"]>[0]) {
+  const queued = await service.create(input);
+  await service.whenIdle();
+  return service.get(queued.task.id);
+}
+
+async function runTask(detail: Awaited<ReturnType<TaskService["get"]>>) {
+  await service.run(detail.task.id, detail.task.revision);
+  await service.whenIdle();
+  return service.get(detail.task.id);
+}
+
 describe("TaskService", () => {
+  it("returns a durable queued task before provisioning and dispatches it in the background", async () => {
+    const detail = await service.create(createInput(true));
+
+    expect(detail.task.status).toBe("queued");
+    expect(detail.runs[0]?.status).toBe("queued");
+    expect(repository.getTask(detail.task.id)?.activeRunId).toBe(
+      detail.runs[0]?.id,
+    );
+    expect(dependencies.createWorktree).not.toHaveBeenCalled();
+    expect(dependencies.createSession).not.toHaveBeenCalled();
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+
+    await service.whenIdle();
+
+    expect((await service.get(detail.task.id)).task.status).toBe("running");
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("records background provisioning failures without failing task creation", async () => {
+    vi.mocked(dependencies.createWorktree).mockRejectedValueOnce(
+      new Error("unavailable"),
+    );
+    const detail = await service.create(createInput(true));
+
+    expect(detail.task.status).toBe("queued");
+    await service.whenIdle();
+
+    expect((await service.get(detail.task.id)).task.status).toBe("failed");
+    expect(dependencies.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failed" }),
+    );
+  });
+
+  it("claims at most three execution slots when tasks are created concurrently", async () => {
+    const queued = await Promise.all(
+      Array.from({ length: 6 }, (_, index) =>
+        service.create({
+          ...createInput(true),
+          workspace: {
+            mode: "existing",
+            worktreeId: `b0000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            allowDirty: false,
+          },
+        }),
+      ),
+    );
+    expect(queued.every((detail) => detail.task.status === "queued")).toBe(
+      true,
+    );
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+
+    await service.whenIdle();
+    const runs = repository.listActiveRuns();
+    expect(runs.filter((run) => run.status === "running")).toHaveLength(3);
+    expect(runs.filter((run) => run.status === "queued")).toHaveLength(3);
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(3);
+  });
+
+  it("creates another task while background provisioning is still blocked", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(dependencies.createWorktree).mockImplementationOnce(async () => {
+      await blocked;
+      return { id: managedWorktreeId, projectId, dirty: false, busy: false };
+    });
+    const first = await service.create(createInput(true));
+    await vi.waitFor(() =>
+      expect(dependencies.createWorktree).toHaveBeenCalledTimes(1),
+    );
+    try {
+      const second = await service.create(createInput(true));
+      expect(second.task.status).toBe("queued");
+      expect(second.task.id).not.toBe(first.task.id);
+      expect(dependencies.createSession).not.toHaveBeenCalled();
+      await vi.waitFor(() =>
+        expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1),
+      );
+      expect((await service.get(first.task.id)).runs[0]?.status).toBe(
+        "provisioning",
+      );
+      expect((await service.get(second.task.id)).runs[0]?.status).toBe(
+        "running",
+      );
+    } finally {
+      release();
+    }
+    await service.whenIdle();
+  });
+
+  it("persists cancellation while provisioning is blocked and never submits the prompt", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(dependencies.createWorktree).mockImplementationOnce(async () => {
+      await blocked;
+      return { id: managedWorktreeId, projectId, dirty: false, busy: false };
+    });
+    const queued = await service.create(createInput(true));
+    await vi.waitFor(() =>
+      expect(dependencies.createWorktree).toHaveBeenCalledTimes(1),
+    );
+    const provisioning = await service.get(queued.task.id);
+    const cancelling = service.cancel(
+      provisioning.task.id,
+      provisioning.task.revision,
+    );
+    try {
+      expect(repository.listRunSteps(provisioning.runs[0]!.id)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ step: "cancel", state: "intent" }),
+        ]),
+      );
+    } finally {
+      release();
+    }
+    const cancelled = await cancelling;
+    await service.whenIdle();
+
+    expect(cancelled.task.status).toBe("cancelled");
+    expect(cancelled.task.resolvedWorktreeId).toBe(managedWorktreeId);
+    expect(dependencies.createSession).not.toHaveBeenCalled();
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+  });
+
+  it("honors cancellation while checking the durable prompt marker", async () => {
+    let release!: (value: boolean) => void;
+    const blocked = new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(dependencies.sessionHasPrompt).mockReturnValueOnce(blocked);
+    const queued = await service.create(createInput(true));
+    await vi.waitFor(() =>
+      expect(dependencies.sessionHasPrompt).toHaveBeenCalledTimes(1),
+    );
+    const prompting = await service.get(queued.task.id);
+    const cancelling = service.cancel(
+      prompting.task.id,
+      prompting.task.revision,
+    );
+    release(false);
+    const cancelled = await cancelling;
+    await service.whenIdle();
+
+    expect(cancelled.task.status).toBe("cancelled");
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+    expect(dependencies.abortSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels queued work before the dispatcher can create any resources", async () => {
+    const queued = await service.create(createInput(true));
+    const cancelled = await service.cancel(
+      queued.task.id,
+      queued.task.revision,
+    );
+    await service.whenIdle();
+
+    expect(cancelled.task.status).toBe("cancelled");
+    expect(dependencies.createWorktree).not.toHaveBeenCalled();
+    expect(dependencies.createSession).not.toHaveBeenCalled();
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+    expect(dependencies.abortSession).not.toHaveBeenCalled();
+  });
+
+  it("recovers committed queued work after shutdown before the first dispatch", async () => {
+    const queued = await service.create(createInput(true));
+    await service.dispose();
+    expect(dependencies.createWorktree).not.toHaveBeenCalled();
+    service = new TaskService(repository, dependencies);
+
+    await service.recover();
+    expect(dependencies.createWorktree).not.toHaveBeenCalled();
+    await service.whenIdle();
+
+    expect((await service.get(queued.task.id)).task.status).toBe("running");
+    expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+    expect(dependencies.onChanged).toHaveBeenCalledWith(
+      queued.task.id,
+      expect.any(Number),
+    );
+  });
+
+  it("serializes queued tasks sharing a workspace and skips them to dispatch independent work", async () => {
+    const input = {
+      ...createInput(true),
+      workspace: {
+        mode: "existing" as const,
+        worktreeId: existingWorktreeId,
+        allowDirty: false,
+      },
+    };
+    const first = await createRunningTask(input);
+    const second = await service.create(input);
+    const third = await service.create({
+      ...input,
+      workspace: { ...input.workspace, worktreeId: managedWorktreeId },
+    });
+    await service.whenIdle();
+
+    expect((await service.get(second.task.id)).task.status).toBe("queued");
+    expect((await service.get(third.task.id)).task.status).toBe("running");
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(2);
+
+    const integration = vi.mocked(dependencies.createSession).mock.calls[0]![1];
+    await integration.reportResult({
+      runId: first.runs[0]!.id,
+      outcome: "success",
+      summary: "Done",
+      tests: [],
+    });
+    integration.onEvent({ type: "agent_settled" });
+    await service.whenIdle();
+
+    expect((await service.get(second.task.id)).task.status).toBe("running");
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(3);
+  });
+
   it("generates task UUIDs in Main and leaves manual tasks in backlog", async () => {
     const detail = await service.create(createInput(false));
 
@@ -190,7 +423,7 @@ describe("TaskService", () => {
   });
 
   it("provisions a managed worktree, persistent session, deterministic prompt and report tool", async () => {
-    const detail = await service.create(createInput(true));
+    const detail = await createRunningTask(createInput(true));
     const run = detail.runs[0]!;
 
     expect(dependencies.createWorktree).toHaveBeenCalledWith(
@@ -233,6 +466,10 @@ describe("TaskService", () => {
       tests: [{ command: "pnpm test", status: "passed", summary: "green" }],
     });
     expect(recorded.task.status).toBe("running");
+    expect(dependencies.onChanged).toHaveBeenLastCalledWith(
+      recorded.task.id,
+      recorded.task.revision,
+    );
     await settleAgent();
     const reported = await service.get(recorded.task.id);
     expect(reported.task.status).toBe("needs_review");
@@ -256,9 +493,10 @@ describe("TaskService", () => {
       dirty: true,
       busy: false,
     });
-    await expect(
-      service.run(manual.task.id, manual.task.revision),
-    ).rejects.toMatchObject({
+    const queued = await service.run(manual.task.id, manual.task.revision);
+    expect(queued.task.status).toBe("queued");
+    await service.whenIdle();
+    expect((await service.get(manual.task.id)).runs[0]?.error).toMatchObject({
       code: "TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED",
     });
     expect(dependencies.createWorktree).not.toHaveBeenCalled();
@@ -297,7 +535,7 @@ describe("TaskService", () => {
     const details = [];
     for (let index = 0; index < 4; index += 1) {
       const worktreeId = `b0000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
-      const task = await service.create({
+      const task = await createRunningTask({
         ...createInput(true),
         title: `Task ${index}`,
         workspace: { mode: "existing", worktreeId, allowDirty: false },
@@ -340,7 +578,7 @@ describe("TaskService", () => {
         settledAt: Date.now(),
       },
     );
-    const fifth = await service.create({
+    const fifth = await createRunningTask({
       ...createInput(true),
       title: "Task 5",
       workspace: {
@@ -360,7 +598,7 @@ describe("TaskService", () => {
   });
 
   it("moves settled agents only to awaiting_report and can continue for a report", async () => {
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     eventListener?.({ type: "agent_settled" });
     await service.whenIdle();
 
@@ -384,12 +622,12 @@ describe("TaskService", () => {
   });
 
   it("cancels an active session, manually completes review, and creates a new attempt for changes", async () => {
-    const first = await service.create(createInput(true));
+    const first = await createRunningTask(createInput(true));
     const cancelled = await service.cancel(first.task.id, first.task.revision);
     expect(dependencies.abortSession).toHaveBeenCalled();
     expect(cancelled.task.status).toBe("cancelled");
 
-    const retry = await service.run(cancelled.task.id, cancelled.task.revision);
+    const retry = await runTask(cancelled);
     const run = retry.runs[0]!;
     await reportResult!({
       runId: run.id,
@@ -401,11 +639,14 @@ describe("TaskService", () => {
     const review = await service.get(retry.task.id);
     const sessionCreatesBeforeChanges = vi.mocked(dependencies.createSession)
       .mock.calls.length;
-    const changes = await service.requestChanges(
+    const queuedChanges = await service.requestChanges(
       review.task.id,
       review.task.revision,
       "Address review feedback",
     );
+    expect(queuedChanges.task.status).toBe("queued");
+    await service.whenIdle();
+    const changes = await service.get(review.task.id);
     expect(changes.runs[0]?.attempt).toBe(3);
     expect(changes.runs[0]?.sessionId).toBe(run.sessionId);
     expect(dependencies.createSession).toHaveBeenCalledTimes(
@@ -434,7 +675,7 @@ describe("TaskService", () => {
   });
 
   it("reuses the Task-level resolved workspace when the latest failed run never bound one", async () => {
-    const first = await service.create(createInput(true));
+    const first = await createRunningTask(createInput(true));
     const cancelled = await service.cancel(first.task.id, first.task.revision);
     const unbound = repository.createRun(
       cancelled.task.id,
@@ -454,7 +695,7 @@ describe("TaskService", () => {
       retryable: true,
     });
 
-    const retried = await service.run(failed.task.id, failed.task.revision);
+    const retried = await runTask({ task: failed.task, runs: [] });
 
     expect(retried.runs[0]).toMatchObject({
       status: "running",
@@ -465,7 +706,7 @@ describe("TaskService", () => {
   });
 
   it("persists clean-only managed workspace cleanup and safely retries a blocked cleanup", async () => {
-    const started = await service.create(createInput(true));
+    const started = await createRunningTask(createInput(true));
     const run = started.runs[0]!;
     await reportResult!({
       runId: run.id,
@@ -511,7 +752,7 @@ describe("TaskService", () => {
   });
 
   it("retains an owned workspace referenced by another Task's history", async () => {
-    const started = await service.create(createInput(true));
+    const started = await createRunningTask(createInput(true));
     await reportResult!({
       runId: started.runs[0]!.id,
       outcome: "success",
@@ -560,7 +801,7 @@ describe("TaskService", () => {
   });
 
   it("converges a durable cleanup intent when the checkout is already absent", async () => {
-    const started = await service.create(createInput(true));
+    const started = await createRunningTask(createInput(true));
     await reportResult!({
       runId: started.runs[0]!.id,
       outcome: "success",
@@ -588,6 +829,9 @@ describe("TaskService", () => {
       service.run(manual.task.id, manual.task.revision),
     ]);
     expect(a.task.id).toBe(b.task.id);
+    expect(a.runs[0]?.id).toBe(b.runs[0]?.id);
+    expect(a.task.status).toBe("queued");
+    await service.whenIdle();
     expect(dependencies.createWorktree).toHaveBeenCalledTimes(1);
     expect(dependencies.createSession).toHaveBeenCalledTimes(1);
     expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
@@ -646,7 +890,7 @@ describe("TaskService", () => {
       new Error("abort transport failed"),
     );
 
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
 
     expect(created.runs[0]?.status).toBe("prompting");
     expect(repository.listRunSteps(created.runs[0]!.id)).toEqual(
@@ -675,7 +919,7 @@ describe("TaskService", () => {
     vi.mocked(dependencies.abortSession).mockRejectedValueOnce(
       new Error("abort transport failed"),
     );
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     vi.mocked(dependencies.loadSession).mockRejectedValueOnce(
       new Error("temporary reload failure"),
     );
@@ -712,7 +956,7 @@ describe("TaskService", () => {
     vi.mocked(dependencies.abortSession).mockRejectedValueOnce(
       new Error("abort transport failed"),
     );
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     vi.mocked(dependencies.abortSession).mockClear();
     vi.mocked(dependencies.loadSession).mockRejectedValueOnce(
       Object.assign(new Error("Chat session not found"), {
@@ -732,7 +976,7 @@ describe("TaskService", () => {
   });
 
   it("finalizes failure after recovering a completed failure-stop intent", async () => {
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     repository.upsertRunStep(created.runs[0]!.id, "failure_stop", "done", {
       code: "TASK_PROMPT_FAILED",
       failureMessage: "Prompt failed after session bind",
@@ -753,7 +997,7 @@ describe("TaskService", () => {
   });
 
   it("finalizes a report that arrives after the settled event", async () => {
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     await settleAgent();
     expect((await service.get(created.task.id)).runs[0]?.status).toBe(
       "awaiting_report",
@@ -772,7 +1016,7 @@ describe("TaskService", () => {
   });
 
   it("finalizes a durably reported run only after recovery confirms the session is idle", async () => {
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     await reportResult!({
       runId: created.runs[0]!.id,
       outcome: "success",
@@ -789,7 +1033,7 @@ describe("TaskService", () => {
   });
 
   it("converges a recovered idle running session to awaiting_report", async () => {
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     vi.mocked(dependencies.sessionStatus).mockResolvedValue("idle");
 
     await service.recover();
@@ -802,7 +1046,7 @@ describe("TaskService", () => {
   });
 
   it("recovers a durable cancel intent by aborting once and completing cancellation", async () => {
-    const created = await service.create(createInput(true));
+    const created = await createRunningTask(createInput(true));
     const run = created.runs[0]!;
     repository.upsertRunStep(run.id, "cancel", "intent");
 

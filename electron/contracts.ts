@@ -63,6 +63,7 @@ export const COMMANDS = [
   "task_continue_for_report",
   "task_notifications_list",
   "task_notification_mark_read",
+  "task_notifications_mark_all_read",
   "task_rewrite_start",
   "task_rewrite_abort",
   "settings_extensions_list",

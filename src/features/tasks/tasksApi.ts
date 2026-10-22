@@ -28,6 +28,11 @@ export interface TaskSummary {
   title: string;
   projectId: string;
   projectName?: string;
+  workspaceName?: string;
+  supportsChanges?: boolean;
+  executionStatus?: TaskRunStatus;
+  queueReason?: "capacity" | "workspace_busy" | "dispatch";
+  lastActivityAt?: number;
   workspace: TaskWorkspace;
   status: TaskStatus;
   activeRunId: string | null;
@@ -102,6 +107,8 @@ export type UpdateTaskInput = Partial<
 
 export interface TaskNotificationValue {
   taskId: string;
+  taskTitle?: string;
+  projectName?: string;
   runId: string | null;
   kind: string;
   appReadAt: number | null;
@@ -138,6 +145,9 @@ export interface TasksApi {
     cursor?: string;
     limit: number;
     statuses?: TaskStatus[];
+    query?: string;
+    projectId?: string;
+    attentionOnly?: boolean;
   }): Promise<TaskListPage>;
   get(taskId: string): Promise<TaskDetailValue>;
   create(input: CreateTaskInput): Promise<TaskDetailValue>;
@@ -146,10 +156,12 @@ export interface TasksApi {
     expectedRevision: number,
     patch: UpdateTaskInput,
   ): Promise<TaskDetailValue>;
-  notificationsList(input: {
-    cursor?: string;
-    limit: number;
-  }): Promise<{ items: TaskNotificationValue[]; nextCursor: string | null }>;
+  notificationsList(input: { cursor?: string; limit: number }): Promise<{
+    items: TaskNotificationValue[];
+    nextCursor: string | null;
+    unreadCount?: number;
+  }>;
+  notificationsMarkAllRead(): Promise<void>;
   notificationMarkRead(
     taskId: string,
     runId: string | null,
@@ -190,6 +202,7 @@ export interface TaskHostBindings {
     patch: UpdateTaskInput;
   }): Promise<TaskDetailValue>;
   taskNotificationsList: TasksApi["notificationsList"];
+  taskNotificationsMarkAllRead(): Promise<void>;
   taskNotificationMarkRead(input: {
     taskId: string;
     runId: string | null;
@@ -232,6 +245,7 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
   update: (taskId, expectedRevision, patch) =>
     host.taskUpdate({ taskId, expectedRevision, patch }),
   notificationsList: (input) => host.taskNotificationsList(input),
+  notificationsMarkAllRead: () => host.taskNotificationsMarkAllRead(),
   notificationMarkRead: (taskId, runId, kind) =>
     host.taskNotificationMarkRead({ taskId, runId, kind }),
   run: (taskId, expectedRevision) => host.taskRun({ taskId, expectedRevision }),
@@ -267,7 +281,9 @@ export const tasksApi: TasksApi = {
     commands.taskNotificationsList(input) as Promise<{
       items: TaskNotificationValue[];
       nextCursor: string | null;
+      unreadCount?: number;
     }>,
+  notificationsMarkAllRead: () => commands.taskNotificationsMarkAllRead(),
   notificationMarkRead: (taskId, runId, kind) =>
     commands.taskNotificationMarkRead(taskId, runId, kind),
   run: (taskId, expectedRevision) =>
