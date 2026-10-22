@@ -48,7 +48,7 @@ Status: accepted and implemented。 Implements: `docs/project-groups/intent.md`�
 - 顶部保留“打开目录”，新增“创建分组”按钮。
 - 用户分组按 catalog 顺序显示；存在未分组项目时，在用户分组之后显示合成的“未分组”。
 - 空的用户分组继续显示，便于后续移动项目；空的“未分组”不显示。
-- 分组默认展开并具有 `aria-expanded`；折叠只隐藏项目，不改变 active worktree。
+- 分组没有已保存偏好时默认折叠并具有 `aria-expanded`；展开状态保存在 Renderer local storage，折叠只隐藏项目，不改变 active worktree。
 - 项目仍默认折叠 worktree，维持现有 Git/Directory Project 行为。
 - 分组标题菜单包含“重命名分组”“删除分组”。删除前确认，并明确其中项目会移到未分组、文件不会删除。
 - 项目菜单新增“移动到分组…”，对话框列出所有用户分组与“未分组”；目标与当前归属相同时禁止提交。
@@ -68,7 +68,6 @@ Status: accepted and implemented。 Implements: `docs/project-groups/intent.md`�
 - 拖拽移动、手工排序、批量移动。
 - 多级嵌套分组、颜色、图标、智能/自动分组。
 - 一个项目加入多个分组。
-- 跨重启持久化分组或项目的折叠状态。
 - 重命名项目目录、删除项目文件或改变 Git/worktree 生命周期。
 - 多窗口实时广播；当前 mutation 返回 catalog 满足现有单窗口架构。
 
