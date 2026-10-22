@@ -32,10 +32,18 @@ Risk: high because the change adds durable archive indexing, a forward-only migr
 
 Implemented in Main archive service/repository, schema migration, Task lifecycle/delete guards, narrow IPC/bindings and Renderer read-only archive view.
 
-- Final full `npm_config_store_dir=/Users/bytedance/Library/pnpm/store pnpm check` passed (exit 0) with native filesystem test permissions: 97 test files / 744 tests, all formatting/brand/i18n/secrets/licenses/lint/typecheck gates and 19 release tests passed. No test was skipped or suppressed.
+- Final full `pnpm check` (using the existing installed store override) passed (exit 0) with native filesystem test permissions: 97 test files / 744 tests, all formatting/brand/i18n/secrets/licenses/lint/typecheck gates and 19 release tests passed. No test was skipped or suppressed.
 - An earlier full run had one failure in the unchanged EditorPane dirty-tab confirmation test (741 passed / 1 failed); its isolated 28-test rerun and the final full rerun passed. No EditorPane source or test was modified to work around it.
 - `pnpm build` passed (exit 0); sandboxed preload stays allowlisted and Main retains node:sqlite. The existing large Renderer chunk warning remains advisory. Packaged smoke expectations were updated for schema v5 and its nine domain tables.
 - Additional source secret scan included tracked and untracked new files and passed. `git diff --check` passed.
 - Real temporary-data tests cover source/path backfill, final statistics, per-run windows/shared-session deduplication, workspace/source removal plus database restart, full-source/artifact integrity, read paging/cursor fences, symlink/traversal/foreign IDs, invalid UTF-8/partial JSONL, artifact size/alias bounds, empty attempts, persisted selections, interrupted copy/index recovery, protected generic deletion and all-reference original-session deletion.
 - UI tests cover post-cleanup report/session access without a composer or live session callback, artifact reveal, pagination failure/retry, delayed selection responses, and archive-before-cleanup ordering/revision use.
 - No live user database was opened for migration, no user's worktree/session/artifact was copied or deleted, and no application reinstallation, screenshot-level native acceptance, Windows/Linux native packaging or PR update was performed in this implementation turn. Files remain uncommitted pending the user's next action.
+
+## PR follow-up verification (2026-10-23)
+
+- Rebased the follow-up commit onto current main, preserving its project-group expansion persistence. New files are now tracked, so the normal gates include their source.
+- Fixed the newly detected hard-coded artifact byte label using localized copy and locale-formatted numbers; English and Simplified Chinese UI regression tests passed.
+- Final full `pnpm check` with native filesystem permissions passed: 99 files / 790 tests, 20 release tests, and all format/brand/i18n/secrets/licenses/lint/typecheck gates. Earlier native watcher and Editor failures were not suppressed; final full run passed.
+- Final `pnpm build` and bundle feature/isolation checks passed.
+- The preceding user-requested macOS installation passed App/DMG smoke, signature/hash and startup checks; read-only comparison retained 5 Tasks, 16 Runs, 9 reports and 8 archived sessions. The final main-based branch and localized artifact label were rebuilt but not reinstalled in this PR turn. Windows/Linux packaging and screenshot-level acceptance remain pending.

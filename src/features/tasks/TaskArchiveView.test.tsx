@@ -6,6 +6,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { setLanguage, type AppLanguage } from "../../i18n";
 import { TaskArchiveView } from "./TaskArchiveView";
 import { TaskDetail } from "./TaskDetail";
 import { createTasksApiMock, taskDetail } from "./tasksTestUtils";
@@ -80,6 +81,33 @@ it("opens read-only history after cleanup without opening a live Agent session",
     ),
   );
 });
+it.each([
+  ["en", "report.txt (5 B)"],
+  ["zh-CN", "report.txt（5 字节）"],
+] as const)(
+  "localizes archived artifact labels in %s",
+  async (language: AppLanguage, label) => {
+    setLanguage(language);
+    try {
+      const api = createTasksApiMock();
+      vi.mocked(api.archiveRead).mockResolvedValue(page);
+      render(
+        <TaskArchiveView
+          api={api}
+          taskId="task-1"
+          runId="run-1"
+          onClose={vi.fn()}
+        />,
+      );
+      expect(
+        await screen.findByRole("button", { name: label }),
+      ).toBeInTheDocument();
+    } finally {
+      setLanguage("en");
+    }
+  },
+);
+
 it("retains loaded history through pagination errors and retries the same cursor", async () => {
   const api = createTasksApiMock();
   vi.mocked(api.archiveRead)

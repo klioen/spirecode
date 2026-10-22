@@ -48,6 +48,7 @@ export const zhCN = {
   "tasks.archive.truncated":
     "此记录过长，页面仅显示部分内容；完整内容保留在归档文件中。",
   "tasks.archive.loadMore": "加载更多历史",
+  "tasks.archive.artifactLabel": "{path}（{size} 字节）",
   "tasks.archive.artifacts": "归档产物",
   "tasks.archive.ready": "历史记录与最终统计已独立于工作区归档。",
   "tasks.archive.failed": "历史归档未完成；保存并校验成功前不会清理工作区。",

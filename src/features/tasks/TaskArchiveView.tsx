@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatDateTime, useTranslation } from "../../i18n";
+import { formatDateTime, formatNumber, useTranslation } from "../../i18n";
 import type { TaskArchivePage, TasksApi } from "./tasksApi";
 import { taskErrorMessage } from "./taskPresentation";
 
@@ -143,7 +143,10 @@ export function TaskArchiveView({
                       type="button"
                       onClick={() => void reveal(file.relativePath)}
                     >
-                      {file.relativePath} ({file.size} B)
+                      {t("tasks.archive.artifactLabel", {
+                        path: file.relativePath,
+                        size: formatNumber(file.size),
+                      })}
                     </button>
                   </li>
                 ))}

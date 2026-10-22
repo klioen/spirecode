@@ -50,6 +50,7 @@ export const en = {
   "tasks.archive.truncated":
     "This record is too large for inline display. Its full content is preserved in the archive file.",
   "tasks.archive.loadMore": "Load more history",
+  "tasks.archive.artifactLabel": "{path} ({size} B)",
   "tasks.archive.artifacts": "Archived artifacts",
   "tasks.archive.ready":
     "History and final metrics are archived independently of the workspace.",
