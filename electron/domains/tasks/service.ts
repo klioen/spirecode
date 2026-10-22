@@ -910,11 +910,33 @@ export class TaskService {
         sessionId: session.sessionId,
       });
     } else {
-      await this.dependencies.attachSession(
-        run.worktreeId!,
-        run.sessionId,
-        integration,
-      );
+      try {
+        await this.dependencies.attachSession(
+          run.worktreeId!,
+          run.sessionId,
+          integration,
+        );
+      } catch (error) {
+        const promptStep = this.repository
+          .listRunSteps(run.id)
+          .find((step) => step.step === "prompt");
+        if (
+          run.status !== "prompting" ||
+          promptStep?.state === "done" ||
+          !hasErrorCode(error, "CHAT_SESSION_NOT_FOUND")
+        )
+          throw error;
+        const session = await this.dependencies.createSession(
+          run.worktreeId!,
+          integration,
+        );
+        run = this.repository.bindRunSession(
+          run.id,
+          run.revision,
+          session.sessionId,
+          session.sessionPath,
+        );
+      }
       if (
         this.repository
           .listRunSteps(run.id)
@@ -1314,6 +1336,15 @@ export class TaskService {
     if (this.#disposed)
       throw new TaskServiceError("TASK_FAILED", "Task service is disposed");
   }
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
 }
 
 function managedWorktreeName(runId: string, title: string): string {

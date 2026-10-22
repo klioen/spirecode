@@ -228,28 +228,8 @@ export class AppState {
             expectedBaseRef,
           );
         },
-        createSession: async (worktreeId, integration) => {
-          const summary = await this.chat.create(worktreeId, {
-            customTools: [taskReportTool(integration)],
-            sessionId: integration.sessionId,
-            onEvent: (event) => {
-              if (typeof event.type === "string")
-                integration.onEvent({ type: event.type });
-            },
-          });
-          await this.chat.nameLoadedSession(
-            worktreeId,
-            summary.sessionId,
-            taskSessionName(integration.sessionId),
-          );
-          return {
-            sessionId: summary.sessionId,
-            sessionPath: await this.chat.sessionPath(
-              worktreeId,
-              summary.sessionId,
-            ),
-          };
-        },
+        createSession: (worktreeId, integration) =>
+          createTaskSession(this.chat, worktreeId, integration),
         findSession: async (worktreeId, name, sessionId) => {
           const matches = (await this.chat.list(worktreeId)).filter(
             (session) =>
@@ -915,6 +895,27 @@ export class AppState {
     if (!this.window.isDestroyed())
       this.window.webContents.send(`spire:event:${topic}`, payload);
   }
+}
+
+export async function createTaskSession(
+  chat: Pick<ChatService, "create" | "nameLoadedSession">,
+  worktreeId: string,
+  integration: TaskSessionIntegration,
+): Promise<{ sessionId: string; sessionPath: null }> {
+  const summary = await chat.create(worktreeId, {
+    customTools: [taskReportTool(integration)],
+    sessionId: integration.sessionId,
+    onEvent: (event) => {
+      if (typeof event.type === "string")
+        integration.onEvent({ type: event.type });
+    },
+  });
+  await chat.nameLoadedSession(
+    worktreeId,
+    summary.sessionId,
+    taskSessionName(integration.sessionId),
+  );
+  return { sessionId: summary.sessionId, sessionPath: null };
 }
 
 function taskReportTool(integration: TaskSessionIntegration) {

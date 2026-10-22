@@ -593,6 +593,51 @@ describe("TaskService", () => {
     expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
   });
 
+  it("recreates a bound empty session when restart happens before prompt persistence", async () => {
+    const manual = await service.create(createInput(false));
+    const sessionId = "80000000-0000-4000-8000-000000000001";
+    const created = repository.createRun(manual.task.id, manual.task.revision, {
+      id: "70000000-0000-4000-8000-000000000001",
+      projectId,
+      promptMarker: "restart-before-prompt",
+      ownsManagedWorktree: true,
+      worktreeName: "task-restart-before-prompt",
+      baseRef: "origin/main",
+      worktreeId: managedWorktreeId,
+      sessionId,
+      sessionPath: null,
+    });
+    const provisioning = repository.transitionRun(
+      created.run.id,
+      created.run.revision,
+      "provisioning",
+      { sagaPhase: "workspace_ready" },
+    ).run;
+    repository.transitionRun(
+      provisioning.id,
+      provisioning.revision,
+      "prompting",
+      { sagaPhase: "session_ready" },
+    );
+    sessionBinding = { sessionId, sessionPath: null };
+    vi.mocked(dependencies.attachSession).mockRejectedValueOnce(
+      Object.assign(new Error("missing"), {
+        code: "CHAT_SESSION_NOT_FOUND",
+      }),
+    );
+
+    await service.recover();
+    await service.whenIdle();
+
+    expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+    expect((await service.get(manual.task.id)).runs[0]).toMatchObject({
+      id: created.run.id,
+      status: "running",
+      sessionId,
+    });
+  });
+
   it("keeps a bound run active and recoverable when abort-before-failure cannot stop its session", async () => {
     vi.mocked(dependencies.sendPrompt).mockRejectedValueOnce(
       new Error("prompt transport failed"),
