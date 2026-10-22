@@ -45,3 +45,36 @@ it("starts, applies, undoes, and cancels an isolated rewrite", async () => {
     expect(api.rewriteAbort).toHaveBeenCalledWith("rewrite-1"),
   );
 });
+
+it("compares the captured original and rejects stale suggestions", async () => {
+  const api = createTasksApiMock();
+  let emit!: (event: TaskEvent) => void;
+  vi.mocked(api.subscribe).mockImplementation((listener) => {
+    emit = listener;
+    return () => undefined;
+  });
+  const onApply = vi.fn();
+  const original = { title: "Old title", description: "Original text" };
+  const { rerender } = render(
+    <TaskRewriteControl api={api} value={original} onApply={onApply} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "AI optimize" }));
+  await waitFor(() => expect(api.rewriteStart).toHaveBeenCalled());
+  emit({
+    kind: "rewrite_result",
+    rewriteId: "rewrite-1",
+    payload: { title: "Suggestion", description: "Improved text" },
+  });
+  expect(await screen.findByText("Original text")).toBeInTheDocument();
+  rerender(
+    <TaskRewriteControl
+      api={api}
+      value={{ ...original, description: "New user edits" }}
+      onApply={onApply}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Apply rewrite" })).toBeDisabled();
+  expect(
+    screen.getByText(/draft changed after optimization started/),
+  ).toBeInTheDocument();
+});

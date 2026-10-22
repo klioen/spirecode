@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyMemoryConfig, createTaskSession } from "./appState.js";
+import { AppState, applyMemoryConfig, createTaskSession } from "./appState.js";
 
 const originalModel = process.env.PI_MEMORY_EXTRACT_MODEL;
 const originalPhase2Model = process.env.PI_MEMORY_PHASE2_MODEL;
@@ -19,6 +19,40 @@ afterEach(() => {
   if (originalPhase2Thinking === undefined)
     delete process.env.PI_MEMORY_PHASE2_THINKING;
   else process.env.PI_MEMORY_PHASE2_THINKING = originalPhase2Thinking;
+});
+
+describe("Task background shutdown", () => {
+  it("drains Task orchestration before disposing Chat, watchers and the database", async () => {
+    let release!: () => void;
+    const draining = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chatDispose = vi.fn(async () => undefined);
+    const watchersDispose = vi.fn(async () => undefined);
+    const databaseClose = vi.fn();
+    const state = Object.assign(Object.create(AppState.prototype), {
+      terminals: { dispose: vi.fn() },
+      tasks: { dispose: vi.fn(() => draining) },
+      taskRewrite: Promise.resolve({ dispose: vi.fn(async () => undefined) }),
+      watchers: { dispose: watchersDispose },
+      chat: { disposeAll: chatDispose },
+      taskDatabase: { close: databaseClose },
+    }) as AppState;
+
+    const disposing = state.dispose();
+    try {
+      expect(chatDispose).not.toHaveBeenCalled();
+      expect(watchersDispose).not.toHaveBeenCalled();
+      expect(databaseClose).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
+    await disposing;
+
+    expect(chatDispose).toHaveBeenCalledTimes(1);
+    expect(watchersDispose).toHaveBeenCalledTimes(1);
+    expect(databaseClose).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createTaskSession", () => {
@@ -86,5 +120,125 @@ describe("applyMemoryConfig", () => {
     expect(process.env.PI_MEMORY_PHASE2_MODEL).toBe("traex/DeepSeek-V4-Flash");
     expect(process.env.PI_MEMORY_EXTRACT_THINKING).toBe("high");
     expect(process.env.PI_MEMORY_PHASE2_THINKING).toBe("max");
+  });
+});
+
+describe("Task workbench read model", () => {
+  const worktreeId = "90000000-0000-4000-8000-000000000002";
+  const task = {
+    id: "10000000-0000-4000-8000-000000000001",
+    title: "Fix login",
+    description: "Work",
+    projectId: "90000000-0000-4000-8000-000000000001",
+    workspace: { mode: "existing" as const, worktreeId, allowDirty: false },
+    automationEnabled: true,
+    status: "queued" as const,
+    activeRunId: "20000000-0000-4000-8000-000000000001",
+    resolvedWorktreeId: worktreeId,
+    ownsManagedWorktree: false,
+    workspaceCleanupStatus: "retained" as const,
+    workspaceCleanedAt: null,
+    workspaceCleanupErrorCode: null,
+    revision: 2,
+    createdAt: 1,
+    updatedAt: 2,
+    completedAt: null,
+  };
+  const run: import("./domains/tasks/types.js").TaskRun = {
+    id: task.activeRunId,
+    taskId: task.id,
+    attempt: 1,
+    status: "queued",
+    sagaPhase: "created",
+    projectId: task.projectId,
+    worktreeId,
+    ownsManagedWorktree: false,
+    worktreeName: null,
+    baseRef: null,
+    sessionId: null,
+    sessionPath: null,
+    promptMarker: "marker",
+    report: null,
+    error: null,
+    revision: 1,
+    createdAt: 1,
+    startedAt: null,
+    settledAt: null,
+    reportedAt: null,
+    finishedAt: null,
+  };
+  function state(
+    activeRuns: import("./domains/tasks/types.js").TaskRun[] = [],
+  ) {
+    return Object.assign(Object.create(AppState.prototype), {
+      projects: {
+        project: vi.fn(async () => ({
+          name: "SpireCode",
+          kind: "git",
+          worktrees: [{ id: worktreeId, name: "feature-login" }],
+        })),
+      },
+      tasks: {
+        get: vi.fn(async () => ({ task, runs: [run] })),
+        listNotifications: vi.fn(() => ({
+          items: [
+            {
+              taskId: task.id,
+              runId: run.id,
+              kind: "needs_review",
+              appReadAt: null,
+              systemSentAt: null,
+              createdAt: 1,
+            },
+          ],
+          nextCursor: null,
+        })),
+      },
+      taskRepository: {
+        listAllRuns: vi.fn(() => [run]),
+        listActiveRuns: vi.fn(() => activeRuns),
+        executionQueueSnapshot: vi.fn(() => ({
+          occupiedSlots: activeRuns.filter(
+            (item) => !["queued", "awaiting_report"].includes(item.status),
+          ).length,
+          busyWorktreeIds: new Set(
+            activeRuns
+              .filter((item) => item.status !== "queued")
+              .flatMap((item) => (item.worktreeId ? [item.worktreeId] : [])),
+          ),
+        })),
+        getTask: vi.fn(() => task),
+        unreadNotificationCount: vi.fn(() => 7),
+      },
+    }) as AppState;
+  }
+  it("returns readable workspace/stage and distinguishes dispatch, capacity and workspace waiting", async () => {
+    expect(await state().taskGet(task.id)).toMatchObject({
+      workspaceName: "feature-login",
+      executionStatus: "queued",
+      queueReason: "dispatch",
+      supportsChanges: true,
+    });
+    expect(
+      await state([
+        { ...run, taskId: "another-task", status: "running" },
+      ]).taskGet(task.id),
+    ).toMatchObject({ queueReason: "workspace_busy" });
+    expect(
+      await state(
+        Array.from({ length: 3 }, (_, index) => ({
+          ...run,
+          taskId: `other-${index}`,
+          worktreeId: null,
+          status: "running" as const,
+        })),
+      ).taskGet(task.id),
+    ).toMatchObject({ queueReason: "capacity" });
+  });
+  it("enriches notifications without losing the global unread total", async () => {
+    expect(await state().taskNotificationsList({ limit: 50 })).toMatchObject({
+      unreadCount: 7,
+      items: [{ taskTitle: "Fix login", projectName: "SpireCode" }],
+    });
   });
 });

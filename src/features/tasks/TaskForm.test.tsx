@@ -1,6 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskForm, type TaskProjectOption } from "./TaskForm";
+import { resetTaskDrafts } from "./taskDrafts";
 import { createTasksApiMock } from "./tasksTestUtils";
 
 const projects: TaskProjectOption[] = [
@@ -27,6 +34,11 @@ const projects: TaskProjectOption[] = [
   },
 ];
 
+beforeEach(() => {
+  resetTaskDrafts();
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+});
+
 describe("TaskForm", () => {
   it("defaults to new managed workspace and enabled automation", async () => {
     const api = createTasksApiMock();
@@ -35,6 +47,7 @@ describe("TaskForm", () => {
     expect(
       screen.getByRole("button", { name: "Project: SpireCode" }),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Workspace settings"));
     expect(
       screen.getByRole("radio", { name: "New managed worktree" }),
     ).toBeChecked();
@@ -43,7 +56,7 @@ describe("TaskForm", () => {
     );
     expect(
       screen.getByRole("checkbox", {
-        name: "Start automation after creating the task",
+        name: "Queue for background execution",
       }),
     ).toBeChecked();
 
@@ -59,7 +72,7 @@ describe("TaskForm", () => {
     expect(
       screen.queryByRole("button", { name: "Add criterion" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create and queue" }));
 
     await waitFor(() =>
       expect(api.create).toHaveBeenCalledWith({
@@ -101,6 +114,7 @@ describe("TaskForm", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
       target: { value: "Use existing" },
     });
+    fireEvent.click(screen.getByText("Workspace settings"));
     fireEvent.click(screen.getByRole("radio", { name: "Existing worktree" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Worktree" }), {
       target: { value: "dirty" },
@@ -112,10 +126,10 @@ describe("TaskForm", () => {
     );
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: "Start automation after creating the task",
+        name: "Queue for background execution",
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create only" }));
 
     await waitFor(() =>
       expect(api.create).toHaveBeenCalledWith(
@@ -130,4 +144,140 @@ describe("TaskForm", () => {
       ),
     );
   });
+});
+
+it("restores a draft after switching surfaces and requires confirmation to discard it", async () => {
+  const api = createTasksApiMock();
+  const onCancel = vi.fn();
+  const { unmount } = render(
+    <TaskForm
+      api={api}
+      projects={projects}
+      onCreated={vi.fn()}
+      onCancel={onCancel}
+    />,
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
+    target: { value: "Keep my draft" },
+  });
+  unmount();
+  render(
+    <TaskForm
+      api={api}
+      projects={projects}
+      onCreated={vi.fn()}
+      onCancel={onCancel}
+    />,
+  );
+  expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue(
+    "Keep my draft",
+  );
+  vi.mocked(window.confirm).mockReturnValueOnce(false);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(onCancel).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(onCancel).toHaveBeenCalledTimes(1);
+});
+it("loads only the selected project and retries failed configuration without losing text", async () => {
+  const api = createTasksApiMock();
+  const loadProject = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Project load failed"))
+    .mockResolvedValue(projects[1]);
+  render(
+    <TaskForm
+      api={api}
+      projects={projects}
+      loadProject={loadProject}
+      preferredProjectId="project-1"
+      onCreated={vi.fn()}
+    />,
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
+    target: { value: "Still here" },
+  });
+  expect(await screen.findByText("Project load failed")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Create and queue" }),
+  ).toBeDisabled();
+  expect(loadProject).toHaveBeenCalledWith("project-1");
+  expect(loadProject).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Create and queue" }),
+    ).toBeEnabled(),
+  );
+  expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue(
+    "Still here",
+  );
+});
+it("defaults a Directory project to its only existing workspace", () => {
+  render(
+    <TaskForm
+      api={createTasksApiMock()}
+      projects={[
+        { ...projects[0]!, worktrees: [{ id: "notes-main", name: "main" }] },
+      ]}
+      onCreated={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByRole("radio", { name: "Existing worktree" }),
+  ).toBeChecked();
+  expect(screen.getByRole("combobox", { name: "Worktree" })).toHaveValue(
+    "notes-main",
+  );
+});
+
+it("keeps bound workspace identity read-only while accepting fresh explicit dirty consent", async () => {
+  const { taskDetail } = await import("./tasksTestUtils");
+  const api = createTasksApiMock();
+  const task = taskDetail({
+    status: "failed",
+    resolvedWorktreeId: "dirty",
+    workspace: { mode: "existing", worktreeId: "dirty", allowDirty: false },
+  });
+  render(
+    <TaskForm api={api} projects={projects} task={task} onCreated={vi.fn()} />,
+  );
+  expect(screen.getByRole("combobox", { name: "Worktree" })).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "Allow Agent to use this dirty worktree",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save task" }));
+  await waitFor(() =>
+    expect(api.update).toHaveBeenCalledWith(
+      "task-1",
+      1,
+      expect.objectContaining({
+        workspace: { mode: "existing", worktreeId: "dirty", allowDirty: true },
+      }),
+    ),
+  );
+});
+
+it("does not redirect the workbench when creation resolves after the form was left", async () => {
+  const api = createTasksApiMock();
+  const onCreated = vi.fn();
+  let finish!: (value: import("./tasksApi").TaskDetailValue) => void;
+  vi.mocked(api.create).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const { unmount } = render(
+    <TaskForm api={api} projects={projects} onCreated={onCreated} />,
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
+    target: { value: "Create without redirect" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create and queue" }));
+  await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1));
+  unmount();
+  const { taskDetail } = await import("./tasksTestUtils");
+  await act(async () => finish(taskDetail()));
+  expect(onCreated).not.toHaveBeenCalled();
 });

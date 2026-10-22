@@ -2,11 +2,11 @@ import { RiSparkling2Line } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../i18n";
 import type { TaskRewriteInput, TasksApi } from "./tasksApi";
-
 interface TaskRewriteControlProps {
   api: TasksApi;
   value: TaskRewriteInput;
   onApply: (value: TaskRewriteInput) => void;
+  disabled?: boolean;
   labels?: Partial<{
     optimize: string;
     cancel: string;
@@ -16,62 +16,58 @@ interface TaskRewriteControlProps {
     pending: string;
   }>;
 }
-
 export function TaskRewriteControl({
   api,
   value,
   onApply,
+  disabled = false,
   labels,
 }: TaskRewriteControlProps) {
   const { t } = useTranslation();
   const [rewriteId, setRewriteId] = useState<string | null>(null);
+  const [source, setSource] = useState<TaskRewriteInput | null>(null);
   const [result, setResult] = useState<TaskRewriteInput | null>(null);
   const [undoValue, setUndoValue] = useState<TaskRewriteInput | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const rewriteIdRef = useRef(rewriteId);
-  rewriteIdRef.current = rewriteId;
-
+  const rewriteIdRef = useRef<string | null>(null);
+  const stale = Boolean(
+    source &&
+    (source.title !== value.title || source.description !== value.description),
+  );
   useEffect(() => {
     const unsubscribe = api.subscribe((event) => {
       if (
-        event.kind === "rewrite_result" &&
+        (event.kind === "rewrite_result" || event.kind === "rewrite_failed") &&
         event.rewriteId === rewriteIdRef.current
       ) {
         rewriteIdRef.current = null;
-        setResult(event.payload);
         setRewriteId(null);
-      }
-      if (
-        event.kind === "rewrite_failed" &&
-        event.rewriteId === rewriteIdRef.current
-      ) {
-        rewriteIdRef.current = null;
-        setError(event.payload?.message ?? t("tasks.rewrite.failed"));
-        setRewriteId(null);
+        if (event.kind === "rewrite_result") setResult(event.payload);
+        else setError(event.payload?.message ?? t("tasks.rewrite.failed"));
       }
     });
     return () => {
       unsubscribe();
-      if (rewriteIdRef.current) {
-        void api.rewriteAbort(rewriteIdRef.current);
-      }
+      if (rewriteIdRef.current)
+        void api.rewriteAbort(rewriteIdRef.current).catch(() => undefined);
     };
   }, [api, t]);
-
   const start = async () => {
+    if (disabled || rewriteIdRef.current) return;
     setError(null);
     setResult(null);
-    const requestedRewriteId = crypto.randomUUID();
-    rewriteIdRef.current = requestedRewriteId;
-    setRewriteId(requestedRewriteId);
+    setSource({ ...value });
+    const id = crypto.randomUUID();
+    rewriteIdRef.current = id;
+    setRewriteId(id);
     try {
-      const started = await api.rewriteStart(value, requestedRewriteId);
-      if (rewriteIdRef.current === requestedRewriteId) {
+      const started = await api.rewriteStart(value, id);
+      if (rewriteIdRef.current === id) {
         rewriteIdRef.current = started.rewriteId;
         setRewriteId(started.rewriteId);
       }
     } catch (caught) {
-      if (rewriteIdRef.current === requestedRewriteId) {
+      if (rewriteIdRef.current === id) {
         rewriteIdRef.current = null;
         setRewriteId(null);
       }
@@ -80,21 +76,24 @@ export function TaskRewriteControl({
       );
     }
   };
-
   const cancel = async () => {
-    if (!rewriteId) return;
+    const id = rewriteIdRef.current;
+    if (!id) return;
     rewriteIdRef.current = null;
-    await api.rewriteAbort(rewriteId);
     setRewriteId(null);
+    try {
+      await api.rewriteAbort(id);
+    } catch {
+      setError(t("tasks.rewrite.failed"));
+    }
   };
-
   return (
     <div className="task-rewrite-control">
       <button
         className="task-button task-button-quiet"
         type="button"
+        disabled={disabled || rewriteId !== null}
         onClick={() => void start()}
-        disabled={rewriteId !== null}
       >
         <RiSparkling2Line size={14} aria-hidden="true" />
         {labels?.optimize ?? t("tasks.rewrite.optimize")}
@@ -113,15 +112,27 @@ export function TaskRewriteControl({
           </button>
         </>
       ) : null}
-      {result ? (
+      {result && source ? (
         <div role="group" aria-label={t("tasks.rewrite.suggestion")}>
-          <p>{result.title}</p>
-          <p>{result.description}</p>
+          <div className="task-rewrite-comparison">
+            <section>
+              <h3>{t("tasks.rewrite.original")}</h3>
+              <strong>{source.title}</strong>
+              <p>{source.description}</p>
+            </section>
+            <section>
+              <h3>{t("tasks.rewrite.suggested")}</h3>
+              <strong>{result.title}</strong>
+              <p>{result.description}</p>
+            </section>
+          </div>
+          {stale ? <p role="status">{t("tasks.rewrite.stale")}</p> : null}
           <button
             className="task-button task-button-primary"
             type="button"
+            disabled={disabled || stale}
             onClick={() => {
-              setUndoValue(value);
+              setUndoValue({ ...value });
               onApply(result);
               setResult(null);
             }}
@@ -131,6 +142,7 @@ export function TaskRewriteControl({
           <button
             className="task-button task-button-secondary"
             type="button"
+            disabled={disabled}
             onClick={() => setResult(null)}
           >
             {labels?.reject ?? t("tasks.rewrite.reject")}
@@ -141,6 +153,7 @@ export function TaskRewriteControl({
         <button
           className="task-button task-button-secondary"
           type="button"
+          disabled={disabled}
           onClick={() => {
             onApply(undoValue);
             setUndoValue(null);

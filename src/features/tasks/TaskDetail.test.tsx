@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskDetail } from "./TaskDetail";
 import { createTasksApiMock, taskDetail } from "./tasksTestUtils";
 
@@ -45,7 +45,85 @@ const reviewTask = taskDetail({
   ],
 });
 
+beforeEach(() => vi.spyOn(window, "confirm").mockReturnValue(true));
+
 describe("TaskDetail", () => {
+  it("keeps a previous run report accessible while a follow-up run is queued", () => {
+    render(
+      <TaskDetail
+        api={createTasksApiMock()}
+        onChange={vi.fn()}
+        task={{
+          ...reviewTask,
+          status: "queued",
+          activeRunId: "run-2",
+          runs: [
+            {
+              ...reviewTask.runs[0],
+              id: "run-2",
+              attempt: 2,
+              status: "queued",
+              report: null,
+            },
+            reviewTask.runs[0]!,
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Previous attempts (1)"));
+    const reportSummary = screen.getByText("Task result");
+    expect(reportSummary.tagName).toBe("SUMMARY");
+    fireEvent.click(reportSummary);
+    expect(screen.getByText("Implemented and tested")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open draft change request" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Accept completion" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the completed report visible after acceptance and workspace cleanup without review actions", () => {
+    const completed = { ...reviewTask, status: "completed" as const };
+    const { rerender } = render(
+      <TaskDetail
+        api={createTasksApiMock()}
+        task={completed}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Implemented and tested")).toBeInTheDocument();
+    expect(screen.getByText("pnpm test").closest("li")).toHaveTextContent(
+      "pnpm test: Passed",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open draft change request" }),
+    ).toHaveAttribute("href", "https://github.com/example/repo/pull/1");
+    expect(
+      screen.queryByRole("button", { name: "Accept completion" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Request changes" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Change request note" }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <TaskDetail
+        api={createTasksApiMock()}
+        task={{ ...completed, workspaceCleanupStatus: "removed" }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Implemented and tested")).toBeInTheDocument();
+    expect(screen.getByText("pnpm test").closest("li")).toHaveTextContent(
+      "pnpm test: Passed",
+    );
+  });
+
   it("renders the task description", () => {
     render(
       <TaskDetail
@@ -66,7 +144,7 @@ describe("TaskDetail", () => {
     const api = createTasksApiMock();
     render(<TaskDetail api={api} task={awaitingTask} onChange={vi.fn()} />);
 
-    expect(screen.getByText("Status: Running")).toBeInTheDocument();
+    expect(screen.getByText("Status: Awaiting report")).toBeInTheDocument();
     expect(
       screen.getByText(/still running and is not complete/i),
     ).toBeInTheDocument();
@@ -86,7 +164,9 @@ describe("TaskDetail", () => {
     const onChange = vi.fn();
     render(<TaskDetail api={api} task={reviewTask} onChange={onChange} />);
 
-    expect(screen.getByText(/pnpm test: Passed/)).toBeInTheDocument();
+    expect(screen.getByText("pnpm test").closest("li")).toHaveTextContent(
+      "pnpm test: Passed",
+    );
     expect(
       screen.getByRole("link", { name: "Open draft change request" }),
     ).toHaveAttribute("href", "https://github.com/example/repo/pull/1");
@@ -153,4 +233,89 @@ describe("TaskDetail", () => {
       ),
     );
   });
+});
+
+it.each(["queued", "provisioning", "prompting", "running"] as const)(
+  "exposes cancellation during %s",
+  async (status) => {
+    const api = createTasksApiMock();
+    const task = {
+      ...awaitingTask,
+      status: status === "queued" ? ("queued" as const) : ("running" as const),
+      runs: [{ ...awaitingTask.runs[0]!, status }],
+    };
+    render(<TaskDetail api={api} task={task} onChange={vi.fn()} />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: status === "queued" ? "Cancel queue" : "Stop execution",
+      }),
+    );
+    await waitFor(() => expect(api.cancel).toHaveBeenCalledWith("task-1", 1));
+  },
+);
+it("does not stop execution when confirmation is rejected", () => {
+  const api = createTasksApiMock();
+  vi.mocked(window.confirm).mockReturnValueOnce(false);
+  render(
+    <TaskDetail
+      api={api}
+      task={{
+        ...awaitingTask,
+        runs: [{ ...awaitingTask.runs[0]!, status: "running" }],
+      }}
+      onChange={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Stop execution" }));
+  expect(api.cancel).not.toHaveBeenCalled();
+});
+it("puts the latest result before collapsed history and labels a report still draining", () => {
+  render(
+    <TaskDetail
+      api={createTasksApiMock()}
+      task={{
+        ...reviewTask,
+        status: "running",
+        activeRunId: "run-2",
+        runs: [
+          {
+            ...reviewTask.runs[0]!,
+            id: "run-2",
+            status: "running",
+            attempt: 2,
+          },
+          reviewTask.runs[0]!,
+        ],
+      }}
+      onChange={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByText(/Report received; the Agent is still finishing/),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Accept completion" }),
+  ).not.toBeInTheDocument();
+  const history = screen.getByText("Previous attempts (1)").closest("details")!;
+  expect(history).not.toHaveAttribute("open");
+  const report = screen.getByRole("region", { name: "Task result" });
+  expect(
+    report.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+it("shows session navigation errors inline", async () => {
+  render(
+    <TaskDetail
+      api={createTasksApiMock()}
+      task={reviewTask}
+      onChange={vi.fn()}
+      onOpenSession={vi
+        .fn()
+        .mockRejectedValue(new Error("Session unavailable"))}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open session" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Session unavailable",
+  );
 });

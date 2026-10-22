@@ -136,6 +136,8 @@ export const commands = {
     }),
   taskNotificationsList: (input: Record<string, unknown>) =>
     command<unknown>("task_notifications_list", input),
+  taskNotificationsMarkAllRead: () =>
+    command<void>("task_notifications_mark_all_read"),
   taskNotificationMarkRead: (
     taskId: string,
     runId: string | null,

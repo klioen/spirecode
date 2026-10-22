@@ -288,6 +288,8 @@ export class AppState {
           await this.deleteWorktree(worktreeId, false);
         },
         notify: (request) => this.notifyTask(request),
+        onChanged: (taskId, revision) =>
+          this.send("task://event", { kind: "changed", taskId, revision }),
       });
       taskSubsystem = {
         database: taskDatabase,
@@ -576,17 +578,16 @@ export class AppState {
     await this.chat.delete(worktreeId, sessionId);
   }
 
-  async taskList(options: {
-    limit: number;
-    cursor?: string | null;
-    statuses?: import("./domains/tasks/types.js").TaskStatus[];
-  }) {
+  async taskList(
+    options: import("./domains/tasks/repository.js").ListTasksOptions,
+  ) {
     const tasks = this.requireTasks();
     const page = await tasks.list(options);
     const counts = tasks.counts();
+    const queueSnapshot = this.taskRepository!.executionQueueSnapshot();
     return {
       items: await Promise.all(
-        page.items.map((task) => this.taskSummary(task)),
+        page.items.map((task) => this.taskSummary(task, queueSnapshot)),
       ),
       nextCursor: page.nextCursor,
       ...counts,
@@ -613,8 +614,35 @@ export class AppState {
     );
   }
 
-  taskNotificationsList(options: { limit: number; cursor?: string | null }) {
-    return this.requireTasks().listNotifications(options);
+  async taskNotificationsList(options: {
+    limit: number;
+    cursor?: string | null;
+  }) {
+    const page = this.requireTasks().listNotifications(options);
+    const items = await Promise.all(
+      page.items.map(async (notification) => {
+        const task = this.taskRepository?.getTask(notification.taskId);
+        let projectName: string | undefined;
+        if (task) {
+          try {
+            projectName = (await this.projects.project(task.projectId)).name;
+          } catch {
+            /* Closed projects retain notification history. */
+          }
+        }
+        return { ...notification, taskTitle: task?.title, projectName };
+      }),
+    );
+    return {
+      ...page,
+      items,
+      unreadCount: this.taskRepository?.unreadNotificationCount() ?? 0,
+    };
+  }
+
+  taskNotificationsMarkAllRead(): void {
+    this.requireTasks().markAllNotificationsRead();
+    this.send("task://event", { kind: "notification" });
   }
 
   taskNotificationMarkRead(
@@ -705,14 +733,16 @@ export class AppState {
 
   async dispose(): Promise<void> {
     this.terminals.dispose();
-    const cleanup = await Promise.allSettled([
+    const taskCleanup = await Promise.allSettled([
       this.tasks?.dispose() ?? Promise.resolve(),
+    ]);
+    const cleanup = await Promise.allSettled([
       this.taskRewrite.then((service) => service.dispose()),
       this.watchers.dispose(),
       withTimeout(this.chat.disposeAll(), 5_000),
     ]);
     this.taskDatabase?.close();
-    for (const result of cleanup)
+    for (const result of [...taskCleanup, ...cleanup])
       if (result.status === "rejected")
         console.warn("Application cleanup was incomplete", result.reason);
   }
@@ -725,14 +755,39 @@ export class AppState {
     );
   }
 
-  private async taskSummary(task: import("./domains/tasks/types.js").Task) {
+  private async taskSummary(
+    task: import("./domains/tasks/types.js").Task,
+    queueSnapshot?: import("./domains/tasks/repository.js").TaskQueueSnapshot,
+  ) {
     let projectName: string | undefined;
+    let workspaceName: string | undefined;
+    let supportsChanges = false;
     try {
-      projectName = (await this.projects.project(task.projectId)).name;
+      const project = await this.projects.project(task.projectId);
+      projectName = project.name;
+      supportsChanges = project.kind === "git";
+      const worktreeId =
+        task.resolvedWorktreeId ??
+        (task.workspace.mode === "existing" ? task.workspace.worktreeId : null);
+      const worktree = project.worktrees.find((item) => item.id === worktreeId);
+      workspaceName = worktree?.name;
     } catch {
       // Closed projects remain visible in global Task history.
     }
     const runs = this.taskRepository?.listAllRuns(task.id) ?? [];
+    const latestRun = runs[0];
+    const queue =
+      latestRun?.status === "queued"
+        ? (queueSnapshot ?? this.taskRepository!.executionQueueSnapshot())
+        : undefined;
+    const queueReason = queue
+      ? latestRun!.worktreeId &&
+        queue.busyWorktreeIds.has(latestRun!.worktreeId)
+        ? ("workspace_busy" as const)
+        : queue.occupiedSlots >= 3
+          ? ("capacity" as const)
+          : ("dispatch" as const)
+      : undefined;
     const now = Date.now();
     const tokenCounts = await Promise.all(
       runs.map((run) => this.taskRunTokenCount(run)),
@@ -742,6 +797,11 @@ export class AppState {
       title: task.title,
       projectId: task.projectId,
       ...(projectName ? { projectName } : {}),
+      workspaceName: workspaceName ?? latestRun?.worktreeName ?? undefined,
+      supportsChanges,
+      executionStatus: latestRun?.status,
+      queueReason,
+      lastActivityAt: task.updatedAt,
       workspace: task.workspace,
       status: task.status,
       activeRunId: task.activeRunId,

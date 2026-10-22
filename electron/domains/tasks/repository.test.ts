@@ -53,6 +53,98 @@ function createRun(expectedRevision = 1) {
 }
 
 describe("TaskRepository", () => {
+  it("searches literal text and scopes attention tasks in the durable list", () => {
+    createTask();
+    repository.createTask({
+      ...taskInput,
+      id: "10000000-0000-4000-8000-000000000002",
+      title: "Literal 100%_done",
+      description: "",
+      projectId: "20000000-0000-4000-8000-000000000002",
+    });
+    expect(
+      repository
+        .listTasks({ limit: 10, query: "100%_" })
+        .items.map((task) => task.title),
+    ).toEqual(["Literal 100%_done"]);
+    expect(
+      repository.listTasks({ limit: 10, projectId: taskInput.projectId }).items,
+    ).toHaveLength(1);
+    const { run } = createRun();
+    const provisioning = repository.transitionRun(
+      run.id,
+      run.revision,
+      "provisioning",
+      { taskStatus: "running" },
+    ).run;
+    const prompting = repository.transitionRun(
+      run.id,
+      provisioning.revision,
+      "prompting",
+    ).run;
+    const running = repository.transitionRun(
+      run.id,
+      prompting.revision,
+      "running",
+    ).run;
+    expect(
+      repository.listTasks({
+        limit: 10,
+        attentionOnly: true,
+        projectId: taskInput.projectId,
+      }).items,
+    ).toHaveLength(0);
+    repository.transitionRun(run.id, running.revision, "awaiting_report");
+    expect(
+      repository.listTasks({
+        limit: 10,
+        attentionOnly: true,
+        projectId: taskInput.projectId,
+      }).items,
+    ).toHaveLength(1);
+  });
+
+  it("commits a task and its initial queued run together", () => {
+    const runId = "40000000-0000-4000-8000-000000000001";
+    const created = repository.createTask(
+      { ...taskInput, automationEnabled: true },
+      {
+        id: runId,
+        projectId: taskInput.projectId,
+        promptMarker: `spire-task-run:${runId}`,
+        ownsManagedWorktree: true,
+      },
+    );
+
+    expect(created).toMatchObject({
+      status: "queued",
+      activeRunId: runId,
+      revision: 2,
+    });
+    expect(repository.getRun(runId)).toMatchObject({
+      taskId: created.id,
+      status: "queued",
+      sagaPhase: "created",
+    });
+  });
+
+  it("rolls back task creation when the initial queued run cannot be stored", () => {
+    expect(() =>
+      repository.createTask(
+        { ...taskInput, automationEnabled: true },
+        {
+          id: "40000000-0000-4000-8000-000000000001",
+          projectId: taskInput.projectId,
+          promptMarker: "",
+          ownsManagedWorktree: true,
+        },
+      ),
+    ).toThrowError(expect.objectContaining({ code: "TASK_RESULT_INVALID" }));
+
+    expect(repository.getTask(taskInput.id)).toBeNull();
+    expect(repository.listActiveRuns()).toEqual([]);
+  });
+
   it("creates, gets, and lists normalized tasks", () => {
     const created = createTask();
     expect(created).toMatchObject({
@@ -360,4 +452,77 @@ describe("TaskRepository", () => {
       now,
     );
   });
+});
+
+it("marks all notifications read idempotently without changing system delivery history", () => {
+  const task = createTask();
+  repository.createNotification(task.id, null, "failed");
+  repository.createNotification(task.id, null, "needs_review");
+  repository.markNotificationSystemSent(task.id, null, "failed");
+  expect(repository.unreadNotificationCount()).toBe(2);
+  repository.markAllNotificationsRead();
+  expect(repository.unreadNotificationCount()).toBe(0);
+  const first = repository.listNotifications({ limit: 10 });
+  now++;
+  repository.markAllNotificationsRead();
+  expect(repository.listNotifications({ limit: 10 })).toEqual(first);
+  expect(
+    first.items.find((item) => item.kind === "failed")?.systemSentAt,
+  ).not.toBeNull();
+});
+it("finds matching tasks outside the first unfiltered page and treats SQL text literally", () => {
+  createTask();
+  for (let index = 0; index < 51; index++) {
+    now++;
+    repository.createTask({
+      ...taskInput,
+      id: `10000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}`,
+      title: "Unrelated",
+      description: "",
+    });
+  }
+  expect(
+    repository
+      .listTasks({ limit: 50 })
+      .items.some((item) => item.id === taskInput.id),
+  ).toBe(false);
+  expect(
+    repository.listTasks({ limit: 50, query: "Ship task" }).items[0]?.id,
+  ).toBe(taskInput.id);
+  expect(
+    repository.listTasks({ limit: 50, query: "' OR 1=1 --" }).items,
+  ).toEqual([]);
+});
+
+it("separates occupied execution slots from idle runs retaining workspace leases", () => {
+  createTask();
+  const created = createRun();
+  const bound = repository.bindRunWorkspace(
+    created.run.id,
+    created.run.revision,
+    "90000000-0000-4000-8000-000000000001",
+  );
+  const provisioning = repository.transitionRun(
+    bound.id,
+    bound.revision,
+    "provisioning",
+    { taskStatus: "running" },
+  ).run;
+  expect(repository.executionQueueSnapshot().occupiedSlots).toBe(1);
+  const prompting = repository.transitionRun(
+    provisioning.id,
+    provisioning.revision,
+    "prompting",
+  ).run;
+  const running = repository.transitionRun(
+    prompting.id,
+    prompting.revision,
+    "running",
+  ).run;
+  repository.transitionRun(running.id, running.revision, "awaiting_report");
+  const snapshot = repository.executionQueueSnapshot();
+  expect(snapshot.occupiedSlots).toBe(0);
+  expect(
+    snapshot.busyWorktreeIds.has("90000000-0000-4000-8000-000000000001"),
+  ).toBe(true);
 });

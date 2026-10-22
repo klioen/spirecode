@@ -2,6 +2,9 @@
 
 Status: accepted。 Implements: `docs/task-module/intent.md`。
 
+Current queue admission and report-visibility behavior is amended by `docs/task-background-dispatch/change.md`; lifecycle/session/cleanup behavior is amended by `docs/task-lifecycle-cleanup/spec.md`.
+Current state-driven UI and bounded read-model filters are amended by `docs/task-ui-workbench/change.md`.
+
 ## 1. V1 scope
 
 ### 1.1 Included

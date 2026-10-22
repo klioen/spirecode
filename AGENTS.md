@@ -19,4 +19,5 @@
 - Git uses argument arrays, never shell command strings. All product Git calls go through the hardened runner; repository-defined fsmonitor, filters, hooks, external diff, or text conversion must never execute implicitly.
 - Do not enable `nodeIntegration`, disable context isolation/sandbox, or expose raw IPC.
 - Do not pass arbitrary paths from Renderer; resolve IDs to canonical roots in Main and reject traversal/symlink escape.
+- Domain commands with optional or nullable fields must reuse dedicated typed parsers in both IPC validation and dispatch; do not let them fall through generic required-string validation.
 - Add repeated pitfalls here, not in source comments.
