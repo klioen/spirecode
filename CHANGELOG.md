@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Fixed Task runs failing before prompt delivery when Pi has not yet created the new session's JSONL file, including restart recovery for that pre-prompt window.
 - Stabilized native recursive watcher startup so immediate filesystem changes are not missed while a project opens.
 - Corrected Projects tree indentation and stopped Pi session discovery from duplicating SpireCode-managed worktrees as standalone Ungrouped projects.
 - Fixed `Remove from Pi` for relative local package sources by resolving the configured package path before asking Pi's PackageManager to remove the settings reference.
