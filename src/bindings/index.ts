@@ -51,7 +51,7 @@ const chatSubscriptions = new Map<
 >();
 
 export function subscribeHostEvent<T>(
-  topic: "filesystem://changed" | "git://changed",
+  topic: "filesystem://changed" | "git://changed" | "projects://changed",
   listener: (payload: T) => void,
 ): Promise<() => void> {
   return Promise.resolve(window.spire.subscribe(topic, listener));
@@ -119,6 +119,20 @@ export const commands = {
     command<unknown>("task_complete", { taskId, expectedRevision }),
   taskCleanupWorkspace: (taskId: string, expectedRevision: number) =>
     command<unknown>("task_cleanup_workspace", { taskId, expectedRevision }),
+  taskArchive: (
+    taskId: string,
+    expectedRevision: number,
+    artifacts: Array<{ runId: string; relativePath: string }>,
+  ) =>
+    command<unknown>("task_archive", { taskId, expectedRevision, artifacts }),
+  taskArchiveRead: (input: Record<string, unknown>) =>
+    command<unknown>("task_archive_read", input),
+  taskArchiveReveal: (taskId: string, runId: string, relativePath?: string) =>
+    command<void>("task_archive_reveal", {
+      taskId,
+      runId,
+      ...(relativePath ? { relativePath } : {}),
+    }),
   taskRequestChanges: (
     taskId: string,
     expectedRevision: number,

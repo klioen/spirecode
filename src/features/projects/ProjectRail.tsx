@@ -30,6 +30,7 @@ import {
   RiLayoutLeftLine,
   RiMore2Fill,
   RiSettings3Line,
+  RiRefreshLine,
 } from "@remixicon/react";
 import type {
   ProjectGroupSummary,
@@ -45,6 +46,7 @@ import { TaskNavItem } from "../tasks/TaskNavItem";
 import { useTasksStore } from "../tasks/tasksStore";
 import { ProjectSessionList } from "./ProjectSessionList";
 import { projectsApi } from "./projectsApi";
+import { refreshProjectCatalog } from "./projectsRefresh";
 import {
   groupDropId,
   previewProjectMove,
@@ -216,6 +218,12 @@ export function ProjectRail({
   );
 
   useEffect(() => {
+    dragSnapshotRef.current = null;
+    setDropIndicator(null);
+    setActiveDragProjectId(null);
+  }, [store.catalogRevision]);
+
+  useEffect(() => {
     if (!menuWorktreeId && !menuProjectId && !menuGroupId) return;
     const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
       if (!(event.target instanceof Node)) return;
@@ -299,7 +307,15 @@ export function ProjectRail({
     selectionGenerationRef.current = generation;
     try {
       await projectsApi.selectWorktree(worktreeId);
-      if (selectionGenerationRef.current !== generation) return false;
+      if (
+        selectionGenerationRef.current !== generation ||
+        !useProjectsStore
+          .getState()
+          .projects.some((project) =>
+            project.worktrees.some(({ id }) => id === worktreeId),
+          )
+      )
+        return false;
       store.selectWorktree(worktreeId);
       return true;
     } catch (error) {
@@ -680,6 +696,7 @@ export function ProjectRail({
                     {sessionsExpanded && (
                       <ProjectSessionList
                         worktreeId={worktree.id}
+                        catalogRevision={store.catalogRevision}
                         onSelectWorktree={select}
                         onOpenSession={onOpenSession}
                       />
@@ -747,6 +764,28 @@ export function ProjectRail({
         <span>{t("projects.heading")}</span>
         <div className="project-rail-actions">
           <button
+            type="button"
+            className="project-add"
+            title={t("projects.refresh")}
+            aria-label={t("projects.refresh")}
+            aria-busy={store.refreshing}
+            disabled={
+              store.loading ||
+              store.refreshing ||
+              movePending ||
+              Boolean(activeDragProjectId)
+            }
+            onClick={() => {
+              closeMenus();
+              void refreshProjectCatalog();
+            }}
+          >
+            <RiRefreshLine
+              className={store.refreshing ? "spin" : ""}
+              size={16}
+            />
+          </button>
+          <button
             className="project-add"
             title={t("projects.group.create")}
             aria-label={t("projects.group.create")}
@@ -771,6 +810,20 @@ export function ProjectRail({
           </button>
         </div>
       </div>
+      {store.refreshError && (
+        <div className="project-refresh-error" role="alert">
+          <span>
+            {t("projects.refreshFailed", { error: store.refreshError.message })}
+          </span>
+          <button
+            type="button"
+            disabled={store.refreshing}
+            onClick={() => void refreshProjectCatalog()}
+          >
+            {t("projects.retry")}
+          </button>
+        </div>
+      )}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}

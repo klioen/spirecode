@@ -1,3 +1,4 @@
+import { TaskArchiveView } from "./TaskArchiveView";
 import {
   RiArrowLeftLine,
   RiChat3Line,
@@ -16,6 +17,7 @@ import {
 import type { TaskDetailValue, TaskRunSummary, TasksApi } from "./tasksApi";
 import { formatTaskDuration, formatTaskTokens } from "./taskMetrics";
 import {
+  taskErrorMessage,
   relativeTaskTime,
   taskDisplayStatus,
   taskStatusKeys,
@@ -44,6 +46,7 @@ const cleanupReasonKeys: Record<string, TranslationKey> = {
   TASK_WORKSPACE_NOT_MANAGED: "tasks.workspaceOwnershipChanged",
   TASK_WORKSPACE_REFERENCED: "tasks.workspaceReferenced",
   TASK_FAILED: "tasks.workspaceCleanupFailed",
+  TASK_ARCHIVE_FAILED: "tasks.archive.failed",
 };
 function TaskReport({
   report,
@@ -116,6 +119,8 @@ export function TaskDetail({
 }: TaskDetailProps) {
   const { language, t } = useTranslation();
   const [note, setNote] = useState("");
+  const [archiveRun, setArchiveRun] = useState<string | null>(null);
+  const [artifactPaths, setArtifactPaths] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latestRun = task.runs[0] ?? null;
@@ -138,9 +143,7 @@ export function TaskDetail({
     try {
       onChange(await operation());
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : t("tasks.actionFailed"),
-      );
+      setError(taskErrorMessage(caught, t("tasks.actionFailed")));
     } finally {
       setBusy(false);
     }
@@ -152,9 +155,7 @@ export function TaskDetail({
     try {
       await operation();
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : t("tasks.openFailed"),
-      );
+      setError(taskErrorMessage(caught, t("tasks.openFailed")));
     } finally {
       setBusy(false);
     }
@@ -308,6 +309,39 @@ export function TaskDetail({
           <p>{t("tasks.noRuns")}</p>
         )}
         <div className="task-detail-actions">
+          {latestRun?.archiveStatus === "empty" ? (
+            <p>{t("tasks.archive.empty")}</p>
+          ) : null}
+          {latestRun?.archiveStatus === "empty"
+            ? latestRun.archivedArtifacts?.map((file) => (
+                <button
+                  className="task-button task-button-secondary"
+                  key={file.relativePath}
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void navigate(() =>
+                      api.archiveReveal(
+                        task.id,
+                        latestRun.id,
+                        file.relativePath,
+                      ),
+                    )
+                  }
+                >
+                  {file.relativePath}
+                </button>
+              ))
+            : null}
+          {latestRun?.archiveStatus === "archived" ? (
+            <button
+              className="task-button task-button-secondary"
+              type="button"
+              onClick={() => setArchiveRun(latestRun.id)}
+            >
+              {t("tasks.archive.view")}
+            </button>
+          ) : null}
           {canOpen && onOpenSession ? (
             <button
               className="task-button task-button-secondary"
@@ -445,6 +479,39 @@ export function TaskDetail({
                 {run.error ? (
                   <p className="task-run-error">{run.error.message}</p>
                 ) : null}
+                {run.archiveStatus === "empty" ? (
+                  <p>{t("tasks.archive.empty")}</p>
+                ) : null}
+                {run.archiveStatus === "empty"
+                  ? run.archivedArtifacts?.map((file) => (
+                      <button
+                        className="task-button task-button-secondary"
+                        key={file.relativePath}
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          void navigate(() =>
+                            api.archiveReveal(
+                              task.id,
+                              run.id,
+                              file.relativePath,
+                            ),
+                          )
+                        }
+                      >
+                        {file.relativePath}
+                      </button>
+                    ))
+                  : null}
+                {run.archiveStatus === "archived" ? (
+                  <button
+                    className="task-button task-button-secondary"
+                    type="button"
+                    onClick={() => setArchiveRun(run.id)}
+                  >
+                    {t("tasks.archive.view")}
+                  </button>
+                ) : null}
                 {run.worktreeId &&
                 run.sessionId &&
                 onOpenSession &&
@@ -466,6 +533,66 @@ export function TaskDetail({
             ))}
           </ol>
         </details>
+      ) : null}
+      {archiveRun ? (
+        <TaskArchiveView
+          key={`${task.id}:${archiveRun}`}
+          api={api}
+          taskId={task.id}
+          runId={archiveRun}
+          onClose={() => setArchiveRun(null)}
+        />
+      ) : null}
+      {["completed", "failed", "cancelled"].includes(task.status) ? (
+        <section className="task-detail-section">
+          <h3>{t("tasks.archive.heading")}</h3>
+          <p>
+            {t(
+              task.archiveStatus === "ready"
+                ? "tasks.archive.ready"
+                : task.archiveStatus === "failed"
+                  ? "tasks.archive.failed"
+                  : "tasks.archive.pending",
+            )}
+          </p>
+          {task.workspaceCleanupStatus !== "removed" && latestRun ? (
+            <label className="task-form-field">
+              {t("tasks.archive.selectArtifacts")}
+              <textarea
+                maxLength={22000}
+                value={artifactPaths}
+                onChange={(event) => setArtifactPaths(event.target.value)}
+                disabled={busy}
+                placeholder={t("tasks.archive.artifactHint")}
+              />
+            </label>
+          ) : null}
+          <button
+            className="task-button task-button-secondary"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              void act(() =>
+                api.archive(
+                  task.id,
+                  task.revision,
+                  latestRun
+                    ? artifactPaths
+                        .split("\n")
+                        .map((value) => value.trim())
+                        .filter(Boolean)
+                        .map((relativePath) => ({
+                          runId: latestRun.id,
+                          relativePath,
+                        }))
+                    : [],
+                ),
+              )
+            }
+          >
+            {t("tasks.archive.save")}
+          </button>
+        </section>
       ) : null}
       {task.status === "completed" && task.ownsManagedWorktree ? (
         <section className="task-detail-section task-workspace-cleanup">
@@ -492,7 +619,26 @@ export function TaskDetail({
                 onClick={() => {
                   if (window.confirm(t("tasks.cleanupConfirm")))
                     void act(() =>
-                      api.cleanupWorkspace(task.id, task.revision),
+                      (async () => {
+                        const archived = await api.archive(
+                          task.id,
+                          task.revision,
+                          latestRun
+                            ? artifactPaths
+                                .split("\n")
+                                .map((value) => value.trim())
+                                .filter(Boolean)
+                                .map((relativePath) => ({
+                                  runId: latestRun.id,
+                                  relativePath,
+                                }))
+                            : [],
+                        );
+                        return api.cleanupWorkspace(
+                          archived.id,
+                          archived.revision,
+                        );
+                      })(),
                     );
                 }}
               >

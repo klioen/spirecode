@@ -580,3 +580,8 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 - **`agent_settled` 自动 completed**：idle 不证明需求与测试完成。
 - **失败/取消自动删除 worktree**：可能丢失用户改动，且 existing workspace 不归 Task 所有。
 - **自动 ready/approve/merge**：越过人工审查和仓库权限边界。
+
+Current durable history retention, schema v5, cleanup ordering and read-only archive behavior are amended by `docs/task-history-archive/change.md`.
+
+
+Task-only Skill 自动 input 注入、Run journal 规范快照及旧 Run 兼容行为见 `docs/task-skill/change.md` 的自动注入更新。Main-owned 有界指令快照不是用户文件正文或会话 transcript，允许作为该更新的窄例外保存在 `task_run_steps`；报告 schema、Task/Run schema 和全局 Skill 发现策略不变。

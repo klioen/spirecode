@@ -39,8 +39,33 @@ export const en = {
   "tasks.notificationUntitled": "Task notification",
   "tasks.notificationFailed":
     "Unable to load or update task notifications. Please retry.",
+  "tasks.archive.heading": "Archived history",
+  "tasks.archive.view": "View archived session",
+  "tasks.archive.readOnly":
+    "Read-only audit history, including tools and branches. No Agent, terminal or workspace access is started.",
+  "tasks.archive.close": "Close history",
+  "tasks.archive.loadFailed": "Unable to read the verified archive.",
+  "tasks.archive.savedAt": "Session archived at {time}",
+  "tasks.archive.reveal": "Reveal full session archive",
+  "tasks.archive.truncated":
+    "This record is too large for inline display. Its full content is preserved in the archive file.",
+  "tasks.archive.loadMore": "Load more history",
+  "tasks.archive.artifactLabel": "{path} ({size} B)",
+  "tasks.archive.artifacts": "Archived artifacts",
+  "tasks.archive.ready":
+    "History and final metrics are archived independently of the workspace.",
+  "tasks.archive.failed":
+    "History archive is incomplete. Workspace cleanup is blocked until the archive is saved and verified.",
+  "tasks.archive.empty":
+    "This run did not produce a persisted session; cleanup did not delete one.",
+  "tasks.archive.pending":
+    "History has not been archived yet. Cleanup will archive and verify it first.",
+  "tasks.archive.selectArtifacts":
+    "Files to retain (one workspace-relative file per line; up to 20 files, 10 MiB each, 50 MiB total)",
+  "tasks.archive.artifactHint": "For example: reports/test.log",
+  "tasks.archive.save": "Save / verify history archive",
   "tasks.cleanupConfirm":
-    "Remove this clean, idle workspace? Its branch, session history and reports will be retained. Session navigation will no longer be available.",
+    "Remove this clean, idle workspace? Its branch, session history and reports will be retained. Archived sessions remain readable.",
   "tasks.bulkCleanupConfirm":
     "Check and clean the {count} eligible workspaces in the loaded list? Dirty or busy workspaces are skipped. Branches, sessions and reports are retained.",
   "tasks.form.createAndQueue": "Create and queue",
@@ -105,7 +130,7 @@ export const en = {
   "tasks.workspaceReferenced": "another Task still references it",
   "tasks.workspaceCleanupFailed": "cleanup did not complete",
   "tasks.workspaceCleanupDescription":
-    "Remove this clean, idle managed checkout while preserving its branch, sessions, runs, and reports.",
+    "Archive and verify sessions and selected files first, then remove the clean, idle managed checkout. Its branch, runs and reports remain.",
   "tasks.cleanupWorkspace": "Clean up workspace",
   "tasks.cleanupSafeWorkspaces": "Clean up safe workspaces",
   "tasks.cleaningWorkspaces": "Cleaning workspaces…",
@@ -384,6 +409,9 @@ export const en = {
   "breadcrumb.unavailable": "Unavailable",
   "breadcrumb.switching": "Switching…",
   "projects.label": "Projects",
+  "projects.refresh": "Refresh projects",
+  "projects.refreshFailed": "Unable to refresh projects: {error}",
+  "projects.retry": "Retry",
   "projects.heading": "PROJECTS",
   "projects.expand": "Expand {name}",
   "projects.collapse": "Collapse {name}",

@@ -20,4 +20,5 @@
 - Do not enable `nodeIntegration`, disable context isolation/sandbox, or expose raw IPC.
 - Do not pass arbitrary paths from Renderer; resolve IDs to canonical roots in Main and reject traversal/symlink escape.
 - Domain commands with optional or nullable fields must reuse dedicated typed parsers in both IPC validation and dispatch; do not let them fall through generic required-string validation.
+- Task workspace deletion must pass durable history verification, including generic worktree deletion. Archived history reads must not load an Agent or depend on a live checkout.
 - Add repeated pitfalls here, not in source comments.

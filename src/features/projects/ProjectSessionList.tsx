@@ -10,10 +10,12 @@ import { commandError } from "../../lib/errors";
 
 export function ProjectSessionList({
   worktreeId,
+  catalogRevision = 0,
   onSelectWorktree,
   onOpenSession,
 }: {
   worktreeId: string;
+  catalogRevision?: number;
   onSelectWorktree: (worktreeId: string) => Promise<boolean>;
   onOpenSession?: () => void;
 }) {
@@ -55,7 +57,7 @@ export function ProjectSessionList({
     return () => {
       active = false;
     };
-  }, [worktreeId]);
+  }, [worktreeId, catalogRevision]);
 
   useEffect(() => {
     if (!menuSessionId) return;

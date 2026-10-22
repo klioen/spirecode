@@ -1,6 +1,7 @@
 import type { CommandError } from "./generated";
 
 export type HostTopic =
+  | "projects://changed"
   | "filesystem://changed"
   | "git://changed"
   | "terminal://event"

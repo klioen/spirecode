@@ -67,3 +67,14 @@ Schema v4 migration is forward-only, backed up and transactional. Historical Run
 - Dirty, busy, existing, active, foreign-reference and ownership-conflict cleanup attempts do not delete.
 - Cleanup intent recovers after crashes on either side of worktree deletion.
 - IPC, migration, service, Renderer and artifact tests pass on all supported targets.
+
+Current durable history retention, schema v5, cleanup ordering and read-only archive behavior are amended by `docs/task-history-archive/change.md`.
+
+
+## 7. Projects catalog synchronization
+
+After a successful workspace deletion, Main publishes the allowlisted `projects://changed` invalidation. Renderer subscribes before its initial catalog read and re-reads the authoritative project catalog. The same path handles project open/close and managed worktree creation/rename, including background Task creation. Failed or blocked deletion does not publish a success invalidation.
+
+The Projects header also offers a refresh icon, with a busy state and an inline error/retry. Refresh retains group/project expansion and any still-valid UI worktree selection. When a selected worktree disappears, selection falls back to its owning project's main workspace. Only live Editor/File/Changes/Chat view metadata for removed identities is cleared; Task records, reports and durable archives are never deleted by refresh. Expanded Pi session lists reload after a successful catalog refresh, allowing a failed read to recover.
+
+Concurrent invalidations are coalesced; a change arriving during a catalog read triggers another read before applying its result. Refresh reads Main's catalog, not arbitrary Renderer filesystem paths, and does not force-delete, prune external worktrees or recreate removed checkouts.

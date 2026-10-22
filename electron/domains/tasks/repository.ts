@@ -399,6 +399,15 @@ export class TaskRepository {
     return row ? mapRun(row) : null;
   }
 
+  listRunsBySessionId(sessionId: string): TaskRun[] {
+    validateId(sessionId, "sessionId");
+    return (
+      this.connection
+        .prepare("SELECT * FROM task_runs WHERE session_id=? ORDER BY attempt")
+        .all(sessionId) as unknown as RunRow[]
+    ).map(mapRun);
+  }
+
   findRunBySessionId(sessionId: string): TaskRun | null {
     validateId(sessionId, "sessionId");
     const row = this.connection

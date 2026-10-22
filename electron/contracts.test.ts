@@ -51,6 +51,7 @@ describe("Electron host allowlists", () => {
   it("accepts only declared event topics", () => {
     for (const topic of TOPICS) expect(isTopic(topic)).toBe(true);
     expect(isTopic("task://event")).toBe(true);
+    expect(isTopic("projects://changed")).toBe(true);
     expect(isTopic("electron://raw-ipc")).toBe(false);
     expect(isTopic("terminal://write")).toBe(false);
   });

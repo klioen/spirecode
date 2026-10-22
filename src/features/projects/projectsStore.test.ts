@@ -92,6 +92,22 @@ describe("nested project worktree state", () => {
     expect(useProjectsStore.getState().activeWorktreeId).toBe("feature");
   });
 
+  it("refreshes a removed selection to its owning project's main instead of the first project", () => {
+    const main = worktree("two", "two-main");
+    const feature = worktree("two", "feature", "managed");
+    useProjectsStore
+      .getState()
+      .setProjects([project("one"), project("two", main, feature)]);
+    useProjectsStore.getState().selectWorktree("feature");
+    useProjectsStore.getState().reconcileCatalog({
+      version: 5,
+      groups: [],
+      projects: [project("one"), project("two", main)],
+      projectOrder: ["one", "two"],
+      activeWorktreeId: "one-main",
+    });
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("two-main");
+  });
   it("selects a newly created worktree and returns to main after deletion", () => {
     const main = worktree("one", "one-main");
     const feature = worktree("one", "feature", "managed");

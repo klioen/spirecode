@@ -12,6 +12,12 @@ import {
   TaskRepositoryError,
   type ListTasksOptions,
 } from "./repository.js";
+import {
+  TASK_SKILL_SNAPSHOT,
+  TASK_SKILL_STEP,
+  validateTaskSkillSnapshot,
+  type TaskSkillSnapshot,
+} from "./taskSkill.js";
 import type {
   CreateRunInput,
   Page,
@@ -35,6 +41,7 @@ export type TaskServiceErrorCode =
   | "TASK_WORKSPACE_REFERENCED"
   | "TASK_PROMPT_FAILED"
   | "TASK_RESULT_INVALID"
+  | "TASK_ARCHIVE_FAILED"
   | "TASK_FAILED";
 
 export class TaskServiceError extends Error {
@@ -143,6 +150,12 @@ export interface TaskServiceDependencies {
   deleteWorktree(worktreeId: string): Promise<void>;
   notify(request: TaskNotificationRequest): void | Promise<void>;
   onChanged?: (taskId: string, revision: number) => void;
+  archiveTask(
+    taskId: string,
+    artifacts?: import("./archive.js").ArtifactSelection[],
+  ): Promise<void>;
+  finalizeRunRetention?: (runId: string) => Promise<void>;
+  recoverArchives?: () => Promise<void>;
 }
 
 export interface CreateTaskRequest {
@@ -360,6 +373,7 @@ export class TaskService {
     this.repository.cancelRun(current.id, current.revision);
     this.repository.upsertRunStep(current.id, "cancel", "done");
     this.repository.appendEvent(current.taskId, current.id, "run.cancelled");
+    await this.#retainRun(current.id);
     this.#requestSchedule();
     return this.get(current.taskId);
   }
@@ -369,9 +383,50 @@ export class TaskService {
     expectedRevision: number,
   ): Promise<TaskDetail> {
     this.#assertAvailable();
-    this.repository.completeTask(taskId, expectedRevision);
-    this.repository.appendEvent(taskId, null, "task.completed");
-    return this.get(taskId);
+    return this.#singleFlight(taskId, async () => {
+      this.repository.completeTask(taskId, expectedRevision);
+      this.repository.appendEvent(taskId, null, "task.completed");
+      try {
+        await this.dependencies.archiveTask(taskId);
+      } catch {
+        this.repository.appendEvent(taskId, null, "task.archive_pending");
+      }
+      return this.get(taskId);
+    });
+  }
+
+  archive(
+    taskId: string,
+    expectedRevision: number,
+    artifacts: import("./archive.js").ArtifactSelection[] = [],
+  ): Promise<TaskDetail> {
+    this.#assertAvailable();
+    return this.#singleFlight(taskId, async () => {
+      const task = this.#requireTask(taskId);
+      if (task.revision !== expectedRevision)
+        throw new TaskServiceError(
+          "TASK_CONFLICT",
+          "Task revision does not match",
+        );
+      try {
+        await this.dependencies.archiveTask(taskId, artifacts);
+      } finally {
+        this.#emitChanged(taskId);
+      }
+      return this.get(taskId);
+    });
+  }
+
+  async #retainRun(runId: string): Promise<void> {
+    try {
+      await this.dependencies.finalizeRunRetention?.(runId);
+    } catch {
+      this.repository.appendEvent(
+        this.#requireRun(runId).taskId,
+        runId,
+        "run.retention_pending",
+      );
+    }
   }
 
   cleanupWorkspace(
@@ -418,6 +473,16 @@ export class TaskService {
       return this.get(taskId);
     };
 
+    try {
+      await this.dependencies.archiveTask(taskId);
+    } catch (error) {
+      return block(
+        hasErrorCode(error, "TASK_WORKSPACE_BUSY")
+          ? "TASK_WORKSPACE_BUSY"
+          : "TASK_ARCHIVE_FAILED",
+        "Task history could not be archived; workspace was retained.",
+      );
+    }
     const worktreeId = task.resolvedWorktreeId!;
     let worktree: TaskWorktreeBinding | null;
     try {
@@ -583,6 +648,7 @@ export class TaskService {
             "All automated Task execution slots are in use",
             true,
           );
+        const skillSnapshot = this.#taskSkillSnapshot(run.id, false);
         const integration = this.#integration(run.id);
         await this.dependencies.attachSession(
           run.worktreeId!,
@@ -592,7 +658,7 @@ export class TaskService {
         const accepted = await this.dependencies.sendPrompt(
           run.worktreeId!,
           run.sessionId!,
-          buildContinueForReportPrompt(run),
+          buildContinueForReportPrompt(run, skillSnapshot),
         );
         if (!accepted.accepted)
           throw new TaskServiceError(
@@ -611,6 +677,7 @@ export class TaskService {
 
   async recover(): Promise<void> {
     this.#assertAvailable();
+    await this.dependencies.recoverArchives?.();
     for (const task of this.repository.listWorkspaceCleanupIntents()) {
       try {
         await this.#singleFlight(task.id, () =>
@@ -640,6 +707,7 @@ export class TaskService {
 
   async dispose(): Promise<void> {
     this.#disposed = true;
+    await Promise.allSettled([...this.#inFlight.values()]);
     await this.whenIdle();
   }
 
@@ -1017,10 +1085,11 @@ export class TaskService {
       if (this.#hasCancelIntent(run.id))
         return this.#cancelActiveRun(this.#requireRun(run.id));
       if (!alreadySent) {
+        const skillSnapshot = this.#taskSkillSnapshot(run.id, true)!;
         const accepted = await this.dependencies.sendPrompt(
           run.worktreeId!,
           run.sessionId!,
-          buildTaskPrompt(task, run, changeNote),
+          buildTaskPrompt(task, run, changeNote, skillSnapshot),
         );
         if (!accepted.accepted)
           throw new TaskServiceError(
@@ -1047,6 +1116,35 @@ export class TaskService {
       this.repository.appendEvent(task.id, run.id, "run.started");
     }
     return this.get(task.id);
+  }
+
+  #taskSkillSnapshot(
+    runId: string,
+    capture: boolean,
+  ): TaskSkillSnapshot | undefined {
+    const step = this.repository
+      .listRunSteps(runId)
+      .find((item) => item.step === TASK_SKILL_STEP);
+    if (step) {
+      try {
+        if (step.state !== "done")
+          throw new Error("Incomplete Task Skill snapshot");
+        return validateTaskSkillSnapshot(step.details);
+      } catch {
+        throw new TaskServiceError(
+          "TASK_FAILED",
+          "Task Skill snapshot is invalid; refusing to replace the Run's execution contract.",
+        );
+      }
+    }
+    if (!capture) return undefined;
+    this.repository.upsertRunStep(
+      runId,
+      TASK_SKILL_STEP,
+      "done",
+      TASK_SKILL_SNAPSHOT,
+    );
+    return TASK_SKILL_SNAPSHOT;
   }
 
   #integration(runId: string): TaskSessionIntegration {
@@ -1159,6 +1257,7 @@ export class TaskService {
         Date.now(),
       );
       this.repository.appendEvent(result.task.id, run.id, "run.reported");
+      await this.#retainRun(run.id);
       await this.#notify(result.task.id, run.id, "needs_review");
       this.#requestSchedule();
       return this.get(result.task.id);
@@ -1269,6 +1368,7 @@ export class TaskService {
       this.repository.upsertRunStep(run.id, "failure", "failed", {
         code: error.code,
       });
+      await this.#retainRun(run.id);
       this.repository.appendEvent(result.task.id, run.id, "run.failed", {
         code: error.code,
       });

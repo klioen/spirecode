@@ -23,6 +23,7 @@ import {
 
 const MAX_BUFFERED_EVENTS = 512;
 const MAX_PROMPT_BYTES = 64 * 1024;
+export const MAX_TASK_INPUT_BYTES = 1024 * 1024;
 
 export interface ChatSessionInternalOptions {
   customTools?: unknown[];
@@ -416,13 +417,24 @@ export class ChatService {
     );
   }
 
-  private async sendUnlocked(
+  sendTaskInput(
     worktreeId: string,
     sessionId: string,
     text: string,
   ): Promise<ChatAccepted> {
+    return this.runLifecycle(sessionId, () =>
+      this.sendUnlocked(worktreeId, sessionId, text, MAX_TASK_INPUT_BYTES),
+    );
+  }
+
+  private async sendUnlocked(
+    worktreeId: string,
+    sessionId: string,
+    text: string,
+    maximumBytes = MAX_PROMPT_BYTES,
+  ): Promise<ChatAccepted> {
     await this.root(worktreeId);
-    validateText(text);
+    validateText(text, maximumBytes);
     const nativeCommand = parseNativeCommand(text);
     if (nativeCommand?.kind === "invalid")
       throw new ChatError("CHAT_FAILED", nativeCommand.message);
@@ -954,11 +966,14 @@ function validateSessionTitle(title: string): string {
   return normalized;
 }
 
-function validateText(text: string): void {
+function validateText(text: string, maximumBytes = MAX_PROMPT_BYTES): void {
   if (!text.trim())
     throw new ChatError("CHAT_FAILED", "Chat message must not be empty");
-  if (Buffer.byteLength(text, "utf8") > MAX_PROMPT_BYTES) {
-    throw new ChatError("CHAT_FAILED", "Chat message exceeds 64 KiB");
+  if (Buffer.byteLength(text, "utf8") > maximumBytes) {
+    throw new ChatError(
+      "CHAT_FAILED",
+      `Chat message exceeds ${maximumBytes / 1024} KiB`,
+    );
   }
 }
 

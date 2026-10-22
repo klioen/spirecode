@@ -12,6 +12,9 @@ interface ProjectsState {
   projects: ProjectSummary[];
   activeWorktreeId: string | null;
   loading: boolean;
+  refreshing: boolean;
+  refreshError: CommandError | null;
+  catalogRevision: number;
   creatingProjectId: string | null;
   error: CommandError | null;
   setLoading: (loading: boolean) => void;
@@ -20,6 +23,7 @@ interface ProjectsState {
   setProjects: (projects: ProjectSummary[]) => void;
   hydrateCatalog: (catalog: ProjectCatalog) => void;
   setCatalog: (catalog: ProjectCatalog) => void;
+  reconcileCatalog: (catalog: ProjectCatalog) => void;
   addProject: (project: ProjectSummary) => void;
   removeProject: (projectId: string) => void;
   selectWorktree: (worktreeId: string | null) => void;
@@ -42,6 +46,9 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
   projects: [],
   activeWorktreeId: null,
   loading: false,
+  refreshing: false,
+  refreshError: null,
+  catalogRevision: 0,
   creatingProjectId: null,
   error: null,
   setLoading: (loading) => set({ loading }),
@@ -75,6 +82,29 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
         containsWorktree(catalog.projects, catalog.activeWorktreeId)
           ? catalog.activeWorktreeId
           : firstWorktreeId(catalog.projects),
+    }),
+  reconcileCatalog: (catalog) =>
+    set((state) => {
+      const owner = state.projects.find((project) =>
+        project.worktrees.some(({ id }) => id === state.activeWorktreeId),
+      );
+      const ownerMain = catalog.projects
+        .find(({ id }) => id === owner?.id)
+        ?.worktrees.find(({ kind }) => kind === "main")?.id;
+      return {
+        groups: catalog.groups,
+        projects: catalog.projects,
+        activeWorktreeId:
+          state.activeWorktreeId &&
+          containsWorktree(catalog.projects, state.activeWorktreeId)
+            ? state.activeWorktreeId
+            : (ownerMain ??
+              (catalog.activeWorktreeId &&
+              containsWorktree(catalog.projects, catalog.activeWorktreeId)
+                ? catalog.activeWorktreeId
+                : firstWorktreeId(catalog.projects))),
+        catalogRevision: state.catalogRevision + 1,
+      };
     }),
   addProject: (project) =>
     set((state) => ({

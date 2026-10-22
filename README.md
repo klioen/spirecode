@@ -90,6 +90,8 @@ SpireCode embeds the pi Agent SDK and its basic coding tools, but it does not bu
 
 Install any additional resource through Pi's standard package/resource mechanism, then explicitly declare it in `~/.pi/agent/settings.json` or `~/.spirecode/settings.json`. SpireCode loads the user-configured packages, extensions, skills, prompts, and themes that the pi SDK resolves. The Extensions settings page reflects configured user resources; it is not a catalog of SpireCode-built-in extensions. Resource changes apply to new Agent sessions.
 
+The [Task Skill](skills/task/README.md) is embedded as Main-owned text and automatically injected into each TaskRun's initial input, together with its report guide. It defines evidence-backed work from the assignment's goal and action boundary, without fixed Task categories. It is not registered as a global Skill or injected into ordinary Chat or Task wording optimization. The execution instructions are not a read-only security sandbox.
+
 Treat every installed package or extension as executable code. It runs with the permissions of your current operating-system user and may read or change files, execute commands, start subprocesses, or access network services. A worktree is context, not an OS security sandbox. Review a resource's source, license, and capabilities before installing or enabling it. Removing the former bundled set is a breaking change for existing development users; configure replacements through Pi if you relied on those tools.
 
 ## Local data

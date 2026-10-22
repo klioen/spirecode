@@ -485,6 +485,65 @@ describe("IPC command argument validation", () => {
   });
 });
 
+describe("Task archive IPC boundary", () => {
+  const taskId = "10000000-0000-4000-8000-000000000001";
+  const runId = "20000000-0000-4000-8000-000000000001";
+  it("accepts typed ID-only archive reads and explicit relative artifact selections", () => {
+    expect(
+      validateCommandArgs("task_archive_read", { taskId, runId, limit: 20 }),
+    ).toEqual({ taskId, runId, limit: 20 });
+    expect(
+      validateCommandArgs("task_archive", {
+        taskId,
+        expectedRevision: 1,
+        artifacts: [{ runId, relativePath: "reports/test.log" }],
+      }),
+    ).toMatchObject({ taskId });
+    expect(
+      validateCommandArgs("task_archive_reveal", { taskId, runId }),
+    ).toEqual({ taskId, runId });
+  });
+  it("rejects paths, capabilities, unbounded pages and malformed optional fields", () => {
+    for (const relativePath of [
+      "../outside",
+      "/tmp/file",
+      "C:\\file",
+      "a/../b",
+      ".git/config",
+      "a\\b",
+    ])
+      expect(() =>
+        validateCommandArgs("task_archive", {
+          taskId,
+          expectedRevision: 1,
+          artifacts: [{ runId, relativePath }],
+        }),
+      ).toThrow();
+    for (const args of [
+      { taskId, runId, limit: "20" },
+      { taskId, runId, limit: 21 },
+      { taskId, runId, limit: 20, cursor: null },
+      { taskId, runId, limit: 20, path: "/tmp/session" },
+      { taskId, runId, limit: 20, force: true },
+    ])
+      expect(() => validateCommandArgs("task_archive_read", args)).toThrow();
+    expect(() =>
+      validateCommandArgs("task_archive", {
+        taskId,
+        expectedRevision: 1,
+        artifacts: [{ runId, relativePath: "a", cwd: "/tmp" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      validateCommandArgs("task_archive_reveal", {
+        taskId,
+        runId,
+        relativePath: null,
+      }),
+    ).toThrow();
+  });
+});
+
 describe("Task IPC validation", () => {
   const createInput = {
     title: "Fix scrolling",

@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openTaskDatabase, type TaskDatabase } from "./database.js";
 import { TaskRepository } from "./repository.js";
 import {
+  TASK_SKILL_SNAPSHOT,
+  TASK_SKILL_STEP,
+  createTaskSkillSnapshot,
+} from "./taskSkill.js";
+import {
   TaskService,
   type TaskServiceDependencies,
   type TaskSessionBinding,
@@ -25,6 +30,7 @@ const existingWorktreeId = "90000000-0000-4000-8000-000000000002";
 const managedWorktreeId = "90000000-0000-4000-8000-000000000003";
 const directories: string[] = [];
 let database: TaskDatabase;
+let databasePath: string;
 let repository: TaskRepository;
 let dependencies: TaskServiceDependencies;
 let sessionBinding: TaskSessionBinding;
@@ -36,7 +42,8 @@ let reportResult: TaskSessionIntegration["reportResult"] | undefined;
 beforeEach(() => {
   const directory = mkdtempSync(join(tmpdir(), "spire-task-service-"));
   directories.push(directory);
-  database = openTaskDatabase(join(directory, "tasks.sqlite3"), {
+  databasePath = join(directory, "tasks.sqlite3");
+  database = openTaskDatabase(databasePath, {
     now: () => 1_700_000_000_000,
   });
   repository = new TaskRepository(database.connection, {
@@ -92,6 +99,7 @@ beforeEach(() => {
     deleteWorktree: vi.fn(async () => undefined),
     notify: vi.fn(async () => undefined),
     onChanged: vi.fn(),
+    archiveTask: vi.fn(async () => undefined),
   };
   service = new TaskService(repository, dependencies, {
     randomUUID: () => {
@@ -141,6 +149,34 @@ async function runTask(detail: Awaited<ReturnType<TaskService["get"]>>) {
   return service.get(detail.task.id);
 }
 
+async function stagePromptingRun() {
+  const manual = await service.create(createInput(false));
+  const created = repository.createRun(manual.task.id, manual.task.revision, {
+    id: ids[6],
+    projectId,
+    promptMarker: `spire-task-run:${ids[6]}`,
+    ownsManagedWorktree: true,
+    worktreeName: "task-staged-run",
+    baseRef: "origin/main",
+    worktreeId: managedWorktreeId,
+    sessionId: sessionBinding.sessionId,
+    sessionPath: sessionBinding.sessionPath,
+  });
+  const provisioning = repository.transitionRun(
+    created.run.id,
+    created.run.revision,
+    "provisioning",
+    { sagaPhase: "workspace_ready" },
+  ).run;
+  const prompting = repository.transitionRun(
+    provisioning.id,
+    provisioning.revision,
+    "prompting",
+    { sagaPhase: "session_ready" },
+  ).run;
+  return { task: manual.task, run: prompting };
+}
+
 describe("TaskService", () => {
   it("returns a durable queued task before provisioning and dispatches it in the background", async () => {
     const detail = await service.create(createInput(true));
@@ -158,6 +194,213 @@ describe("TaskService", () => {
 
     expect((await service.get(detail.task.id)).task.status).toBe("running");
     expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists the Skill before sending a Run's input and preserves user metadata", async () => {
+    const input = {
+      ...createInput(true),
+      title: "Review a PR",
+      description:
+        "Review the supplied PR URL, deliver a report and do not modify code.",
+    };
+    vi.mocked(dependencies.sendPrompt).mockImplementation(
+      async (_worktreeId, _sessionId, prompt) => {
+        const run = repository.listActiveRuns()[0];
+        expect(repository.listRunSteps(run.id)).toContainEqual(
+          expect.objectContaining({
+            step: TASK_SKILL_STEP,
+            state: "done",
+            details: TASK_SKILL_SNAPSHOT,
+          }),
+        );
+        expect(prompt).toContain(TASK_SKILL_SNAPSHOT.instructions);
+        expect(prompt).toContain(TASK_SKILL_SNAPSHOT.reportGuide);
+        expect(prompt).toContain(
+          JSON.stringify({
+            title: input.title,
+            description: input.description,
+          }),
+        );
+        return { accepted: true };
+      },
+    );
+    const result = await createRunningTask(input);
+    expect(result.task).toMatchObject({
+      title: input.title,
+      description: input.description,
+    });
+    expect(result.runs[0].status).toBe("running");
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives each retry and shared-session change request its own bound Skill input", async () => {
+    const first = await createRunningTask(createInput(true));
+    const firstRun = first.runs[0];
+    const cancelled = await service.cancel(first.task.id, first.task.revision);
+    const retry = await runTask(cancelled);
+    const retryRun = retry.runs[0];
+    await reportResult!({
+      runId: retryRun.id,
+      outcome: "success",
+      summary: "Done",
+      tests: [],
+    });
+    await settleAgent();
+    const review = await service.get(retry.task.id);
+    await service.requestChanges(
+      review.task.id,
+      review.task.revision,
+      "Produce more evidence, no unrelated edits.",
+    );
+    await service.whenIdle();
+    const changed = await service.get(review.task.id);
+    const changedRun = changed.runs[0];
+    expect(changedRun.sessionId).toBe(retryRun.sessionId);
+    for (const run of [firstRun, retryRun, changedRun]) {
+      expect(repository.listRunSteps(run.id)).toContainEqual(
+        expect.objectContaining({
+          step: TASK_SKILL_STEP,
+          details: TASK_SKILL_SNAPSHOT,
+        }),
+      );
+    }
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(3);
+    const prompts = vi
+      .mocked(dependencies.sendPrompt)
+      .mock.calls.map((call) => call[2]);
+    for (const [index, run] of [firstRun, retryRun, changedRun].entries()) {
+      expect(prompts[index]).toContain(`runId: ${run.id}`);
+      expect(prompts[index].split("Task Skill instructions:")).toHaveLength(2);
+    }
+    expect(prompts[2]).toContain(
+      '"requestedChanges":"Produce more evidence, no unrelated edits."',
+    );
+  });
+
+  it("recovers the pre-send historical Skill snapshot after reopening the database", async () => {
+    const staged = await stagePromptingRun();
+    const old = createTaskSkillSnapshot(
+      "0.9.0",
+      "Historical Run instructions",
+      "Historical report format",
+    );
+    repository.upsertRunStep(staged.run.id, TASK_SKILL_STEP, "done", old);
+    await service.dispose();
+    database.close();
+    database = openTaskDatabase(databasePath);
+    repository = new TaskRepository(database.connection);
+    service = new TaskService(repository, dependencies);
+    await service.recover();
+    await service.whenIdle();
+    const prompt = vi.mocked(dependencies.sendPrompt).mock.calls[0]?.[2];
+    expect(prompt).toContain(old.instructions);
+    expect(prompt).toContain(old.reportGuide);
+    expect(prompt).toContain(old.sha256);
+    expect(prompt).not.toContain(TASK_SKILL_SNAPSHOT.instructions);
+    expect(
+      repository
+        .listRunSteps(staged.run.id)
+        .find((step) => step.step === TASK_SKILL_STEP)?.details,
+    ).toEqual(old);
+    expect((await service.get(staged.task.id)).runs[0].status).toBe("running");
+  });
+
+  it("does not duplicate accepted input or claim a current Skill for legacy Run recovery", async () => {
+    const staged = await stagePromptingRun();
+    vi.mocked(dependencies.sessionHasPrompt).mockResolvedValue(true);
+    await service.recover();
+    await service.whenIdle();
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+    expect(
+      repository
+        .listRunSteps(staged.run.id)
+        .find((step) => step.step === TASK_SKILL_STEP),
+    ).toBeUndefined();
+    vi.mocked(dependencies.sessionStatus).mockResolvedValue("idle");
+    await service.recover();
+    const awaiting = await service.get(staged.task.id);
+    expect(awaiting.runs[0].status).toBe("awaiting_report");
+    await service.continueForReport(awaiting.task.id, awaiting.task.revision);
+    const prompt = vi.mocked(dependencies.sendPrompt).mock.lastCall?.[2];
+    expect(prompt).toContain("legacy Run has no Task Skill snapshot");
+    expect(prompt).not.toContain(TASK_SKILL_SNAPSHOT.instructions);
+    expect(
+      repository
+        .listRunSteps(staged.run.id)
+        .find((step) => step.step === TASK_SKILL_STEP),
+    ).toBeUndefined();
+  });
+
+  it("continues for a report with only the pinned version reference, not a repeated Skill body", async () => {
+    const staged = await stagePromptingRun();
+    const old = createTaskSkillSnapshot(
+      "0.9.0",
+      "Old instructions",
+      "Old guide",
+    );
+    repository.upsertRunStep(staged.run.id, TASK_SKILL_STEP, "done", old);
+    await service.recover();
+    await service.whenIdle();
+    await settleAgent();
+    const awaiting = await service.get(staged.task.id);
+    await service.continueForReport(awaiting.task.id, awaiting.task.revision);
+    const prompt = vi.mocked(dependencies.sendPrompt).mock.lastCall?.[2];
+    expect(prompt).toContain(old.version);
+    expect(prompt).toContain(old.sha256);
+    expect(prompt).not.toContain(old.instructions);
+    expect(prompt).not.toContain(old.reportGuide);
+    expect(prompt).not.toContain(TASK_SKILL_SNAPSHOT.instructions);
+    expect(prompt).toContain("Do not implement new fixes");
+  });
+
+  it("fails closed on a corrupted persisted Skill without sending replacement input", async () => {
+    const staged = await stagePromptingRun();
+    repository.upsertRunStep(staged.run.id, TASK_SKILL_STEP, "done", {
+      ...TASK_SKILL_SNAPSHOT,
+      instructions: "Changed without updating digest",
+    });
+    await service.recover();
+    await service.whenIdle();
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+    expect((await service.get(staged.task.id)).runs[0]).toMatchObject({
+      status: "failed",
+      error: {
+        message: expect.stringContaining("Task Skill snapshot is invalid"),
+      },
+    });
+  });
+
+  it("does not replace an incomplete Skill snapshot with the current bundle", async () => {
+    const staged = await stagePromptingRun();
+    repository.upsertRunStep(
+      staged.run.id,
+      TASK_SKILL_STEP,
+      "intent",
+      TASK_SKILL_SNAPSHOT,
+    );
+    await service.recover();
+    await service.whenIdle();
+    expect(dependencies.sendPrompt).not.toHaveBeenCalled();
+    expect(
+      repository
+        .listRunSteps(staged.run.id)
+        .find((step) => step.step === TASK_SKILL_STEP)?.state,
+    ).toBe("intent");
+    expect((await service.get(staged.task.id)).runs[0].status).toBe("failed");
+  });
+
+  it("rejects corrupt report-continuation snapshots before attaching the session", async () => {
+    const started = await createRunningTask(createInput(true));
+    await settleAgent();
+    const awaiting = await service.get(started.task.id);
+    repository.upsertRunStep(started.runs[0].id, TASK_SKILL_STEP, "done", {});
+    vi.mocked(dependencies.attachSession).mockClear();
+    const count = vi.mocked(dependencies.sendPrompt).mock.calls.length;
+    await expect(
+      service.continueForReport(awaiting.task.id, awaiting.task.revision),
+    ).rejects.toMatchObject({ code: "TASK_FAILED" });
+    expect(dependencies.attachSession).not.toHaveBeenCalled();
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(count);
   });
 
   it("records background provisioning failures without failing task creation", async () => {
@@ -749,6 +992,62 @@ describe("TaskService", () => {
       workspaceCleanupStatus: "removed",
       workspaceCleanedAt: 1_700_000_000_000,
     });
+  });
+
+  it("blocks cleanup when durable history cannot be archived and retains reports", async () => {
+    const started = await createRunningTask(createInput(true));
+    await reportResult!({
+      runId: started.runs[0]!.id,
+      outcome: "success",
+      summary: "Retained",
+      tests: [],
+    });
+    await settleAgent();
+    let detail = await service.get(started.task.id);
+    detail = await service.complete(detail.task.id, detail.task.revision);
+    vi.mocked(dependencies.archiveTask).mockRejectedValueOnce(
+      new Error("disk unavailable"),
+    );
+    const blocked = await service.cleanupWorkspace(
+      detail.task.id,
+      detail.task.revision,
+    );
+    expect(blocked.task.workspaceCleanupErrorCode).toBe("TASK_ARCHIVE_FAILED");
+    expect(blocked.runs[0]?.report?.summary).toBe("Retained");
+    expect(dependencies.deleteWorktree).not.toHaveBeenCalled();
+    const cleaned = await service.cleanupWorkspace(
+      blocked.task.id,
+      blocked.task.revision,
+    );
+    expect(cleaned.task.workspaceCleanupStatus).toBe("removed");
+  });
+  it("waits for an in-flight archive before disposing domain storage", async () => {
+    const started = await createRunningTask(createInput(true));
+    await reportResult!({
+      runId: started.runs[0]!.id,
+      outcome: "success",
+      summary: "Done",
+      tests: [],
+    });
+    await settleAgent();
+    const detail = await service.get(started.task.id);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(dependencies.archiveTask).mockReturnValueOnce(pending);
+    const completing = service.complete(detail.task.id, detail.task.revision);
+    await vi.waitFor(() => expect(dependencies.archiveTask).toHaveBeenCalled());
+    let stopped = false;
+    const stopping = service.dispose().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    release();
+    await completing;
+    await stopping;
+    expect(stopped).toBe(true);
   });
 
   it("retains an owned workspace referenced by another Task's history", async () => {

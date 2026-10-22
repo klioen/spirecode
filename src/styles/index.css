@@ -428,6 +428,28 @@ body.panel-resizing-vertical * {
 .project-add:disabled {
   opacity: 0.5;
 }
+.project-refresh-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--danger);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.project-refresh-error span {
+  min-width: 0;
+  flex: 1;
+}
+.project-refresh-error button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 3px 6px;
+  background: var(--control-hover);
+  color: var(--text-default);
+  cursor: pointer;
+}
 .project-list {
   display: flex;
   min-height: 0;
@@ -5054,4 +5076,21 @@ details[open] > summary > .chat-disclosure-icon {
   to {
     transform: rotate(360deg);
   }
+}
+
+.task-archive-entries {
+  padding-left: 20px;
+}
+.task-archive-entries li {
+  margin: 12px 0;
+}
+.task-archive-entries pre {
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.task-archive-view > p {
+  color: var(--text-muted);
 }

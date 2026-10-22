@@ -716,6 +716,44 @@ describe("ChatService", () => {
     ).rejects.toMatchObject({ code: "CHAT_SESSION_BUSY" });
   });
 
+  it("does not inject Task Skill instructions into ordinary Chat messages", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+    const text = "Review the provided PR and give me a report.";
+    await service.send("w1", "s1", text);
+    expect(session.calls.filter(([operation]) => operation === "send")).toEqual(
+      [["send", text]],
+    );
+    await service.disposeAll();
+  });
+
+  it("allows bounded Main Task inputs without widening ordinary Chat or ownership checks", async () => {
+    const { root, records, adapter } = await fixture();
+    const service = new ChatService(() => root, { adapter });
+    await service.create("w1");
+    const session = records.get("s1")?.session as FakeSession;
+    const text = "x".repeat(64 * 1024 + 1);
+    await expect(service.send("w1", "s1", text)).rejects.toMatchObject({
+      code: "CHAT_FAILED",
+      message: "Chat message exceeds 64 KiB",
+    });
+    await expect(
+      service.sendTaskInput("other", "s1", text),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_NOT_FOUND" });
+    await expect(
+      service.sendTaskInput("w1", "s1", "x".repeat(1024 * 1024 + 1)),
+    ).rejects.toMatchObject({ code: "CHAT_FAILED" });
+    await expect(service.sendTaskInput("w1", "s1", text)).resolves.toEqual({
+      accepted: true,
+    });
+    expect(session.calls.filter(([operation]) => operation === "send")).toEqual(
+      [["send", text]],
+    );
+    await service.disposeAll();
+  });
+
   it("handles native slash controls without adding them to the transcript", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(() => root, { adapter });

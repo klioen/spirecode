@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorktreeSummary } from "../../bindings";
+import type { ProjectCatalog, WorktreeSummary } from "../../bindings";
 import { hostChatApi } from "../chat/hostChatApi";
 import { chatRuntime } from "../chat/chatRuntime";
 import { chatResourceId, useEditorStore } from "../editor/editorStore";
@@ -15,6 +15,7 @@ vi.mock("../chat/hostChatApi", () => ({
 
 vi.mock("./projectsApi", () => ({
   projectsApi: {
+    catalog: vi.fn(),
     openDialog: vi.fn(),
     selectWorktree: vi.fn().mockResolvedValue(undefined),
     reveal: vi.fn().mockResolvedValue(undefined),
@@ -97,6 +98,9 @@ beforeEach(() => {
     ],
     activeWorktreeId: "main",
     loading: false,
+    refreshing: false,
+    refreshError: null,
+    catalogRevision: 0,
     creatingProjectId: null,
     error: null,
   });
@@ -113,6 +117,88 @@ describe("ProjectRail", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(tasks.closest("[data-project-drag-handle]")).toBeNull();
+  });
+
+  it("refreshes Projects from its header, keeps expansion and removes a cleaned worktree", async () => {
+    const pending = deferred<ProjectCatalog>();
+    vi.mocked(projectsApi.catalog).mockReturnValueOnce(pending.promise);
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    expect(screen.getByRole("button", { name: "feature" })).toBeInTheDocument();
+    const refresh = screen.getByRole("button", { name: "Refresh projects" });
+    expect(refresh.closest(".project-rail-heading")).toBeTruthy();
+    fireEvent.click(refresh);
+    expect(refresh).toBeDisabled();
+    expect(refresh).toHaveAttribute("aria-busy", "true");
+    const project = useProjectsStore.getState().projects[0];
+    pending.resolve({
+      version: 5,
+      groups: [],
+      projects: [{ ...project, worktrees: [project.worktrees[0]] }],
+      projectOrder: [project.id],
+      activeWorktreeId: "main",
+    });
+    await vi.waitFor(() => expect(refresh).toBeEnabled());
+    expect(
+      screen.queryByRole("button", { name: "feature" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "main" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collapse spirecode-client" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows refresh failure with a retry without discarding Projects", async () => {
+    vi.mocked(projectsApi.catalog).mockRejectedValueOnce(new Error("offline"));
+    render(<ProjectRail />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+    expect(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    ).toBeInTheDocument();
+    const project = useProjectsStore.getState().projects[0];
+    vi.mocked(projectsApi.catalog).mockResolvedValueOnce({
+      version: 5,
+      groups: [],
+      projects: [project],
+      projectOrder: [project.id],
+      activeWorktreeId: "main",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("refreshes expanded session lists instead of retaining unavailable errors", async () => {
+    vi.mocked(hostChatApi.list)
+      .mockRejectedValueOnce(new Error("Chat worktree is unavailable"))
+      .mockResolvedValueOnce([]);
+    const project = useProjectsStore.getState().projects[0];
+    vi.mocked(projectsApi.catalog).mockResolvedValueOnce({
+      version: 5,
+      groups: [],
+      projects: [project],
+      projectOrder: [project.id],
+      activeWorktreeId: "main",
+    });
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Pi sessions for feature" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Chat worktree is unavailable",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+    await vi.waitFor(() => expect(hostChatApi.list).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+    );
   });
 
   it("opens an existing folder", async () => {

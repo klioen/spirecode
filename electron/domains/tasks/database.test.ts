@@ -25,7 +25,14 @@ afterEach(() => {
   }
 });
 
+function removeV5Schema(connection: DatabaseSync): void {
+  connection.exec(
+    `DROP TABLE task_artifact_archives; DROP TABLE task_run_retention; DROP TABLE task_session_archives; DROP TABLE task_archive_states; DELETE FROM schema_migrations WHERE version=5;`,
+  );
+}
+
 function removeV4Schema(connection: DatabaseSync): void {
+  removeV5Schema(connection);
   connection.exec(`
     DELETE FROM schema_migrations WHERE version = 4;
     ALTER TABLE tasks DROP COLUMN workspace_cleanup_error_code;
@@ -74,6 +81,7 @@ describe("task database", () => {
       { version: 2, name: "migration-v2" },
       { version: 3, name: "migration-v3" },
       { version: 4, name: "migration-v4" },
+      { version: 5, name: "migration-v5" },
     ]);
     expect(
       database.connection
@@ -91,12 +99,12 @@ describe("task database", () => {
     first.close();
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(4);
+    expect(reopened.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(
       reopened.connection
         .prepare("SELECT count(*) AS count FROM schema_migrations")
         .get(),
-    ).toEqual({ count: 4 });
+    ).toEqual({ count: 5 });
     reopened.close();
   });
 
@@ -112,11 +120,53 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(existsSync(`${path}.pre-v2.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v4.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-v5.bak`)).toBe(true);
     migrated.close();
+  });
+
+  it("migrates a v4 database with an empty additive archive index and a recovery backup", () => {
+    const path = temporaryDatabasePath();
+    const old = openTaskDatabase(path);
+    removeV5Schema(old.connection);
+    old.close();
+    const upgraded = openTaskDatabase(path);
+    expect(upgraded.schemaVersion).toBe(5);
+    expect(existsSync(`${path}.pre-v5.bak`)).toBe(true);
+    expect(
+      upgraded.connection
+        .prepare("SELECT count(*) AS count FROM task_session_archives")
+        .get(),
+    ).toEqual({ count: 0 });
+    upgraded.close();
+  });
+
+  it("rolls back failed v5 archive migration without changing the v4 history", () => {
+    const path = temporaryDatabasePath();
+    const old = openTaskDatabase(path);
+    removeV5Schema(old.connection);
+    old.connection.exec("CREATE TABLE task_archive_states(value TEXT)");
+    old.close();
+    expect(() => openTaskDatabase(path)).toThrowError(
+      expect.objectContaining({ code: "TASK_MIGRATION_FAILED" }),
+    );
+    const verify = new DatabaseSync(path, { readOnly: true });
+    expect(
+      verify
+        .prepare("SELECT max(version) AS version FROM schema_migrations")
+        .get(),
+    ).toEqual({ version: 4 });
+    expect(
+      verify
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE name='task_session_archives'",
+        )
+        .get(),
+    ).toBeUndefined();
+    expect(existsSync(`${path}.pre-v5.bak`)).toBe(true);
+    verify.close();
   });
 
   it("rolls back a failed migration and retains its backup", () => {
@@ -172,7 +222,7 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     expect(
       migrated.connection
