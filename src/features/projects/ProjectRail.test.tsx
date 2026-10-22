@@ -41,6 +41,11 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  localStorage.setItem(
+    "spirecode.projects.expanded-groups.v1",
+    JSON.stringify(["__ungrouped__"]),
+  );
   vi.clearAllMocks();
   chatRuntime.remove("active-main");
   chatRuntime.remove("active-feature");
@@ -490,7 +495,7 @@ describe("ProjectRail", () => {
     expect(screen.getByText("spirecode-client")).toBeInTheDocument();
   });
 
-  it("groups projects, collapses groups, and keeps ungrouped projects visible", () => {
+  it("defaults groups to collapsed and restores expansion across mounts", () => {
     const grouped = useProjectsStore.getState().projects[0]!;
     useProjectsStore.setState({
       groups: [{ id: "group-1", name: "Client" }],
@@ -510,22 +515,40 @@ describe("ProjectRail", () => {
       ],
     });
 
-    render(<ProjectRail />);
+    localStorage.clear();
+    const firstMount = render(<ProjectRail />);
 
     expect(
-      screen.getByRole("button", { name: "Collapse group Client" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Expand group Client" }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(
-      screen.getByRole("button", { name: "Collapse group Ungrouped" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Expand group Ungrouped" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("spirecode-client")).not.toBeInTheDocument();
+    expect(screen.queryByText("playground")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand group Client" }),
+    );
     expect(screen.getByText("spirecode-client")).toBeInTheDocument();
-    expect(screen.getByText("playground")).toBeInTheDocument();
+    expect(screen.queryByText("playground")).not.toBeInTheDocument();
+
+    firstMount.unmount();
+    const secondMount = render(<ProjectRail />);
+    expect(
+      screen.getByRole("button", { name: "Collapse group Client" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("spirecode-client")).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Collapse group Client" }),
     );
+    secondMount.unmount();
+    render(<ProjectRail />);
+    expect(
+      screen.getByRole("button", { name: "Expand group Client" }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("spirecode-client")).not.toBeInTheDocument();
-    expect(screen.getByText("playground")).toBeInTheDocument();
   });
 
   it("moves a project to a group using the authoritative returned catalog", async () => {
@@ -539,6 +562,9 @@ describe("ProjectRail", () => {
       activeWorktreeId: "main",
     });
     render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand group Client" }),
+    );
 
     const manage = screen.getByRole("button", {
       name: "Manage spirecode-client",

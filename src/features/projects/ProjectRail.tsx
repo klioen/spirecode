@@ -61,6 +61,10 @@ import {
 } from "./ProjectGroupDialog";
 import { useProjectsStore } from "./projectsStore";
 import {
+  loadExpandedProjectGroupIds,
+  persistExpandedProjectGroupIds,
+} from "./projectGroupViewState";
+import {
   DeleteWorktreeDialog,
   NewWorktreeDialog,
   RenameWorktreeDialog,
@@ -200,8 +204,8 @@ export function ProjectRail({
   const [expandedSessionWorktreeIds, setExpandedSessionWorktreeIds] = useState<
     Set<string>
   >(() => new Set());
-  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-    () => new Set(),
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(
+    loadExpandedProjectGroupIds,
   );
 
   useEffect(
@@ -270,10 +274,11 @@ export function ProjectRail({
     closeMenus();
   };
   const toggleGroup = (groupId: string) => {
-    setCollapsedGroupIds((current) => {
+    setExpandedGroupIds((current) => {
       const next = new Set(current);
       if (next.has(groupId)) next.delete(groupId);
       else next.add(groupId);
+      persistExpandedProjectGroupIds(next);
       return next;
     });
     closeMenus();
@@ -813,7 +818,7 @@ export function ProjectRail({
       >
         <div className="project-list">
           {sections.map((section) => {
-            const expanded = !collapsedGroupIds.has(section.id);
+            const expanded = expandedGroupIds.has(section.id);
             const sessionActive = section.projects.some((project) =>
               project.worktrees.some(({ id }) => activeChatWorktrees.has(id)),
             );
