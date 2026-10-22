@@ -95,6 +95,44 @@ describe("TaskDetail", () => {
     expect(onChange).toHaveBeenCalled();
   });
 
+  it("cleans a completed managed workspace and hides stale session navigation after removal", async () => {
+    const api = createTasksApiMock();
+    const completed = taskDetail({
+      status: "completed",
+      resolvedWorktreeId: "worktree-1",
+      ownsManagedWorktree: true,
+      runs: awaitingTask.runs,
+    });
+    const { rerender } = render(
+      <TaskDetail
+        api={api}
+        task={completed}
+        onChange={vi.fn()}
+        onOpenSession={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clean up workspace" }));
+    await waitFor(() =>
+      expect(api.cleanupWorkspace).toHaveBeenCalledWith("task-1", 1),
+    );
+
+    rerender(
+      <TaskDetail
+        api={api}
+        task={{ ...completed, workspaceCleanupStatus: "removed" }}
+        onChange={vi.fn()}
+        onOpenSession={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("The managed workspace has been removed."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open session" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("requires a note before requesting another attempt", async () => {
     const api = createTasksApiMock();
     render(<TaskDetail api={api} task={reviewTask} onChange={vi.fn()} />);

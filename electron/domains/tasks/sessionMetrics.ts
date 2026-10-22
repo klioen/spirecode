@@ -13,16 +13,38 @@ function nonNegativeNumber(value: unknown): number | null {
     : null;
 }
 
-export function parseSessionTokenCount(contents: string): number {
+export interface SessionTokenWindow {
+  startedAt: number;
+  endedAt: number;
+}
+
+export function parseSessionTokenCount(
+  contents: string,
+  window?: SessionTokenWindow,
+): number {
   let tokenCount = 0;
   for (const line of contents.split("\n")) {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line) as {
         type?: unknown;
+        timestamp?: unknown;
         usage?: Record<string, unknown>;
         message?: { role?: unknown; usage?: Record<string, unknown> };
       };
+      if (window) {
+        const timestamp =
+          typeof entry.timestamp === "string"
+            ? Date.parse(entry.timestamp)
+            : nonNegativeNumber(entry.timestamp);
+        if (
+          timestamp === null ||
+          !Number.isFinite(timestamp) ||
+          timestamp < window.startedAt ||
+          timestamp >= window.endedAt
+        )
+          continue;
+      }
       const usage =
         entry.type === "message" && entry.message?.role === "assistant"
           ? entry.message.usage
@@ -59,12 +81,18 @@ export function taskRunDurationMs(run: TaskRun, now = Date.now()): number {
 export class TaskSessionMetricsReader {
   readonly #cache = new Map<string, CachedTokenCount>();
 
-  async tokenCount(sessionPath: string | null): Promise<number> {
+  async tokenCount(
+    sessionPath: string | null,
+    window?: SessionTokenWindow,
+  ): Promise<number> {
     if (!sessionPath) return 0;
     try {
       const metadata = await stat(sessionPath);
       if (!metadata.isFile()) return 0;
-      const cached = this.#cache.get(sessionPath);
+      const cacheKey = window
+        ? `${sessionPath}:${window.startedAt}:${window.endedAt}`
+        : sessionPath;
+      const cached = this.#cache.get(cacheKey);
       if (
         cached?.size === metadata.size &&
         cached.modifiedAt === metadata.mtimeMs
@@ -72,8 +100,9 @@ export class TaskSessionMetricsReader {
         return cached.tokenCount;
       const tokenCount = parseSessionTokenCount(
         await readFile(sessionPath, "utf8"),
+        window,
       );
-      this.#cache.set(sessionPath, {
+      this.#cache.set(cacheKey, {
         size: metadata.size,
         modifiedAt: metadata.mtimeMs,
         tokenCount,

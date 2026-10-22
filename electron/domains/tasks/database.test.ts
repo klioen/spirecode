@@ -25,6 +25,17 @@ afterEach(() => {
   }
 });
 
+function removeV4Schema(connection: DatabaseSync): void {
+  connection.exec(`
+    DELETE FROM schema_migrations WHERE version = 4;
+    ALTER TABLE tasks DROP COLUMN workspace_cleanup_error_code;
+    ALTER TABLE tasks DROP COLUMN workspace_cleaned_at;
+    ALTER TABLE tasks DROP COLUMN workspace_cleanup_status;
+    ALTER TABLE tasks DROP COLUMN owns_managed_worktree;
+    ALTER TABLE tasks DROP COLUMN resolved_worktree_id;
+  `);
+}
+
 describe("task database", () => {
   it("creates the current schema atomically with the required pragmas and STRICT tables", () => {
     const path = temporaryDatabasePath();
@@ -62,6 +73,7 @@ describe("task database", () => {
       { version: 1, name: "initial" },
       { version: 2, name: "migration-v2" },
       { version: 3, name: "migration-v3" },
+      { version: 4, name: "migration-v4" },
     ]);
     expect(
       database.connection
@@ -79,18 +91,19 @@ describe("task database", () => {
     first.close();
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(3);
+    expect(reopened.schemaVersion).toBe(4);
     expect(
       reopened.connection
         .prepare("SELECT count(*) AS count FROM schema_migrations")
         .get(),
-    ).toEqual({ count: 3 });
+    ).toEqual({ count: 4 });
     reopened.close();
   });
 
   it("migrates v1 to the current schema and removes legacy-data backups", () => {
     const path = temporaryDatabasePath();
     const first = openTaskDatabase(path);
+    removeV4Schema(first.connection);
     first.connection.exec(
       "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
     );
@@ -99,15 +112,17 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(existsSync(`${path}.pre-v2.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v4.bak`)).toBe(true);
     migrated.close();
   });
 
   it("rolls back a failed migration and retains its backup", () => {
     const path = temporaryDatabasePath();
     const first = openTaskDatabase(path);
+    removeV4Schema(first.connection);
     first.connection.exec(
       "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
     );
@@ -134,6 +149,7 @@ describe("task database", () => {
   it("deletes v2 criteria schema, report data, and the legacy-data backup", () => {
     const path = temporaryDatabasePath();
     const first = openTaskDatabase(path);
+    removeV4Schema(first.connection);
     first.connection.exec(
       "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
     );
@@ -156,13 +172,24 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     expect(
       migrated.connection
         .prepare("SELECT name FROM pragma_table_info('tasks')")
         .all(),
     ).not.toContainEqual({ name: "acceptance_criteria_json" });
+    expect(
+      migrated.connection
+        .prepare(
+          "SELECT resolved_worktree_id, owns_managed_worktree, workspace_cleanup_status FROM tasks WHERE id = 'task'",
+        )
+        .get(),
+    ).toEqual({
+      resolved_worktree_id: "worktree",
+      owns_managed_worktree: 1,
+      workspace_cleanup_status: "retained",
+    });
     const report = migrated.connection
       .prepare("SELECT report_json FROM task_runs WHERE id = 'run'")
       .get() as { report_json: string };
@@ -182,6 +209,7 @@ describe("task database", () => {
   it("rolls back a failed v3 migration and retains its backup", () => {
     const path = temporaryDatabasePath();
     const first = openTaskDatabase(path);
+    removeV4Schema(first.connection);
     first.connection.exec(
       "ALTER TABLE tasks ADD COLUMN acceptance_criteria_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(acceptance_criteria_json))",
     );
@@ -204,6 +232,28 @@ describe("task database", () => {
     expect(
       verify.prepare("SELECT name FROM pragma_table_info('tasks')").all(),
     ).toContainEqual({ name: "acceptance_criteria_json" });
+    verify.close();
+  });
+
+  it("rolls back a failed v4 migration and retains its recovery backup", () => {
+    const path = temporaryDatabasePath();
+    const first = openTaskDatabase(path);
+    removeV4Schema(first.connection);
+    first.connection.exec(
+      "ALTER TABLE tasks ADD COLUMN resolved_worktree_id TEXT",
+    );
+    first.close();
+
+    expect(() => openTaskDatabase(path)).toThrowError(
+      expect.objectContaining({ code: "TASK_MIGRATION_FAILED" }),
+    );
+    expect(existsSync(`${path}.pre-v4.bak`)).toBe(true);
+    const verify = new DatabaseSync(path, { readOnly: true });
+    expect(
+      verify
+        .prepare("SELECT max(version) AS version FROM schema_migrations")
+        .get(),
+    ).toEqual({ version: 3 });
     verify.close();
   });
 

@@ -161,6 +161,56 @@ export class ChatService {
     return this.requireUsable(worktreeId, sessionId).status;
   }
 
+  worktreeBusy(worktreeId: string): boolean {
+    return [...this.sessions.values()].some(
+      (record) =>
+        record.worktreeId === worktreeId && record.status === "streaming",
+    );
+  }
+
+  rebindSessionTools(
+    worktreeId: string,
+    sessionId: string,
+    options: ChatSessionInternalOptions,
+  ): Promise<ChatSessionSummary> {
+    return this.runLifecycle(sessionId, async () => {
+      const cwd = await this.root(worktreeId);
+      const loaded = this.sessions.get(sessionId);
+      let subscriber: ChatEventSubscriber | undefined;
+      let sequence = 0;
+      if (loaded) {
+        this.assertOwner(loaded, worktreeId);
+        if (loaded.status === "streaming")
+          throw new ChatError("CHAT_SESSION_BUSY", "Agent session is busy");
+        subscriber = loaded.subscriber;
+        sequence = loaded.sequence;
+        loaded.subscriber = undefined;
+        loaded.attaching = false;
+        loaded.unsubscribe();
+        loaded.observers.clear();
+        this.sessions.delete(sessionId);
+        this.owners.delete(sessionId);
+        await loaded.session.dispose();
+      }
+      try {
+        const adapter = await this.adapter();
+        const info = (await adapter.list(cwd)).find(
+          (item) => item.sessionId === sessionId,
+        );
+        if (!info) throw notFound();
+        const opened = await adapter.open(info, cwd, {
+          customTools: options.customTools ?? [],
+        });
+        const record = this.register(opened, worktreeId, cwd, options);
+        record.sequence = sequence;
+        record.subscriber = subscriber;
+        return this.summary(record);
+      } catch (error) {
+        throw mapChatError(error, "Unable to rebind agent session tools");
+      }
+    });
+  }
+
   async sessionPath(worktreeId: string, sessionId: string): Promise<string> {
     const cwd = await this.root(worktreeId);
     try {

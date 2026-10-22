@@ -55,6 +55,12 @@ beforeEach(() => {
       dirty: false,
       busy: false,
     })),
+    inspectWorktreeForCleanup: vi.fn(async (worktreeId: string) => ({
+      id: worktreeId,
+      projectId,
+      dirty: false,
+      busy: false,
+    })),
     createWorktree: vi.fn(async () => ({
       id: managedWorktreeId,
       projectId,
@@ -74,10 +80,16 @@ beforeEach(() => {
       eventListener = integration.onEvent;
       reportResult = integration.reportResult;
     }),
+    loadSession: vi.fn(async (_worktreeId, _sessionId, integration) => {
+      eventListener = integration.onEvent;
+      reportResult = integration.reportResult;
+    }),
     sessionStatus: vi.fn(async () => "streaming" as const),
     sessionHasPrompt: vi.fn(async () => false),
     sendPrompt: vi.fn(async () => ({ accepted: true })),
     abortSession: vi.fn(async () => undefined),
+    isWorktreeBusy: vi.fn(async () => false),
+    deleteWorktree: vi.fn(async () => undefined),
     notify: vi.fn(async () => undefined),
   };
   service = new TaskService(repository, dependencies, {
@@ -97,6 +109,11 @@ afterEach(async () => {
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
+
+async function settleAgent(): Promise<void> {
+  eventListener?.({ type: "agent_settled" });
+  await service.whenIdle();
+}
 
 function createInput(automationEnabled = true) {
   return {
@@ -209,12 +226,15 @@ describe("TaskService", () => {
       sessionId: sessionBinding.sessionId,
     });
 
-    const reported = await reportResult!({
+    const recorded = await reportResult!({
       runId: run.id,
       outcome: "success",
       summary: "Implemented",
       tests: [{ command: "pnpm test", status: "passed", summary: "green" }],
     });
+    expect(recorded.task.status).toBe("running");
+    await settleAgent();
+    const reported = await service.get(recorded.task.id);
     expect(reported.task.status).toBe("needs_review");
     expect(dependencies.notify).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "needs_review", runId: run.id }),
@@ -300,6 +320,11 @@ describe("TaskService", () => {
       summary: "Done",
       tests: [],
     });
+    expect((await service.get(third.task.id)).task.status).toBe("running");
+    expect((await service.get(details[3]!.task.id)).runs[0]?.status).toBe(
+      "queued",
+    );
+    await settleAgent();
 
     expect((await service.get(details[3]!.task.id)).runs[0]?.status).toBe(
       "running",
@@ -372,13 +397,25 @@ describe("TaskService", () => {
       summary: "Needs input",
       tests: [],
     });
+    await settleAgent();
     const review = await service.get(retry.task.id);
+    const sessionCreatesBeforeChanges = vi.mocked(dependencies.createSession)
+      .mock.calls.length;
     const changes = await service.requestChanges(
       review.task.id,
       review.task.revision,
       "Address review feedback",
     );
     expect(changes.runs[0]?.attempt).toBe(3);
+    expect(changes.runs[0]?.sessionId).toBe(run.sessionId);
+    expect(dependencies.createSession).toHaveBeenCalledTimes(
+      sessionCreatesBeforeChanges,
+    );
+    expect(dependencies.attachSession).toHaveBeenCalledWith(
+      managedWorktreeId,
+      run.sessionId,
+      expect.any(Object),
+    );
 
     await reportResult!({
       runId: changes.runs[0]!.id,
@@ -386,6 +423,7 @@ describe("TaskService", () => {
       summary: "Done",
       tests: [],
     });
+    await settleAgent();
     const secondReview = await service.get(changes.task.id);
     const completed = await service.complete(
       secondReview.task.id,
@@ -393,6 +431,154 @@ describe("TaskService", () => {
     );
     expect(completed.task.status).toBe("completed");
     expect(completed.task.completedAt).not.toBeNull();
+  });
+
+  it("reuses the Task-level resolved workspace when the latest failed run never bound one", async () => {
+    const first = await service.create(createInput(true));
+    const cancelled = await service.cancel(first.task.id, first.task.revision);
+    const unbound = repository.createRun(
+      cancelled.task.id,
+      cancelled.task.revision,
+      {
+        id: "d0000000-0000-4000-8000-000000000001",
+        projectId,
+        promptMarker: "unbound-run-marker",
+        ownsManagedWorktree: true,
+        worktreeName: "must-not-be-created",
+        baseRef: "origin/main",
+      },
+    );
+    const failed = repository.failRun(unbound.run.id, unbound.run.revision, {
+      code: "TASK_PROJECT_NOT_FOUND",
+      message: "Failed before workspace binding",
+      retryable: true,
+    });
+
+    const retried = await service.run(failed.task.id, failed.task.revision);
+
+    expect(retried.runs[0]).toMatchObject({
+      status: "running",
+      worktreeId: managedWorktreeId,
+      worktreeName: first.runs[0]?.worktreeName,
+    });
+    expect(dependencies.createWorktree).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists clean-only managed workspace cleanup and safely retries a blocked cleanup", async () => {
+    const started = await service.create(createInput(true));
+    const run = started.runs[0]!;
+    await reportResult!({
+      runId: run.id,
+      outcome: "success",
+      summary: "Done",
+      tests: [],
+    });
+    await settleAgent();
+    let detail = await service.get(started.task.id);
+    detail = await service.complete(detail.task.id, detail.task.revision);
+
+    vi.mocked(dependencies.inspectWorktreeForCleanup).mockResolvedValue({
+      id: managedWorktreeId,
+      projectId,
+      dirty: true,
+      busy: false,
+    });
+    detail = await service.cleanupWorkspace(
+      detail.task.id,
+      detail.task.revision,
+    );
+    expect(detail.task).toMatchObject({
+      workspaceCleanupStatus: "blocked",
+      workspaceCleanupErrorCode: "TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED",
+    });
+    expect(dependencies.deleteWorktree).not.toHaveBeenCalled();
+
+    vi.mocked(dependencies.inspectWorktreeForCleanup).mockResolvedValue({
+      id: managedWorktreeId,
+      projectId,
+      dirty: false,
+      busy: false,
+    });
+    const cleaned = await service.cleanupWorkspace(
+      detail.task.id,
+      detail.task.revision,
+    );
+    expect(dependencies.deleteWorktree).toHaveBeenCalledWith(managedWorktreeId);
+    expect(cleaned.task).toMatchObject({
+      workspaceCleanupStatus: "removed",
+      workspaceCleanedAt: 1_700_000_000_000,
+    });
+  });
+
+  it("retains an owned workspace referenced by another Task's history", async () => {
+    const started = await service.create(createInput(true));
+    await reportResult!({
+      runId: started.runs[0]!.id,
+      outcome: "success",
+      summary: "Done",
+      tests: [],
+    });
+    await settleAgent();
+    let owner = await service.get(started.task.id);
+    owner = await service.complete(owner.task.id, owner.task.revision);
+
+    const other = repository.createTask({
+      id: "e0000000-0000-4000-8000-000000000001",
+      title: "Historical consumer",
+      description: "Used the same checkout",
+      projectId,
+      workspace: {
+        mode: "existing",
+        worktreeId: managedWorktreeId,
+        allowDirty: false,
+      },
+      automationEnabled: false,
+    });
+    const otherRun = repository.createRun(other.id, other.revision, {
+      id: "e0000000-0000-4000-8000-000000000002",
+      projectId,
+      promptMarker: "historical-consumer-marker",
+      ownsManagedWorktree: false,
+      worktreeId: managedWorktreeId,
+    });
+    repository.failRun(otherRun.run.id, otherRun.run.revision, {
+      code: "TASK_FAILED",
+      message: "Historical attempt ended",
+      retryable: false,
+    });
+
+    const retained = await service.cleanupWorkspace(
+      owner.task.id,
+      owner.task.revision,
+    );
+
+    expect(retained.task).toMatchObject({
+      workspaceCleanupStatus: "blocked",
+      workspaceCleanupErrorCode: "TASK_WORKSPACE_REFERENCED",
+    });
+    expect(dependencies.deleteWorktree).not.toHaveBeenCalled();
+  });
+
+  it("converges a durable cleanup intent when the checkout is already absent", async () => {
+    const started = await service.create(createInput(true));
+    await reportResult!({
+      runId: started.runs[0]!.id,
+      outcome: "success",
+      summary: "Done",
+      tests: [],
+    });
+    await settleAgent();
+    let detail = await service.get(started.task.id);
+    detail = await service.complete(detail.task.id, detail.task.revision);
+    repository.beginWorkspaceCleanup(detail.task.id, detail.task.revision);
+    vi.mocked(dependencies.inspectWorktreeForCleanup).mockResolvedValue(null);
+
+    await service.recover();
+
+    expect(
+      (await service.get(detail.task.id)).task.workspaceCleanupStatus,
+    ).toBe("removed");
+    expect(dependencies.deleteWorktree).not.toHaveBeenCalled();
   });
 
   it("does not duplicate the same in-memory run", async () => {
@@ -405,6 +591,156 @@ describe("TaskService", () => {
     expect(dependencies.createWorktree).toHaveBeenCalledTimes(1);
     expect(dependencies.createSession).toHaveBeenCalledTimes(1);
     expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a bound run active and recoverable when abort-before-failure cannot stop its session", async () => {
+    vi.mocked(dependencies.sendPrompt).mockRejectedValueOnce(
+      new Error("prompt transport failed"),
+    );
+    vi.mocked(dependencies.abortSession).mockRejectedValueOnce(
+      new Error("abort transport failed"),
+    );
+
+    const created = await service.create(createInput(true));
+
+    expect(created.runs[0]?.status).toBe("prompting");
+    expect(repository.listRunSteps(created.runs[0]!.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ step: "failure_stop", state: "failed" }),
+      ]),
+    );
+    expect(created.task.activeRunId).toBe(created.runs[0]?.id);
+
+    await service.recover();
+    expect(dependencies.loadSession).toHaveBeenCalledWith(
+      created.runs[0]?.worktreeId,
+      created.runs[0]?.sessionId,
+      expect.any(Object),
+    );
+    expect((await service.get(created.task.id)).runs[0]).toMatchObject({
+      status: "failed",
+      error: { message: "Task orchestration failed" },
+    });
+  });
+
+  it("preserves the original failure while a transient session reload error defers recovery", async () => {
+    vi.mocked(dependencies.sendPrompt).mockResolvedValueOnce({
+      accepted: false,
+    });
+    vi.mocked(dependencies.abortSession).mockRejectedValueOnce(
+      new Error("abort transport failed"),
+    );
+    const created = await service.create(createInput(true));
+    vi.mocked(dependencies.loadSession).mockRejectedValueOnce(
+      new Error("temporary reload failure"),
+    );
+
+    await service.recover();
+
+    expect(repository.listRunSteps(created.runs[0]!.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "failure_stop",
+          state: "failed",
+          details: expect.objectContaining({
+            code: "TASK_PROMPT_FAILED",
+            failureMessage: "Task prompt was not accepted",
+          }),
+        }),
+      ]),
+    );
+    expect((await service.get(created.task.id)).runs[0]?.status).toBe(
+      "prompting",
+    );
+
+    await service.recover();
+    expect((await service.get(created.task.id)).runs[0]?.error).toMatchObject({
+      code: "TASK_PROMPT_FAILED",
+      message: "Task prompt was not accepted",
+    });
+  });
+
+  it("finalizes failure when restart recovery proves the persisted session is missing", async () => {
+    vi.mocked(dependencies.sendPrompt).mockRejectedValueOnce(
+      new Error("prompt transport failed"),
+    );
+    vi.mocked(dependencies.abortSession).mockRejectedValueOnce(
+      new Error("abort transport failed"),
+    );
+    const created = await service.create(createInput(true));
+    vi.mocked(dependencies.abortSession).mockClear();
+    vi.mocked(dependencies.loadSession).mockRejectedValueOnce(
+      Object.assign(new Error("Chat session not found"), {
+        code: "CHAT_SESSION_NOT_FOUND",
+      }),
+    );
+
+    await service.recover();
+
+    expect(dependencies.abortSession).not.toHaveBeenCalled();
+    expect((await service.get(created.task.id)).runs[0]?.status).toBe("failed");
+    expect(repository.listRunSteps(created.runs[0]!.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ step: "failure_stop", state: "done" }),
+      ]),
+    );
+  });
+
+  it("finalizes failure after recovering a completed failure-stop intent", async () => {
+    const created = await service.create(createInput(true));
+    repository.upsertRunStep(created.runs[0]!.id, "failure_stop", "done", {
+      code: "TASK_PROMPT_FAILED",
+      failureMessage: "Prompt failed after session bind",
+      retryable: true,
+    });
+
+    await service.recover();
+
+    expect(dependencies.abortSession).not.toHaveBeenCalled();
+    expect((await service.get(created.task.id)).runs[0]).toMatchObject({
+      status: "failed",
+      error: {
+        code: "TASK_PROMPT_FAILED",
+        message: "Prompt failed after session bind",
+        retryable: true,
+      },
+    });
+  });
+
+  it("finalizes a report that arrives after the settled event", async () => {
+    const created = await service.create(createInput(true));
+    await settleAgent();
+    expect((await service.get(created.task.id)).runs[0]?.status).toBe(
+      "awaiting_report",
+    );
+    vi.mocked(dependencies.sessionStatus).mockResolvedValue("idle");
+
+    const reported = await reportResult!({
+      runId: created.runs[0]!.id,
+      outcome: "success",
+      summary: "Late report",
+      tests: [],
+    });
+
+    expect(reported.task.status).toBe("needs_review");
+    expect(reported.runs[0]?.status).toBe("reported");
+  });
+
+  it("finalizes a durably reported run only after recovery confirms the session is idle", async () => {
+    const created = await service.create(createInput(true));
+    await reportResult!({
+      runId: created.runs[0]!.id,
+      outcome: "success",
+      summary: "Done before restart",
+      tests: [],
+    });
+    vi.mocked(dependencies.sessionStatus).mockResolvedValue("idle");
+
+    await service.recover();
+
+    const recovered = await service.get(created.task.id);
+    expect(recovered.task.status).toBe("needs_review");
+    expect(recovered.runs[0]).toMatchObject({ status: "reported" });
   });
 
   it("converges a recovered idle running session to awaiting_report", async () => {

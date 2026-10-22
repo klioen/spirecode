@@ -38,6 +38,9 @@ export type WorkspaceRequest =
   | { mode: "new_managed"; baseRef: string }
   | { mode: "existing"; worktreeId: string; allowDirty: boolean };
 
+export type WorkspaceCleanupStatus =
+  "retained" | "intent" | "removed" | "blocked";
+
 export interface Task {
   id: string;
   title: string;
@@ -47,6 +50,11 @@ export interface Task {
   automationEnabled: boolean;
   status: TaskStatus;
   activeRunId: string | null;
+  resolvedWorktreeId: string | null;
+  ownsManagedWorktree: boolean;
+  workspaceCleanupStatus: WorkspaceCleanupStatus;
+  workspaceCleanedAt: number | null;
+  workspaceCleanupErrorCode: string | null;
   revision: number;
   createdAt: number;
   updatedAt: number;
@@ -117,6 +125,8 @@ export interface CreateRunInput {
   worktreeName?: string | null;
   baseRef?: string | null;
   worktreeId?: string | null;
+  sessionId?: string | null;
+  sessionPath?: string | null;
 }
 
 export type RunStepState = "intent" | "done" | "failed";

@@ -286,6 +286,43 @@ describe("ChatService", () => {
     ]);
   });
 
+  it("reopens an idle session with replacement tools while preserving the Renderer subscriber", async () => {
+    const { root, records, adapter } = await fixture();
+    const open = vi.spyOn(adapter, "open");
+    const service = new ChatService(() => root, { adapter });
+    const created = await service.create("w1", {
+      customTools: [{ name: "old_report" }],
+    });
+    const renderer: unknown[] = [];
+    await service.attach("w1", created.sessionId, (event) =>
+      renderer.push(event),
+    );
+    (records.get(created.sessionId)?.session as FakeSession).emit({
+      type: "agent_settled",
+    });
+    const customTools = [{ name: "new_report" }];
+
+    await service.rebindSessionTools("w1", created.sessionId, {
+      customTools,
+    });
+
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: created.sessionId }),
+      root,
+      { customTools },
+    );
+    (records.get(created.sessionId)?.session as FakeSession).emit({
+      type: "agent_start",
+    });
+    expect(renderer.at(-1)).toEqual(
+      expect.objectContaining({
+        sessionId: created.sessionId,
+        sequence: 2,
+        event: { type: "agent_start" },
+      }),
+    );
+  });
+
   it("finds a marker recursively in loaded messages and entries", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(() => root, { adapter });

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Persistent Tasks above Projects, with managed or existing workspaces, automatic Pi Agent execution and recovery, explicit result reports, review notifications, editable backlog tasks, Draft PR/MR links, and isolated AI-assisted task-draft optimization.
+- Persistent Tasks above Projects, with managed or existing workspaces, automatic Pi Agent execution and recovery, explicit result reports, review notifications, editable backlog tasks, Draft PR/MR links, isolated AI-assisted task-draft optimization, and safe cleanup controls for completed managed workspaces.
 - Drag-and-drop project organization in the Projects rail, including keyboard-accessible handles, cross-group moves, same-group ordering, empty/collapsed group targets, and ordering that persists across restarts.
 - Persistent custom project groups in the Projects rail, including create, rename, delete, move-to-group, and Ungrouped workflows; every startup syncs Pi session working directories into Ungrouped, and directory projects plus Git worktrees can expand to show, open, and move sessions to Trash.
 - Pi Extension Marketplace in Settings for browsing community catalog packages and safely installing, updating, or uninstalling user-scoped npm extensions through Pi's package manager.
@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Kept Task workspaces leased until their Pi Agent session settles, reused the resolved workspace across retries and the idle session across requested changes, and attributed shared-session token usage per Run.
 - Added persistent Pi session renaming from Projects and Chat History, and aligned both surfaces on accessible context menus for Rename and direct Move to Trash actions.
 - Simplified Chat transcripts to show final answers directly while folding thinking, tool calls, todos, and intermediate updates into a Codex-style `Working for…` / `Worked for…` summary.
 - Made Installed the first and default Extensions tab, loading the remote Marketplace only when opened.

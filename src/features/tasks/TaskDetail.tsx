@@ -1,6 +1,7 @@
 import {
   RiArrowLeftLine,
   RiChat3Line,
+  RiDeleteBinLine,
   RiEditLine,
   RiExternalLinkLine,
   RiPlayLine,
@@ -35,6 +36,13 @@ const resultStatusKeys = {
   failed: "tasks.status.failed",
   not_run: "tasks.status.notRun",
 } as const satisfies Record<string, TranslationKey>;
+const cleanupReasonKeys: Record<string, TranslationKey> = {
+  TASK_WORKSPACE_DIRTY_CONFIRMATION_REQUIRED: "tasks.workspaceDirty",
+  TASK_WORKSPACE_BUSY: "tasks.workspaceBusy",
+  TASK_WORKSPACE_NOT_MANAGED: "tasks.workspaceOwnershipChanged",
+  TASK_WORKSPACE_REFERENCED: "tasks.workspaceReferenced",
+  TASK_FAILED: "tasks.workspaceCleanupFailed",
+};
 
 export function TaskDetail({
   api,
@@ -136,7 +144,10 @@ export function TaskDetail({
                   {run.error.message}
                 </p>
               ) : null}
-              {run.worktreeId && run.sessionId && onOpenSession ? (
+              {run.worktreeId &&
+              run.sessionId &&
+              onOpenSession &&
+              task.workspaceCleanupStatus !== "removed" ? (
                 <button
                   className="task-button task-button-secondary"
                   type="button"
@@ -260,6 +271,41 @@ export function TaskDetail({
           >
             {t("tasks.requestChanges")}
           </button>
+        </section>
+      ) : null}
+
+      {task.status === "completed" && task.ownsManagedWorktree ? (
+        <section className="task-detail-section task-workspace-cleanup">
+          <h3>{t("tasks.workspace")}</h3>
+          {task.workspaceCleanupStatus === "removed" ? (
+            <p>{t("tasks.workspaceRemoved")}</p>
+          ) : (
+            <>
+              <p>
+                {task.workspaceCleanupStatus === "blocked"
+                  ? t("tasks.workspaceRetained", {
+                      reason: task.workspaceCleanupErrorCode
+                        ? t(
+                            cleanupReasonKeys[task.workspaceCleanupErrorCode] ??
+                              "tasks.workspaceUnsafe",
+                          )
+                        : t("tasks.workspaceUnsafe"),
+                    })
+                  : t("tasks.workspaceCleanupDescription")}
+              </p>
+              <button
+                className="task-button task-button-secondary"
+                type="button"
+                disabled={busy || !task.resolvedWorktreeId}
+                onClick={() =>
+                  void act(() => api.cleanupWorkspace(task.id, task.revision))
+                }
+              >
+                <RiDeleteBinLine size={14} aria-hidden="true" />
+                {t("tasks.cleanupWorkspace")}
+              </button>
+            </>
+          )}
         </section>
       ) : null}
 

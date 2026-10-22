@@ -58,6 +58,7 @@ export const COMMANDS = [
   "task_run",
   "task_cancel",
   "task_complete",
+  "task_cleanup_workspace",
   "task_request_changes",
   "task_continue_for_report",
   "task_notifications_list",

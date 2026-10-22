@@ -83,6 +83,11 @@ interface TaskRow {
   automation_enabled: number;
   status: TaskStatus;
   active_run_id: string | null;
+  resolved_worktree_id: string | null;
+  owns_managed_worktree: number;
+  workspace_cleanup_status: Task["workspaceCleanupStatus"];
+  workspace_cleaned_at: number | null;
+  workspace_cleanup_error_code: string | null;
   revision: number;
   created_at: number;
   updated_at: number;
@@ -133,6 +138,11 @@ function mapTask(row: TaskRow): Task {
     automationEnabled: row.automation_enabled === 1,
     status: row.status,
     activeRunId: row.active_run_id,
+    resolvedWorktreeId: row.resolved_worktree_id,
+    ownsManagedWorktree: row.owns_managed_worktree === 1,
+    workspaceCleanupStatus: row.workspace_cleanup_status,
+    workspaceCleanedAt: row.workspace_cleaned_at,
+    workspaceCleanupErrorCode: row.workspace_cleanup_error_code,
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -289,8 +299,10 @@ export class TaskRepository {
           `INSERT INTO tasks (
           id, title, description, project_id, workspace_mode, requested_worktree_id, base_ref,
           allow_dirty, automation_enabled, status, active_run_id,
+          resolved_worktree_id, owns_managed_worktree, workspace_cleanup_status,
+          workspace_cleaned_at, workspace_cleanup_error_code,
           revision, created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', NULL, 1, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', NULL, NULL, 0, 'retained', NULL, NULL, 1, ?, ?, NULL)`,
         )
         .run(
           value.id,
@@ -381,9 +393,32 @@ export class TaskRepository {
   findRunBySessionId(sessionId: string): TaskRun | null {
     validateId(sessionId, "sessionId");
     const row = this.connection
-      .prepare("SELECT * FROM task_runs WHERE session_id = ? LIMIT 1")
+      .prepare(
+        `SELECT * FROM task_runs WHERE session_id = ?
+        ORDER BY CASE WHEN status IN ('queued','provisioning','prompting','running','awaiting_report') THEN 0 ELSE 1 END,
+        attempt DESC LIMIT 1`,
+      )
       .get(sessionId) as unknown as RunRow | undefined;
     return row ? mapRun(row) : null;
+  }
+
+  listWorkspaceCleanupIntents(): Task[] {
+    const rows = this.connection
+      .prepare(
+        "SELECT * FROM tasks WHERE workspace_cleanup_status = 'intent' ORDER BY updated_at, id",
+      )
+      .all() as unknown as TaskRow[];
+    return rows.map(mapTask);
+  }
+
+  listTasksByResolvedWorktreeId(worktreeId: string): Task[] {
+    validateId(worktreeId, "worktreeId");
+    const rows = this.connection
+      .prepare(
+        "SELECT * FROM tasks WHERE resolved_worktree_id = ? ORDER BY updated_at DESC, id DESC",
+      )
+      .all(worktreeId) as unknown as TaskRow[];
+    return rows.map(mapTask);
   }
 
   listActiveRuns(): TaskRun[] {
@@ -533,6 +568,17 @@ export class TaskRepository {
           "promptMarker is invalid",
         );
       }
+      if (input.sessionId) validateId(input.sessionId, "run.sessionId");
+      if (
+        input.sessionPath !== undefined &&
+        input.sessionPath !== null &&
+        (typeof input.sessionPath !== "string" ||
+          input.sessionPath.length > 16 * 1024)
+      )
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "sessionPath is invalid",
+        );
       const attemptRow = this.connection
         .prepare(
           "SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_runs WHERE task_id = ?",
@@ -546,7 +592,7 @@ export class TaskRepository {
           owns_managed_worktree, worktree_name, base_ref, session_id, session_path,
           prompt_marker, report_json, error_code, error_message, error_retryable,
           revision, created_at, started_at, settled_at, reported_at, finished_at
-        ) VALUES (?, ?, ?, 'queued', 'created', ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL, 1, ?, NULL, NULL, NULL, NULL)`,
+        ) VALUES (?, ?, ?, 'queued', 'created', ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 1, ?, NULL, NULL, NULL, NULL)`,
         )
         .run(
           input.id,
@@ -557,14 +603,29 @@ export class TaskRepository {
           input.ownsManagedWorktree ? 1 : 0,
           input.worktreeName ?? null,
           input.baseRef ?? null,
+          input.sessionId ?? null,
+          input.sessionPath ?? null,
           input.promptMarker,
           now,
         );
       const result = this.connection
         .prepare(
-          "UPDATE tasks SET status = 'queued', active_run_id = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?",
+          `UPDATE tasks SET status = 'queued', active_run_id = ?,
+          owns_managed_worktree = CASE
+            WHEN resolved_worktree_id IS NULL AND ? IS NOT NULL THEN ?
+            ELSE owns_managed_worktree END,
+          resolved_worktree_id = COALESCE(resolved_worktree_id, ?),
+          revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`,
         )
-        .run(input.id, now, taskId, expectedTaskRevision);
+        .run(
+          input.id,
+          input.worktreeId ?? null,
+          input.ownsManagedWorktree ? 1 : 0,
+          input.worktreeId ?? null,
+          now,
+          taskId,
+          expectedTaskRevision,
+        );
       if (result.changes !== 1)
         throw new TaskRepositoryError(
           "TASK_CONFLICT",
@@ -668,6 +729,12 @@ export class TaskRepository {
           "TASK_CONFLICT",
           "Task run revision does not match",
         );
+      const task = this.#requireTask(run.task_id);
+      if (task.resolved_worktree_id && task.resolved_worktree_id !== worktreeId)
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task is bound to another workspace",
+        );
       if (run.worktree_id && run.worktree_id !== worktreeId)
         throw new TaskRepositoryError(
           "TASK_INVALID_STATE",
@@ -684,6 +751,19 @@ export class TaskRepository {
           "TASK_CONFLICT",
           "Task run revision does not match",
         );
+      if (!task.resolved_worktree_id)
+        this.connection
+          .prepare(
+            `UPDATE tasks SET resolved_worktree_id = ?, owns_managed_worktree = ?,
+            revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`,
+          )
+          .run(
+            worktreeId,
+            run.owns_managed_worktree,
+            this.#now(),
+            task.id,
+            task.revision,
+          );
       return mapRun(this.#requireRun(runId));
     });
   }
@@ -865,6 +945,49 @@ export class TaskRepository {
           "Task run revision does not match",
         );
       }
+      if (runRow.status !== "running" && runRow.status !== "awaiting_report")
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task run cannot accept a report in its current state",
+        );
+      if (taskRow.active_run_id !== runId)
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task run is not active",
+        );
+      this.connection
+        .prepare(
+          `UPDATE task_runs SET report_json = ?, revision = revision + 1
+          WHERE id = ? AND revision = ?`,
+        )
+        .run(reportJson, runId, expectedRunRevision);
+      return {
+        task: mapTask(this.#requireTask(taskRow.id)),
+        run: mapRun(this.#requireRun(runId)),
+      };
+    });
+  }
+
+  finalizeRunReport(
+    runId: string,
+    expectedRunRevision: number,
+    settledAt = this.#now(),
+  ): { task: Task; run: TaskRun } {
+    return this.#transaction(() => {
+      const runRow = this.#requireRun(validateId(runId, "runId"));
+      const taskRow = this.#requireTask(runRow.task_id);
+      if (runRow.status === "reported")
+        return { task: mapTask(taskRow), run: mapRun(runRow) };
+      if (runRow.revision !== expectedRunRevision)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task run revision does not match",
+        );
+      if (!runRow.report_json)
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task run has no report to finalize",
+        );
       assertRunTransition(runRow.status, "reported");
       assertTaskTransition(taskRow.status, "needs_review");
       if (taskRow.active_run_id !== runId)
@@ -875,10 +998,11 @@ export class TaskRepository {
       const now = this.#now();
       this.connection
         .prepare(
-          `UPDATE task_runs SET status = 'reported', saga_phase = 'terminal', report_json = ?,
-          revision = revision + 1, reported_at = ?, finished_at = ? WHERE id = ? AND revision = ?`,
+          `UPDATE task_runs SET status = 'reported', saga_phase = 'terminal',
+          revision = revision + 1, settled_at = COALESCE(settled_at, ?),
+          reported_at = ?, finished_at = ? WHERE id = ? AND revision = ?`,
         )
-        .run(reportJson, now, now, runId, expectedRunRevision);
+        .run(settledAt, now, now, runId, expectedRunRevision);
       this.connection
         .prepare(
           `UPDATE tasks SET status = 'needs_review', active_run_id = NULL,
@@ -889,6 +1013,82 @@ export class TaskRepository {
         task: mapTask(this.#requireTask(taskRow.id)),
         run: mapRun(this.#requireRun(runId)),
       };
+    });
+  }
+
+  beginWorkspaceCleanup(taskId: string, expectedRevision: number): Task {
+    return this.#setWorkspaceCleanup(
+      taskId,
+      expectedRevision,
+      "intent",
+      null,
+      null,
+    );
+  }
+
+  finishWorkspaceCleanup(taskId: string, expectedRevision: number): Task {
+    return this.#setWorkspaceCleanup(
+      taskId,
+      expectedRevision,
+      "removed",
+      this.#now(),
+      null,
+    );
+  }
+
+  blockWorkspaceCleanup(
+    taskId: string,
+    expectedRevision: number,
+    errorCode: string,
+  ): Task {
+    if (!errorCode || errorCode.length > 100)
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "cleanup error code is invalid",
+      );
+    return this.#setWorkspaceCleanup(
+      taskId,
+      expectedRevision,
+      "blocked",
+      null,
+      errorCode,
+    );
+  }
+
+  #setWorkspaceCleanup(
+    taskId: string,
+    expectedRevision: number,
+    status: Task["workspaceCleanupStatus"],
+    cleanedAt: number | null,
+    errorCode: string | null,
+  ): Task {
+    return this.#transaction(() => {
+      const task = this.#requireTask(validateId(taskId, "taskId"));
+      if (task.revision !== expectedRevision)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task revision does not match",
+        );
+      const result = this.connection
+        .prepare(
+          `UPDATE tasks SET workspace_cleanup_status = ?, workspace_cleaned_at = ?,
+          workspace_cleanup_error_code = ?, revision = revision + 1, updated_at = ?
+          WHERE id = ? AND revision = ?`,
+        )
+        .run(
+          status,
+          cleanedAt,
+          errorCode,
+          this.#now(),
+          taskId,
+          expectedRevision,
+        );
+      if (result.changes !== 1)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task revision does not match",
+        );
+      return mapTask(this.#requireTask(taskId));
     });
   }
 

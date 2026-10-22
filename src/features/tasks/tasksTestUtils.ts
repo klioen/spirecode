@@ -13,6 +13,11 @@ export const taskDetail = (
   automationEnabled: true,
   status: "backlog",
   activeRunId: null,
+  resolvedWorktreeId: null,
+  ownsManagedWorktree: false,
+  workspaceCleanupStatus: "retained",
+  workspaceCleanedAt: null,
+  workspaceCleanupErrorCode: null,
   revision: 1,
   createdAt: 1,
   updatedAt: 1,
@@ -40,6 +45,13 @@ export const createTasksApiMock = (): TasksApi => ({
   complete: vi
     .fn()
     .mockResolvedValue(taskDetail({ status: "completed", revision: 2 })),
+  cleanupWorkspace: vi.fn().mockResolvedValue(
+    taskDetail({
+      status: "completed",
+      workspaceCleanupStatus: "removed",
+      revision: 3,
+    }),
+  ),
   requestChanges: vi
     .fn()
     .mockResolvedValue(taskDetail({ status: "queued", revision: 2 })),

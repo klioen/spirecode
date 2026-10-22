@@ -31,6 +31,11 @@ export interface TaskSummary {
   workspace: TaskWorkspace;
   status: TaskStatus;
   activeRunId: string | null;
+  resolvedWorktreeId: string | null;
+  ownsManagedWorktree: boolean;
+  workspaceCleanupStatus: "retained" | "intent" | "removed" | "blocked";
+  workspaceCleanedAt: number | null;
+  workspaceCleanupErrorCode: string | null;
   revision: number;
   createdAt: number;
   updatedAt: number;
@@ -153,6 +158,10 @@ export interface TasksApi {
   run(taskId: string, expectedRevision: number): Promise<TaskDetailValue>;
   cancel(taskId: string, expectedRevision: number): Promise<TaskDetailValue>;
   complete(taskId: string, expectedRevision: number): Promise<TaskDetailValue>;
+  cleanupWorkspace(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<TaskDetailValue>;
   requestChanges(
     taskId: string,
     expectedRevision: number,
@@ -198,6 +207,10 @@ export interface TaskHostBindings {
     taskId: string;
     expectedRevision: number;
   }): Promise<TaskDetailValue>;
+  taskCleanupWorkspace(input: {
+    taskId: string;
+    expectedRevision: number;
+  }): Promise<TaskDetailValue>;
   taskRequestChanges(input: {
     taskId: string;
     expectedRevision: number;
@@ -226,6 +239,8 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
     host.taskCancel({ taskId, expectedRevision }),
   complete: (taskId, expectedRevision) =>
     host.taskComplete({ taskId, expectedRevision }),
+  cleanupWorkspace: (taskId, expectedRevision) =>
+    host.taskCleanupWorkspace({ taskId, expectedRevision }),
   requestChanges: (taskId, expectedRevision, note) =>
     host.taskRequestChanges({ taskId, expectedRevision, note }),
   continueForReport: (taskId, expectedRevision) =>
@@ -261,6 +276,11 @@ export const tasksApi: TasksApi = {
     commands.taskCancel(taskId, expectedRevision) as Promise<TaskDetailValue>,
   complete: (taskId, expectedRevision) =>
     commands.taskComplete(taskId, expectedRevision) as Promise<TaskDetailValue>,
+  cleanupWorkspace: (taskId, expectedRevision) =>
+    commands.taskCleanupWorkspace(
+      taskId,
+      expectedRevision,
+    ) as Promise<TaskDetailValue>,
   requestChanges: (taskId, expectedRevision, note) =>
     commands.taskRequestChanges(
       taskId,
