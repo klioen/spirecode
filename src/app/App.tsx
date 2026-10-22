@@ -10,7 +10,10 @@ import { Workbench } from "../features/workbench/Workbench";
 import { subscribeToGitChanges } from "../features/changes/changesRefresh";
 import { subscribeToFilesystemChanges } from "../features/files/filesystemEvents";
 import { useEditorStore } from "../features/editor/editorStore";
-import { projectsApi } from "../features/projects/projectsApi";
+import {
+  refreshProjectCatalog,
+  subscribeToProjectChanges,
+} from "../features/projects/projectsRefresh";
 import { useProjectsStore } from "../features/projects/projectsStore";
 
 export default function App() {
@@ -18,28 +21,36 @@ export default function App() {
     let disposed = false;
     let unlistenFilesystem: (() => void) | undefined;
     let unlistenGit: (() => void) | undefined;
+    let unlistenProjects: (() => void) | undefined;
     const store = useProjectsStore.getState();
     store.setLoading(true);
     // Subscribe before the initial domain read so no invalidation is lost between setup and hydration.
-    void Promise.all([subscribeToFilesystemChanges(), subscribeToGitChanges()])
-      .then(([stopFilesystem, stopGit]) => {
+    void Promise.all([
+      subscribeToFilesystemChanges(),
+      subscribeToGitChanges(),
+      subscribeToProjectChanges(),
+    ])
+      .then(([stopFilesystem, stopGit, stopProjects]) => {
         if (disposed) {
           stopFilesystem();
           stopGit();
+          stopProjects();
         } else {
           unlistenFilesystem = stopFilesystem;
           unlistenGit = stopGit;
+          unlistenProjects = stopProjects;
         }
-        return projectsApi.catalog();
+        if (!disposed) return refreshProjectCatalog();
       })
-      .then(store.hydrateCatalog, (error) =>
-        store.setError(commandError(error)),
-      )
+      .catch((error) => {
+        if (!disposed) store.setError(commandError(error));
+      })
       .finally(() => store.setLoading(false));
     return () => {
       disposed = true;
       unlistenFilesystem?.();
       unlistenGit?.();
+      unlistenProjects?.();
     };
   }, []);
 

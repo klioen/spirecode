@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig([
   {
     entry: { main: "electron/main.ts" },
+    loader: { ".md": "text" },
     outDir: "dist-electron",
     format: ["esm"],
     platform: "node",

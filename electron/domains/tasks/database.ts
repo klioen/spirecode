@@ -7,7 +7,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: new (path: string) => DatabaseConnection;
 };
 
-export const CURRENT_TASK_SCHEMA_VERSION = 4;
+export const CURRENT_TASK_SCHEMA_VERSION = 5;
 
 export type TaskDatabaseErrorCode =
   | "TASK_DATABASE_UNAVAILABLE"
@@ -153,6 +153,40 @@ SET resolved_worktree_id = (
     ), 0);
 `;
 
+const MIGRATION_5 = `
+CREATE TABLE task_session_archives (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+  session_id TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  size INTEGER NOT NULL CHECK (size >= 0),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (task_id, session_id)
+) STRICT;
+CREATE TABLE task_run_retention (
+  run_id TEXT PRIMARY KEY REFERENCES task_runs(id) ON DELETE RESTRICT,
+  archive_kind TEXT CHECK (archive_kind IN ('archived','empty')),
+  token_count INTEGER CHECK (token_count >= 0),
+  duration_ms INTEGER CHECK (duration_ms >= 0),
+  frozen_at INTEGER
+) STRICT;
+CREATE TABLE task_artifact_archives (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+  run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE RESTRICT,
+  relative_path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  size INTEGER NOT NULL CHECK (size >= 0),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (run_id, relative_path)
+) STRICT;
+CREATE TABLE task_archive_states (
+  task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('intent','ready','failed')),
+  error_code TEXT,
+  updated_at INTEGER NOT NULL,
+  artifacts_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(artifacts_json))
+) STRICT;
+`;
+
 function tableExists(connection: DatabaseConnection, name: string): boolean {
   return Boolean(
     connection
@@ -209,6 +243,12 @@ function migrate(
           "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
         )
         .run(4, "migration-v4", now());
+      connection.exec(MIGRATION_5);
+      connection
+        .prepare(
+          "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        )
+        .run(5, "migration-v5", now());
       connection.exec("COMMIT");
       return CURRENT_TASK_SCHEMA_VERSION;
     } catch (error) {
@@ -259,6 +299,7 @@ function migrate(
       if (targetVersion === 2) connection.exec(MIGRATION_2);
       else if (targetVersion === 3) connection.exec(MIGRATION_3);
       else if (targetVersion === 4) connection.exec(MIGRATION_4);
+      else if (targetVersion === 5) connection.exec(MIGRATION_5);
       else throw new Error(`No Task migration for schema ${targetVersion}`);
       connection
         .prepare(

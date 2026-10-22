@@ -29,6 +29,15 @@ export const taskDetail = (
 });
 
 export const createTasksApiMock = (): TasksApi => ({
+  archive: vi.fn().mockResolvedValue(taskDetail({ archiveStatus: "ready" })),
+  archiveRead: vi.fn().mockResolvedValue({
+    sessionId: "session-1",
+    archivedAt: 1,
+    entries: [],
+    nextCursor: null,
+    artifacts: [],
+  }),
+  archiveReveal: vi.fn().mockResolvedValue(undefined),
   list: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
   get: vi.fn().mockResolvedValue(taskDetail()),
   create: vi.fn().mockResolvedValue(taskDetail()),

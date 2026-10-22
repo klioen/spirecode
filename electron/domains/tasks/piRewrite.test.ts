@@ -26,6 +26,7 @@ function sessionHarness(
 ) {
   let listener: (event: unknown) => void = () => undefined;
   const calls: string[] = [];
+  const prompts: string[] = [];
   let tool!: TaskRewriteToolDefinition;
   const session: TaskRewriteSession = {
     subscribe(next) {
@@ -33,7 +34,8 @@ function sessionHarness(
       listener = next;
       return () => calls.push("unsubscribe");
     },
-    async prompt(_text, options) {
+    async prompt(text, options) {
+      prompts.push(text);
       calls.push(`prompt:${String(options?.expandPromptTemplates)}`);
       await onPrompt({ tool, emit: (event) => listener(event) });
     },
@@ -53,6 +55,7 @@ function sessionHarness(
   };
   return {
     calls,
+    prompts,
     factory,
     get tool() {
       return tool;
@@ -75,6 +78,9 @@ describe("TaskRewriteService", () => {
       title: "Better title",
       description: "Better description",
     });
+    expect(harness.prompts).toHaveLength(1);
+    expect(harness.prompts[0]).not.toContain("SpireCode Task Skill version:");
+    expect(harness.prompts[0]).not.toContain("Task Skill instructions:");
     expect(harness.calls).toEqual([
       "create",
       "subscribe",

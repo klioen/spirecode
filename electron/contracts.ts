@@ -59,6 +59,9 @@ export const COMMANDS = [
   "task_cancel",
   "task_complete",
   "task_cleanup_workspace",
+  "task_archive",
+  "task_archive_read",
+  "task_archive_reveal",
   "task_request_changes",
   "task_continue_for_report",
   "task_notifications_list",
@@ -86,6 +89,7 @@ export const COMMANDS = [
 ] as const;
 
 export const TOPICS = [
+  "projects://changed",
   "filesystem://changed",
   "git://changed",
   "terminal://event",

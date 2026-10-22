@@ -1,3 +1,7 @@
+import {
+  TaskArchiveService,
+  discoverTaskSessions,
+} from "./domains/tasks/archive.js";
 import { dialog, Notification, shell, type BrowserWindow } from "electron";
 import { mkdirSync } from "node:fs";
 import { access } from "node:fs/promises";
@@ -28,6 +32,7 @@ import { resolveSpireResources } from "./domains/chat/spireSettings.js";
 import {
   DefaultPackageManager,
   SessionManager,
+  getAgentDir,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { ExtensionCatalogService } from "./domains/extensions/catalog.js";
@@ -78,6 +83,7 @@ export class AppState {
   readonly taskDatabase: TaskDatabase | null;
   readonly taskRepository: TaskRepository | null;
   readonly tasks: TaskService | null;
+  readonly taskArchives: TaskArchiveService | null;
   readonly taskUnavailableReason: string | null;
   readonly taskRewrite: Promise<TaskRewriteService>;
   private activeTaskRewriteId: string | null = null;
@@ -131,6 +137,7 @@ export class AppState {
       database: TaskDatabase;
       repository: TaskRepository;
       service: TaskService;
+      archives: TaskArchiveService;
     } | null = null;
     let openedTaskDatabase: TaskDatabase | null = null;
     let taskUnavailableReason: string | null = null;
@@ -140,6 +147,38 @@ export class AppState {
       );
       openedTaskDatabase = taskDatabase;
       const taskRepository = new TaskRepository(taskDatabase.connection);
+      const archives = new TaskArchiveService(taskRepository, {
+        dataDirectory,
+        sessionRoot: path.join(getAgentDir(), "sessions"),
+        workspaceRoot: (id) => projects.root(id),
+        resolveSessions: async (runs) => {
+          const result = new Map<string, string>();
+          for (const run of runs) {
+            if (!run.sessionId) continue;
+            if (run.sessionPath) result.set(run.sessionId, run.sessionPath);
+            else if (run.worktreeId)
+              try {
+                result.set(
+                  run.sessionId,
+                  await this.chat.sessionPath(run.worktreeId, run.sessionId),
+                );
+              } catch {
+                /* Missing worktrees use the retained SDK catalog below. */
+              }
+          }
+          const missing = runs.filter(
+            (run) => run.sessionId && !result.has(run.sessionId),
+          );
+          if (missing.length) {
+            const discovered = await discoverTaskSessions(
+              path.join(getAgentDir(), "sessions"),
+              missing.flatMap((run) => (run.sessionId ? [run.sessionId] : [])),
+            );
+            for (const [id, source] of discovered) result.set(id, source);
+          }
+          return result;
+        },
+      });
       const tasks = new TaskService(taskRepository, {
         getProject: async (projectId) => {
           try {
@@ -274,7 +313,7 @@ export class AppState {
         sessionHasPrompt: (worktreeId, sessionId, marker) =>
           this.chat.sessionContainsText(worktreeId, sessionId, marker),
         sendPrompt: (worktreeId, sessionId, prompt) =>
-          this.chat.send(worktreeId, sessionId, prompt),
+          this.chat.sendTaskInput(worktreeId, sessionId, prompt),
         abortSession: async (worktreeId, sessionId) => {
           await this.chat.abort(worktreeId, sessionId);
         },
@@ -285,8 +324,22 @@ export class AppState {
           );
         },
         deleteWorktree: async (worktreeId) => {
-          await this.deleteWorktree(worktreeId, false);
+          await this.deleteWorktree(worktreeId, false, true);
         },
+        archiveTask: async (taskId, artifacts) => {
+          const task = taskRepository.getTask(taskId);
+          if (
+            task?.resolvedWorktreeId &&
+            this.chat.worktreeBusy(task.resolvedWorktreeId)
+          )
+            throw new CommandError(
+              "TASK_WORKSPACE_BUSY",
+              "Stop active sessions before archiving Task history.",
+            );
+          await archives.archive(taskId, artifacts);
+        },
+        finalizeRunRetention: (runId) => archives.finalize(runId),
+        recoverArchives: () => archives.recover(),
         notify: (request) => this.notifyTask(request),
         onChanged: (taskId, revision) =>
           this.send("task://event", { kind: "changed", taskId, revision }),
@@ -295,6 +348,7 @@ export class AppState {
         database: taskDatabase,
         repository: taskRepository,
         service: tasks,
+        archives,
       };
     } catch (error) {
       openedTaskDatabase?.close();
@@ -305,6 +359,7 @@ export class AppState {
     this.taskDatabase = taskSubsystem?.database ?? null;
     this.taskRepository = taskSubsystem?.repository ?? null;
     this.tasks = taskSubsystem?.service ?? null;
+    this.taskArchives = taskSubsystem?.archives ?? null;
     this.taskUnavailableReason = taskUnavailableReason;
 
     const rewriteDirectory = path.join(dataDirectory, "task-rewrite");
@@ -434,6 +489,7 @@ export class AppState {
     const project = await this.projects.openPath(selectedPath);
     for (const worktree of project.worktrees)
       await this.ensureWatcher(project.kind, worktree.id, worktree.path);
+    this.send("projects://changed", {});
     return project;
   }
 
@@ -473,7 +529,9 @@ export class AppState {
     }
     if (failure)
       console.warn("Project runtime cleanup was incomplete", failure);
-    return this.projects.close(projectId);
+    const closed = await this.projects.close(projectId);
+    this.send("projects://changed", {});
+    return closed;
   }
 
   async revealProject(projectId: string): Promise<void> {
@@ -488,6 +546,7 @@ export class AppState {
     const worktree = await this.worktrees.create(projectId, name, baseRef);
     try {
       await this.ensureWatcher("git", worktree.id, worktree.path);
+      this.send("projects://changed", {});
       return worktree;
     } catch (error) {
       await this.worktrees.rollbackCreated(worktree.id);
@@ -501,6 +560,7 @@ export class AppState {
     try {
       const renamed = await this.worktrees.rename(worktreeId, name);
       await this.ensureWatcher("git", renamed.id, renamed.path);
+      this.send("projects://changed", {});
       return renamed;
     } catch (error) {
       try {
@@ -516,7 +576,11 @@ export class AppState {
     }
   }
 
-  async deleteWorktree(worktreeId: string, force: boolean) {
+  async deleteWorktree(
+    worktreeId: string,
+    force: boolean,
+    taskCleanup = false,
+  ) {
     if (
       this.taskRepository
         ?.listActiveRuns()
@@ -526,6 +590,12 @@ export class AppState {
         "TASK_WORKSPACE_BUSY",
         "Cancel the active Task before deleting its workspace.",
       );
+    if (!taskCleanup && this.tasks) {
+      const references =
+        this.taskRepository?.listTasksByResolvedWorktreeId(worktreeId) ?? [];
+      for (const task of references)
+        await this.tasks.archive(task.id, task.revision);
+    }
     const inspection = await this.worktrees.inspectDelete(worktreeId);
     if (!force && this.chat.worktreeBusy(worktreeId))
       throw new CommandError(
@@ -544,7 +614,9 @@ export class AppState {
       if (result.status === "rejected")
         console.warn("Worktree runtime cleanup was incomplete", result.reason);
     try {
-      return await this.worktrees.delete(worktreeId, force);
+      const removed = await this.worktrees.delete(worktreeId, force);
+      this.send("projects://changed", {});
+      return removed;
     } catch (error) {
       try {
         const current = await this.projects.worktree(worktreeId);
@@ -560,7 +632,17 @@ export class AppState {
     worktreeId: string,
     sessionId: string,
   ): Promise<void> {
-    const run = this.taskRepository?.findRunBySessionId(sessionId);
+    const references =
+      this.taskRepository?.listRunsBySessionId(sessionId) ?? [];
+    const run = references.find((candidate) =>
+      [
+        "queued",
+        "provisioning",
+        "prompting",
+        "running",
+        "awaiting_report",
+      ].includes(candidate.status),
+    );
     if (
       run &&
       [
@@ -575,6 +657,17 @@ export class AppState {
         "TASK_SESSION_BUSY",
         "Cancel the active Task before deleting its session.",
       );
+    for (const reference of references) {
+      if (
+        this.taskArchives?.metadata.retention(reference.id)?.archive_kind !==
+        "archived"
+      )
+        throw new CommandError(
+          "TASK_SESSION_RETAINED",
+          "Archive this completed Task before deleting its original session.",
+        );
+      await this.taskArchives.revealPath(reference.taskId, reference.id);
+    }
     await this.chat.delete(worktreeId, sessionId);
   }
 
@@ -651,6 +744,35 @@ export class AppState {
     kind: string,
   ): void {
     this.requireTasks().markNotificationRead(taskId, runId, kind);
+  }
+
+  async taskArchive(
+    taskId: string,
+    expectedRevision: number,
+    artifacts: import("./domains/tasks/archive.js").ArtifactSelection[],
+  ) {
+    return this.taskMutation(
+      await this.requireTasks().archive(taskId, expectedRevision, artifacts),
+    );
+  }
+  async taskArchiveRead(
+    taskId: string,
+    runId: string,
+    limit: number,
+    cursor?: string,
+  ) {
+    this.requireTasks();
+    return this.taskArchives!.read(taskId, runId, limit, cursor);
+  }
+  async taskArchiveReveal(
+    taskId: string,
+    runId: string,
+    relativePath?: string,
+  ) {
+    this.requireTasks();
+    shell.showItemInFolder(
+      await this.taskArchives!.revealPath(taskId, runId, relativePath),
+    );
   }
 
   async taskRun(taskId: string, expectedRevision: number) {
@@ -814,7 +936,10 @@ export class AppState {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       durationMs: runs.reduce(
-        (total, run) => total + taskRunDurationMs(run, now),
+        (total, run) =>
+          total +
+          (this.taskArchives?.metadata.retention(run.id)?.duration_ms ??
+            taskRunDurationMs(run, now)),
         0,
       ),
       tokenCount: tokenCounts.reduce((total, count) => total + count, 0),
@@ -824,6 +949,9 @@ export class AppState {
   private async taskRunTokenCount(
     run: import("./domains/tasks/types.js").TaskRun,
   ): Promise<number> {
+    const retained = this.taskArchives?.metadata.retention(run.id);
+    if (retained?.token_count !== null && retained?.token_count !== undefined)
+      return retained.token_count;
     let sessionPath = run.sessionPath;
     if (!sessionPath && run.worktreeId && run.sessionId) {
       try {
@@ -856,6 +984,10 @@ export class AppState {
   private async taskDetail(detail: TaskDetail) {
     return {
       ...(await this.taskSummary(detail.task)),
+      archiveStatus:
+        this.taskArchives?.metadata.state(detail.task.id)?.status ?? "pending",
+      archiveError:
+        this.taskArchives?.metadata.state(detail.task.id)?.error_code ?? null,
       description: detail.task.description,
       automationEnabled: detail.task.automationEnabled,
       completedAt: detail.task.completedAt,
@@ -868,6 +1000,16 @@ export class AppState {
         sessionId: run.sessionId,
         error: run.error,
         report: run.report,
+        archiveStatus:
+          this.taskArchives?.metadata.retention(run.id)?.archive_kind ??
+          "unavailable",
+        archivedArtifacts:
+          this.taskArchives?.metadata
+            .artifacts(detail.task.id, run.id)
+            .map((file) => ({
+              relativePath: file.relative_path,
+              size: file.size,
+            })) ?? [],
         createdAt: run.createdAt,
         settledAt: run.settledAt,
       })),

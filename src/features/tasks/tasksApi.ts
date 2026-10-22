@@ -64,6 +64,8 @@ export interface TaskRunReport {
 }
 
 export interface TaskRunSummary {
+  archiveStatus?: "archived" | "empty" | "unavailable";
+  archivedArtifacts?: Array<{ relativePath: string; size: number }>;
   id: string;
   attempt: number;
   status: TaskRunStatus;
@@ -77,6 +79,8 @@ export interface TaskRunSummary {
 }
 
 export interface TaskDetailValue extends TaskSummary {
+  archiveStatus?: "intent" | "ready" | "failed" | "pending";
+  archiveError?: string | null;
   description: string;
   automationEnabled: boolean;
   completedAt: number | null;
@@ -140,7 +144,41 @@ export type TaskEvent =
       payload?: { message?: string };
     };
 
+export interface TaskArtifactSelection {
+  runId: string;
+  relativePath: string;
+}
+export interface TaskArchivePage {
+  sessionId: string;
+  archivedAt: number;
+  entries: Array<{
+    id: string;
+    type: string;
+    role?: string;
+    text: string;
+    truncated: boolean;
+  }>;
+  nextCursor: string | null;
+  artifacts: Array<{ relativePath: string; size: number }>;
+}
+
 export interface TasksApi {
+  archive(
+    taskId: string,
+    expectedRevision: number,
+    artifacts?: TaskArtifactSelection[],
+  ): Promise<TaskDetailValue>;
+  archiveRead(input: {
+    taskId: string;
+    runId: string;
+    limit: number;
+    cursor?: string;
+  }): Promise<TaskArchivePage>;
+  archiveReveal(
+    taskId: string,
+    runId: string,
+    relativePath?: string,
+  ): Promise<void>;
   list(input: {
     cursor?: string;
     limit: number;
@@ -193,6 +231,17 @@ export interface TasksApi {
 
 /** Shape expected from the future allowlisted bindings extension. */
 export interface TaskHostBindings {
+  taskArchive(input: {
+    taskId: string;
+    expectedRevision: number;
+    artifacts: TaskArtifactSelection[];
+  }): Promise<TaskDetailValue>;
+  taskArchiveRead: TasksApi["archiveRead"];
+  taskArchiveReveal(input: {
+    taskId: string;
+    runId: string;
+    relativePath?: string;
+  }): Promise<void>;
   taskList: TasksApi["list"];
   taskGet(input: { taskId: string }): Promise<TaskDetailValue>;
   taskCreate: TasksApi["create"];
@@ -239,6 +288,15 @@ export interface TaskHostBindings {
 }
 
 export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
+  archive: (taskId, expectedRevision, artifacts = []) =>
+    host.taskArchive({ taskId, expectedRevision, artifacts }),
+  archiveRead: (input) => host.taskArchiveRead(input),
+  archiveReveal: (taskId, runId, relativePath) =>
+    host.taskArchiveReveal({
+      taskId,
+      runId,
+      ...(relativePath ? { relativePath } : {}),
+    }),
   list: (input) => host.taskList(input),
   get: (taskId) => host.taskGet({ taskId }),
   create: (input) => host.taskCreate(input),
@@ -265,6 +323,16 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
 });
 
 export const tasksApi: TasksApi = {
+  archive: (taskId, expectedRevision, artifacts = []) =>
+    commands.taskArchive(
+      taskId,
+      expectedRevision,
+      artifacts,
+    ) as Promise<TaskDetailValue>,
+  archiveRead: (input) =>
+    commands.taskArchiveRead(input) as Promise<TaskArchivePage>,
+  archiveReveal: (taskId, runId, relativePath) =>
+    commands.taskArchiveReveal(taskId, runId, relativePath),
   list: (input) => commands.taskList(input) as Promise<TaskListPage>,
   get: (taskId) => commands.taskGet(taskId) as Promise<TaskDetailValue>,
   create: (input) =>

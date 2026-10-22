@@ -1,3 +1,4 @@
+import { artifactPath } from "./domains/tasks/archive.js";
 import { homedir } from "node:os";
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { isCommand, type CommandName } from "./contracts.js";
@@ -441,6 +442,31 @@ async function invoke(
         text(args, "taskId"),
         safeInteger(args, "expectedRevision", 1),
       );
+    case "task_archive": {
+      const input = taskArchiveInput(args);
+      return state.taskArchive(
+        input.taskId,
+        input.expectedRevision,
+        input.artifacts,
+      );
+    }
+    case "task_archive_read": {
+      const input = taskArchiveReadInput(args);
+      return state.taskArchiveRead(
+        input.taskId,
+        input.runId,
+        input.limit,
+        input.cursor,
+      );
+    }
+    case "task_archive_reveal": {
+      const input = taskArchiveRevealInput(args);
+      return state.taskArchiveReveal(
+        input.taskId,
+        input.runId,
+        input.relativePath,
+      );
+    }
     case "task_request_changes":
       return state.taskRequestChanges(
         text(args, "taskId"),
@@ -621,6 +647,9 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_cancel: ["taskId", "expectedRevision"],
   task_complete: ["taskId", "expectedRevision"],
   task_cleanup_workspace: ["taskId", "expectedRevision"],
+  task_archive: ["taskId", "expectedRevision", "artifacts"],
+  task_archive_read: ["taskId", "runId", "limit", "cursor"],
+  task_archive_reveal: ["taskId", "runId", "relativePath"],
   task_request_changes: ["taskId", "expectedRevision", "note"],
   task_continue_for_report: ["taskId", "expectedRevision"],
   task_notifications_list: ["cursor", "limit"],
@@ -804,6 +833,41 @@ function taskUpdateInput(
   return result;
 }
 
+function taskArchiveInput(args: Args) {
+  const taskId = validateId(text(args, "taskId"));
+  const expectedRevision = safeInteger(args, "expectedRevision", 1);
+  if (
+    "artifacts" in args &&
+    (!Array.isArray(args.artifacts) || args.artifacts.length > 20)
+  )
+    throw new TypeError("artifacts must be an array of at most 20 files");
+  const artifacts = ((args.artifacts ?? []) as unknown[]).map((item) => {
+    const value = strictRecord(item, "artifact");
+    exactKeys(value, ["runId", "relativePath"]);
+    return {
+      runId: validateId(text(value, "runId")),
+      relativePath: artifactPath(value.relativePath),
+    };
+  });
+  return { taskId, expectedRevision, artifacts };
+}
+function taskArchiveReadInput(args: Args) {
+  const taskId = validateId(text(args, "taskId"));
+  const runId = validateId(text(args, "runId"));
+  const limit = safeInteger(args, "limit", 1);
+  if (limit > 20) throw new TypeError("limit is too large");
+  const cursor = "cursor" in args ? text(args, "cursor") : undefined;
+  return { taskId, runId, limit, cursor };
+}
+function taskArchiveRevealInput(args: Args) {
+  return {
+    taskId: validateId(text(args, "taskId")),
+    runId: validateId(text(args, "runId")),
+    relativePath:
+      "relativePath" in args ? artifactPath(args.relativePath) : undefined,
+  };
+}
+
 function taskNotificationListInput(args: Args): {
   limit: number;
   cursor?: string;
@@ -911,6 +975,18 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
 
   if (command === "task_list") {
     taskListInput(args);
+    return args;
+  }
+  if (command === "task_archive") {
+    taskArchiveInput(args);
+    return args;
+  }
+  if (command === "task_archive_read") {
+    taskArchiveReadInput(args);
+    return args;
+  }
+  if (command === "task_archive_reveal") {
+    taskArchiveRevealInput(args);
     return args;
   }
   if (command === "task_notifications_list") {
