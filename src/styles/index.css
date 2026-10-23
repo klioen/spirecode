@@ -863,11 +863,12 @@ body.panel-resizing-vertical * {
   font-size: 12px;
 }
 .project-session-spinner {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 10px;
+  width: 12px;
+  height: 12px;
+  aspect-ratio: 1;
+  flex: 0 0 12px;
   margin-left: auto;
-  border-width: 1.5px;
+  border-width: 2px;
 }
 .worktree-row.active {
   background: var(--interactive-selected);
