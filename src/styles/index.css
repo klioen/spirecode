@@ -4920,6 +4920,12 @@ details[open] > summary > .chat-disclosure-icon {
   color: var(--danger);
   font-size: 10px;
 }
+.changes-commit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.changes-stage-all-button,
 .changes-commit-button {
   min-height: 29px;
   border: 1px solid var(--border-default);
@@ -4928,10 +4934,12 @@ details[open] > summary > .chat-disclosure-icon {
   color: var(--text-default);
   font-size: 11px;
 }
+.changes-stage-all-button:hover:not(:disabled),
 .changes-commit-button:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.changes-stage-all-button:disabled,
 .changes-commit-button:disabled {
   opacity: 0.5;
 }

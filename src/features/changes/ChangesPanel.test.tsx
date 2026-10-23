@@ -226,6 +226,31 @@ describe("ChangesPanel view modes", () => {
     expect(useEditorStore.getState().views.w1).toBeUndefined();
   });
 
+  it("stages every unstaged and untracked file from the commit area", () => {
+    render(<ChangesPanel worktreeId="w1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage all changes" }));
+
+    expect(stageChanges).toHaveBeenCalledOnce();
+    expect(stageChanges).toHaveBeenCalledWith(
+      "w1",
+      expect.arrayContaining([
+        expect.objectContaining({
+          change: expect.objectContaining({
+            path: "src/features/changes/ChangesPanel.tsx",
+          }),
+        }),
+        expect.objectContaining({
+          change: expect.objectContaining({ path: "src/main.tsx" }),
+        }),
+        expect.objectContaining({
+          change: expect.objectContaining({ path: "README.md" }),
+        }),
+      ]),
+    );
+    expect(vi.mocked(stageChanges).mock.calls[0]?.[1]).toHaveLength(3);
+  });
+
   it("collapses sections and exposes destructive confirmation", () => {
     render(<ChangesPanel worktreeId="w1" />);
     const heading = screen.getByRole("button", { name: "CHANGES2" });

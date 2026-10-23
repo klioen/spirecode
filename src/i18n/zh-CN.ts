@@ -501,6 +501,8 @@ export const zhCN = {
   "changes.discard": "放弃更改",
   "changes.delete": "删除",
   "changes.stageAll": "全部暂存",
+  "changes.stageAllChanges": "暂存所有更改",
+  "changes.stagingAll": "正在暂存…",
   "changes.unstageAll": "全部取消暂存",
   "changes.discardAll": "放弃全部更改",
   "changes.deleteAll": "删除全部",
