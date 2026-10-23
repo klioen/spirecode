@@ -30,6 +30,20 @@ describe("i18n", () => {
     expect(document.documentElement.lang).toBe("en");
   });
 
+  it("describes worktrees by path and branch without a double-click hint", () => {
+    const values = { path: "/worktrees/feature", branch: "feature" };
+    expect(t("projects.worktree.detailsTitle", values)).toBe(
+      "/worktrees/feature · feature",
+    );
+
+    setLanguage("zh-CN");
+    expect(t("projects.worktree.detailsTitle", values)).toBe(
+      "/worktrees/feature · feature",
+    );
+    expect(en["projects.worktree.detailsTitle"]).not.toContain("Double-click");
+    expect(zhCN["projects.worktree.detailsTitle"]).not.toContain("双击");
+  });
+
   it("interpolates values and formats with the explicit selected locale", () => {
     initializeLanguage("zh-CN");
     expect(t("settings.agent.ready", { count: 2 })).toBe(
