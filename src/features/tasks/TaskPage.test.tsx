@@ -119,10 +119,8 @@ it("searches the durable list and exposes scoped views", async () => {
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Completed" }));
-  fireEvent.change(
-    screen.getByRole("combobox", { name: "Filter by project" }),
-    { target: { value: "project-1" } },
-  );
+  fireEvent.click(screen.getByRole("combobox", { name: "Filter by project" }));
+  fireEvent.click(screen.getByRole("option", { name: "SpireCode" }));
   fireEvent.change(screen.getByRole("searchbox", { name: "Search tasks" }), {
     target: { value: "oldest task" },
   });

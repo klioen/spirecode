@@ -143,6 +143,126 @@ textarea:focus-visible,
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
+.searchable-select {
+  min-width: 0;
+  position: relative;
+  font: inherit;
+}
+.searchable-select > button[role="combobox"] {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.searchable-select > button[role="combobox"] > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.searchable-select > button[role="combobox"]:hover:not(:disabled),
+.searchable-select > button[role="combobox"][aria-expanded="true"] {
+  background: var(--control-hover);
+}
+.searchable-select > button[role="combobox"]:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.searchable-select-popover {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 4px);
+  right: 0;
+  width: max(100%, 220px);
+  padding: 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-popover);
+  box-shadow: 0 10px 24px var(--shadow);
+}
+.searchable-select-popover > input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--control-bg);
+  color: var(--text-default);
+  font: inherit;
+  font-size: 11px;
+}
+.searchable-select-popover > input:focus {
+  border-color: var(--accent-muted);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.searchable-select-options {
+  max-height: 240px;
+  margin-top: 6px;
+  overflow-y: auto;
+}
+.searchable-select-group {
+  display: grid;
+  gap: 2px;
+}
+.searchable-select-group + .searchable-select-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-muted);
+}
+.searchable-select-group-label {
+  padding: 5px 8px 3px;
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.searchable-select-options button {
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.searchable-select-options button:hover:not(:disabled),
+.searchable-select-options button.active {
+  background: var(--control-hover);
+  color: var(--text-default);
+}
+.searchable-select-options button[aria-selected="true"] {
+  background: var(--control-selected);
+  color: var(--text-default);
+}
+.searchable-select-options button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.searchable-select-empty {
+  margin: 12px 8px;
+  color: var(--text-subtle);
+  font-size: 11px;
+}
 .app-tooltip {
   position: relative;
   display: inline-flex;
@@ -1118,21 +1238,16 @@ body.panel-resizing-vertical * {
   align-items: end;
   gap: 10px;
 }
-.memory-config-fields label {
+.memory-config-fields label,
+.memory-config-field {
   min-width: 0;
   display: grid;
   gap: 6px;
   color: var(--text-muted);
   font-size: 10px;
 }
-.memory-config-fields select {
-  min-width: 0;
+.memory-config-field .searchable-select > button {
   height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--control-bg);
-  color: var(--text-default);
   font-size: 11px;
 }
 .memory-config-fields :disabled {
@@ -1266,13 +1381,9 @@ body.panel-resizing-vertical * {
   font-size: 11px;
   line-height: 1.45;
 }
-.setting-row select {
+.setting-row > .searchable-select {
   width: 130px;
-  height: 32px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--control-bg);
-  color: var(--text-default);
+  flex: 0 0 130px;
 }
 .settings-empty {
   padding: 32px 16px;
@@ -1420,8 +1531,9 @@ body.panel-resizing-vertical * {
   min-width: 0;
   padding: 0 10px;
 }
-.extension-marketplace-controls select {
-  padding: 0 8px;
+.extension-marketplace-controls .searchable-select > button {
+  min-height: 32px;
+  font-size: 11px;
 }
 .extension-marketplace-controls button,
 .extension-row-actions button,
@@ -1643,7 +1755,8 @@ body.panel-resizing-vertical * {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.worktree-dialog label {
+.worktree-dialog label,
+.worktree-dialog .dialog-field {
   display: grid;
   gap: 6px;
   margin-top: 12px;
@@ -2807,6 +2920,9 @@ body.panel-resizing-vertical * {
 .task-list-search input {
   width: 220px;
 }
+.task-list-search .searchable-select {
+  width: 180px;
+}
 .task-button:focus-visible,
 .task-icon-button:focus-visible,
 .task-view-switcher button:focus-visible,
@@ -2990,7 +3106,7 @@ body.panel-resizing-vertical * {
     width: 100%;
   }
   .task-list-search input,
-  .task-list-search select {
+  .task-list-search .searchable-select {
     flex: 1 1 160px;
   }
   .task-list-item {
@@ -3797,29 +3913,21 @@ details[open] > summary > .chat-disclosure-icon {
   align-items: center;
   gap: 4px;
 }
-.chat-composer-config select {
-  min-width: 0;
-  max-width: 100%;
-  height: 28px;
+.chat-composer-config .searchable-select {
+  max-width: min(220px, 100%);
   flex: 0 1 auto;
-  padding: 0 22px 0 8px;
+}
+.chat-composer-config .searchable-select > button {
+  height: 28px;
   border: 0;
   border-radius: 8px;
-  outline: 0;
-  background: var(--control-bg);
   color: var(--text-muted);
-  font: inherit;
   font-size: 11px;
-  cursor: pointer;
 }
-.chat-composer-config select:hover:not(:disabled),
-.chat-composer-config select:focus-visible {
+.chat-composer-config .searchable-select > button:hover:not(:disabled),
+.chat-composer-config .searchable-select > button:focus-visible {
   background: var(--control-hover);
   color: var(--text-default);
-}
-.chat-composer-config select:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 .chat-slash-menu {
   position: absolute;
@@ -3980,7 +4088,7 @@ details[open] > summary > .chat-disclosure-icon {
   .chat-composer-hint {
     display: none;
   }
-  .chat-composer-config select {
+  .chat-composer-config .searchable-select {
     max-width: 130px;
   }
 }

@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { useTranslation } from "../../i18n";
 import type { CreateTaskInput, TaskDetailValue, TasksApi } from "./tasksApi";
 import {
@@ -559,41 +560,40 @@ export function TaskForm({
             {t("tasks.form.existingWorktree")}
           </label>
           {workspaceMode === "new_managed" && project?.kind === "git" ? (
-            <label className="task-form-field">
-              {t("tasks.form.baseBranch")}
-              <select
-                aria-label={t("tasks.form.baseBranch")}
+            <div className="task-form-field">
+              <span>{t("tasks.form.baseBranch")}</span>
+              <SearchableSelect
+                ariaLabel={t("tasks.form.baseBranch")}
                 value={baseRef}
-                onChange={(event) => setBaseRef(event.target.value)}
-              >
-                {project.baseRefs.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={project.baseRefs.map((option) => ({
+                  ...option,
+                  keywords: [option.value],
+                }))}
+                onChange={setBaseRef}
+              />
+            </div>
           ) : (
             <>
-              <label className="task-form-field">
-                {t("tasks.form.worktree")}
-                <select
-                  aria-label={t("tasks.form.worktree")}
+              <div className="task-form-field">
+                <span>{t("tasks.form.worktree")}</span>
+                <SearchableSelect
+                  ariaLabel={t("tasks.form.worktree")}
                   value={worktreeId}
-                  onChange={(event) => {
-                    setWorktreeId(event.target.value);
+                  options={[
+                    { value: "", label: t("tasks.form.selectWorktree") },
+                    ...(project?.worktrees.map((worktree) => ({
+                      value: worktree.id,
+                      label: `${worktree.name}${
+                        worktree.dirty ? ` (${t("tasks.form.dirty")})` : ""
+                      }`,
+                    })) ?? []),
+                  ]}
+                  onChange={(value) => {
+                    setWorktreeId(value);
                     setAllowDirty(false);
                   }}
-                >
-                  <option value="">{t("tasks.form.selectWorktree")}</option>
-                  {project?.worktrees.map((worktree) => (
-                    <option key={worktree.id} value={worktree.id}>
-                      {worktree.name}
-                      {worktree.dirty ? ` (${t("tasks.form.dirty")})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              </div>
             </>
           )}
         </fieldset>

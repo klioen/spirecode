@@ -6,6 +6,7 @@ import type {
   MemoryDocumentId,
   MemoryReasoningEffort,
 } from "../../bindings";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { commandError } from "../../lib/errors";
 import {
   formatDateTime,
@@ -83,43 +84,31 @@ function ModelSelect({
   const available = models.some(
     (model) => modelValue(model.provider, model.id) === value,
   );
-  const groups = models.reduce<Map<string, ChatModelOption[]>>(
-    (result, model) => {
-      const entries = result.get(model.provider) ?? [];
-      entries.push(model);
-      result.set(model.provider, entries);
-      return result;
-    },
-    new Map(),
-  );
+  const options = models.map((model) => ({
+    value: modelValue(model.provider, model.id),
+    label: model.label,
+    group: model.provider,
+    keywords: [model.id],
+  }));
+  if (!available && value) {
+    options.unshift({
+      value,
+      label: t("memory.model.unavailable", { value }),
+      group: "",
+      keywords: [value],
+    });
+  }
   return (
-    <label>
+    <div className="memory-config-field">
       <span>{label}</span>
-      <select
-        aria-label={label}
+      <SearchableSelect
+        ariaLabel={label}
         value={value}
+        options={options}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {!available && value && (
-          <option value={value}>
-            {t("memory.model.unavailable", { value })}
-          </option>
-        )}
-        {[...groups].map(([provider, entries]) => (
-          <optgroup key={provider} label={provider}>
-            {entries.map((model) => (
-              <option
-                key={modelValue(model.provider, model.id)}
-                value={modelValue(model.provider, model.id)}
-              >
-                {model.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </label>
+        onChange={onChange}
+      />
+    </div>
   );
 }
 
@@ -313,26 +302,22 @@ export function MemorySettings({
                 setSaved(false);
               }}
             />
-            <label>
+            <div className="memory-config-field">
               <span>{t("memory.phase1.reasoning")}</span>
-              <select
-                aria-label={t("memory.phase1.reasoning.aria")}
+              <SearchableSelect
+                ariaLabel={t("memory.phase1.reasoning.aria")}
                 value={phase1ReasoningEffort}
                 disabled={configLoading || saving}
-                onChange={(event) => {
-                  setPhase1ReasoningEffort(
-                    event.target.value as MemoryReasoningEffort,
-                  );
+                options={reasoningEfforts.map((effort) => ({
+                  value: effort,
+                  label: t(reasoningKeys[effort]),
+                }))}
+                onChange={(value) => {
+                  setPhase1ReasoningEffort(value as MemoryReasoningEffort);
                   setSaved(false);
                 }}
-              >
-                {reasoningEfforts.map((effort) => (
-                  <option key={effort} value={effort}>
-                    {t(reasoningKeys[effort])}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
+            </div>
           </div>
           <div className="memory-config-row">
             <ModelSelect
@@ -345,26 +330,22 @@ export function MemorySettings({
                 setSaved(false);
               }}
             />
-            <label>
+            <div className="memory-config-field">
               <span>{t("memory.phase2.reasoning")}</span>
-              <select
-                aria-label={t("memory.phase2.reasoning.aria")}
+              <SearchableSelect
+                ariaLabel={t("memory.phase2.reasoning.aria")}
                 value={phase2ReasoningEffort}
                 disabled={configLoading || saving}
-                onChange={(event) => {
-                  setPhase2ReasoningEffort(
-                    event.target.value as MemoryReasoningEffort,
-                  );
+                options={reasoningEfforts.map((effort) => ({
+                  value: effort,
+                  label: t(reasoningKeys[effort]),
+                }))}
+                onChange={(value) => {
+                  setPhase2ReasoningEffort(value as MemoryReasoningEffort);
                   setSaved(false);
                 }}
-              >
-                {reasoningEfforts.map((effort) => (
-                  <option key={effort} value={effort}>
-                    {t(reasoningKeys[effort])}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
+            </div>
           </div>
         </div>
         <small>{t("memory.restartAfterSaving")}</small>

@@ -119,7 +119,7 @@ function api(overrides: Partial<ChatApi> = {}): ChatApi {
       model: { provider: "traex", id: "reasoning-model" },
       models: [],
       thinkingLevel: "medium",
-      availableThinkingLevels: ["off", "medium"],
+      availableThinkingLevels: ["off", "medium", "high"],
       commands: [],
     }),
     setThinkingLevel: vi.fn().mockResolvedValue({
@@ -436,10 +436,11 @@ describe("ChatView", () => {
 
     const model = await screen.findByRole("combobox", { name: "Model" });
     expect(model).toHaveValue("traex/reasoning-model");
-    fireEvent.change(model, { target: { value: "traex/reasoning-model" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Thinking level" }), {
-      target: { value: "high" },
-    });
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole("option", { name: "Reasoning Model" }));
+    await waitFor(() => expect(model).toBeEnabled());
+    fireEvent.click(screen.getByRole("combobox", { name: "Thinking level" }));
+    fireEvent.click(screen.getByRole("option", { name: "High" }));
     await waitFor(() =>
       expect(chatApi.setThinkingLevel).toHaveBeenCalledWith(
         "worktree-1",

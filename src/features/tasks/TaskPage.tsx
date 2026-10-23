@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { formatDateTime, useTranslation } from "../../i18n";
 import { TaskDetail } from "./TaskDetail";
 import { TaskForm, type TaskProjectOption } from "./TaskForm";
@@ -625,21 +626,21 @@ export function TaskPage({
                     setSearch(boundedTaskQuery(event.target.value))
                   }
                 />
-                <select
-                  aria-label={t("tasks.filterProject")}
+                <SearchableSelect
+                  ariaLabel={t("tasks.filterProject")}
                   value={store.projectId}
-                  onChange={(event) => {
-                    store.setProject(event.target.value);
+                  options={[
+                    { value: "", label: t("tasks.allProjects") },
+                    ...Array.from(projectOptions).map(([value, label]) => ({
+                      value,
+                      label,
+                    })),
+                  ]}
+                  onChange={(value) => {
+                    store.setProject(value);
                     void useTasksStore.getState().load(api);
                   }}
-                >
-                  <option value="">{t("tasks.allProjects")}</option>
-                  {Array.from(projectOptions).map(([id, name]) => (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
             {store.loading ? (

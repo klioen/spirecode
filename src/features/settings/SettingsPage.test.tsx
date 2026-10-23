@@ -139,10 +139,9 @@ describe("SettingsPage", () => {
     );
 
     const theme = screen.getByRole("combobox", { name: "Theme" });
+    fireEvent.click(theme);
     expect(
-      Array.from((theme as HTMLSelectElement).options).map((option) =>
-        option.textContent?.trim(),
-      ),
+      screen.getAllByRole("option").map((option) => option.textContent?.trim()),
     ).toEqual(["System", "Light", "Dark"]);
   });
 
@@ -424,7 +423,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
     const language = screen.getByRole("combobox", { name: "Language" });
-    fireEvent.change(language, { target: { value: "zh-CN" } });
+    fireEvent.click(language);
+    fireEvent.click(screen.getByRole("option", { name: "简体中文" }));
 
     expect(settingsApi.setLanguage).toHaveBeenCalledWith("zh-CN");
     expect(language).toBeDisabled();
@@ -467,9 +467,8 @@ describe("SettingsPage", () => {
     });
     render(<SettingsPage worktreeId={null} onBack={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
-      target: { value: "zh-CN" },
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Language" }));
+    fireEvent.click(screen.getByRole("option", { name: "简体中文" }));
 
     expect(await screen.findByText("write failed")).toBeInTheDocument();
     expect(
