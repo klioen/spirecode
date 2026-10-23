@@ -36,6 +36,8 @@ import { ensureNpmOnPath } from "./domains/extensions/packageManagerEnvironment.
 import { Type } from "typebox";
 import {
   openTaskDatabase,
+  TaskDatabaseError,
+  type TaskDatabaseErrorCode,
   type TaskDatabase,
 } from "./domains/tasks/database.js";
 import { TaskRepository } from "./domains/tasks/repository.js";
@@ -48,6 +50,7 @@ import {
   type TaskDetail,
   type TaskSessionIntegration,
 } from "./domains/tasks/service.js";
+import { TaskIntakeService } from "./domains/tasks/intake.js";
 import { taskSessionName } from "./domains/tasks/prompt.js";
 import {
   createDefaultTaskRewriteService,
@@ -78,7 +81,9 @@ export class AppState {
   readonly taskDatabase: TaskDatabase | null;
   readonly taskRepository: TaskRepository | null;
   readonly tasks: TaskService | null;
+  readonly taskIntake: TaskIntakeService;
   readonly taskUnavailableReason: string | null;
+  readonly taskUnavailableCode: TaskDatabaseErrorCode | null;
   readonly taskRewrite: Promise<TaskRewriteService>;
   private activeTaskRewriteId: string | null = null;
 
@@ -123,6 +128,8 @@ export class AppState {
     });
     this.chat = new ChatService(root, {
       selectSkills: (cwd) => this.settings.skillSelection(cwd),
+      resolveSessionOptions: (worktreeId, sessionId) =>
+        this.taskIntake.sessionOptions(worktreeId, sessionId),
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
@@ -134,6 +141,7 @@ export class AppState {
     } | null = null;
     let openedTaskDatabase: TaskDatabase | null = null;
     let taskUnavailableReason: string | null = null;
+    let taskUnavailableCode: TaskDatabaseErrorCode | null = null;
     try {
       const taskDatabase = openTaskDatabase(
         path.join(dataDirectory, "tasks.sqlite3"),
@@ -193,8 +201,16 @@ export class AppState {
             missing: inspection.missing,
           };
         },
-        createWorktree: async (projectId, name, baseRef) => {
-          const worktree = await this.createWorktree(projectId, name, baseRef);
+        createWorktree: async (projectId, name, baseRef, taskId) => {
+          const commit = taskId
+            ? this.taskIntake.executionCommit(taskId, baseRef)
+            : undefined;
+          const worktree = await this.createWorktree(
+            projectId,
+            name,
+            baseRef,
+            commit,
+          );
           return {
             id: worktree.id,
             projectId: worktree.projectId,
@@ -300,12 +316,49 @@ export class AppState {
       openedTaskDatabase?.close();
       taskUnavailableReason =
         error instanceof Error ? error.message : "Task database unavailable";
+      taskUnavailableCode =
+        error instanceof TaskDatabaseError
+          ? error.code
+          : "TASK_DATABASE_UNAVAILABLE";
+      void this.diagnostics.log({
+        level: "error",
+        code: taskUnavailableCode,
+        safeContext: {
+          errorType: error instanceof Error ? error.name : "UnknownError",
+        },
+      });
       console.warn("Task module is unavailable", error);
     }
     this.taskDatabase = taskSubsystem?.database ?? null;
     this.taskRepository = taskSubsystem?.repository ?? null;
     this.tasks = taskSubsystem?.service ?? null;
     this.taskUnavailableReason = taskUnavailableReason;
+    this.taskUnavailableCode = taskUnavailableCode;
+    if (this.tasks)
+      void this.diagnostics.log({ level: "info", code: "TASK_DATABASE_READY" });
+    this.taskIntake = new TaskIntakeService(
+      path.join(dataDirectory, "task-intakes"),
+      {
+        chat: this.chat,
+        tasks: {
+          create: (input, idempotencyId) =>
+            this.requireTasks().create(input, idempotencyId),
+          get: (taskId) => this.requireTasks().get(taskId),
+        },
+        context: async (worktreeId) => {
+          const worktree = await this.projects.worktree(worktreeId);
+          const project = await this.projects.project(worktree.projectId);
+          return {
+            root: await this.projects.root(worktreeId),
+            projectId: project.id,
+            projectName: project.name,
+            kind: project.kind,
+          };
+        },
+        branches: (projectId) => this.worktrees.listOriginBranches(projectId),
+        onChanged: (event) => this.send("task://event", event),
+      },
+    );
 
     const rewriteDirectory = path.join(dataDirectory, "task-rewrite");
     try {
@@ -344,6 +397,7 @@ export class AppState {
     ]);
     applyMemoryConfig(await settings.memoryConfig());
     const state = new AppState(projects, settings, window, dataDirectory);
+    await state.taskIntake.initialize();
     for (const project of await projects.list()) {
       for (const worktree of project.worktrees) {
         try {
@@ -484,8 +538,18 @@ export class AppState {
     await shell.showItemInFolder(await this.projects.root(worktreeId));
   }
 
-  async createWorktree(projectId: string, name: string, baseRef: string) {
-    const worktree = await this.worktrees.create(projectId, name, baseRef);
+  async createWorktree(
+    projectId: string,
+    name: string,
+    baseRef: string,
+    approvedCommit?: string,
+  ) {
+    const worktree = await this.worktrees.create(
+      projectId,
+      name,
+      baseRef,
+      approvedCommit,
+    );
     try {
       await this.ensureWatcher("git", worktree.id, worktree.path);
       return worktree;
@@ -596,6 +660,11 @@ export class AppState {
 
   async taskGet(taskId: string) {
     return this.taskDetail(await this.requireTasks().get(taskId));
+  }
+
+  async taskIntakeCreate(worktreeId: string) {
+    this.requireTasks();
+    return this.taskIntake.create(worktreeId);
   }
 
   async taskCreate(
@@ -733,6 +802,7 @@ export class AppState {
 
   async dispose(): Promise<void> {
     this.terminals.dispose();
+    await this.taskIntake?.dispose();
     const taskCleanup = await Promise.allSettled([
       this.tasks?.dispose() ?? Promise.resolve(),
     ]);
@@ -750,8 +820,12 @@ export class AppState {
   private requireTasks(): TaskService {
     if (this.tasks) return this.tasks;
     throw new CommandError(
-      "TASK_DATABASE_UNAVAILABLE",
-      "Tasks are unavailable because the task database could not be opened.",
+      this.taskUnavailableCode ?? "TASK_DATABASE_UNAVAILABLE",
+      this.taskUnavailableCode &&
+        this.taskUnavailableCode !== "TASK_DATABASE_UNAVAILABLE" &&
+        this.taskUnavailableReason
+        ? this.taskUnavailableReason
+        : "Tasks are unavailable because the task database could not be opened.",
     );
   }
 

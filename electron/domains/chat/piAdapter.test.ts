@@ -5,6 +5,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   createPiAdapter,
+  createReadOnlyPiSettings,
   preferSpirecodeProviders,
   type PiSdk,
 } from "./piAdapter.js";
@@ -267,6 +268,83 @@ describe("piAdapter", () => {
     expect(sdk.SessionManager.create).toHaveBeenCalledWith("/repo", undefined, {
       id: "task-run-id",
     });
+  });
+
+  it("retains model preferences but clears executable resource packages for intake", () => {
+    const settings = createReadOnlyPiSettings({
+      defaultProvider: "provider",
+      defaultModel: "model",
+      packages: ["npm:dangerous-package"],
+      extensions: ["/private/extension.ts"],
+      skills: ["/private/skills"],
+      prompts: ["/private/prompts"],
+      themes: ["/private/themes"],
+    });
+    expect(settings.getDefaultProvider()).toBe("provider");
+    expect(settings.getDefaultModel()).toBe("model");
+    expect(settings.getGlobalSettings()).toMatchObject({
+      packages: [],
+      extensions: [],
+      skills: [],
+      prompts: [],
+      themes: [],
+    });
+  });
+
+  it("loads intake without executable resources and allows only explicit host tools on create and reopen", async () => {
+    const { sdk, loadResources, sessionInputs, calls } = sdkFixture({});
+    const resources = vi.fn(loadResources);
+    const selectSkills = vi.fn();
+    const adapter = await createPiAdapter(sdk, {
+      loadResources: resources,
+      selectSkills,
+      loadReadOnlySettings: async () => ({
+        getDefaultProvider: () => undefined,
+        getDefaultModel: () => undefined,
+      }),
+    });
+    const restriction = {
+      readOnly: true,
+      systemPrompt: "Clarify only",
+      customTools: [{ name: "prepare_task" }, { name: "submit_task" }],
+    };
+    const created = await adapter.create("/repo", restriction);
+    await adapter.open(
+      {
+        sessionId: "s1",
+        cwd: "/repo",
+        path: "/sessions/current/session.jsonl",
+        title: "",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "/repo",
+      restriction,
+    );
+    expect(resources).not.toHaveBeenCalled();
+    expect(selectSkills).not.toHaveBeenCalled();
+    for (const input of sessionInputs)
+      expect(input).toMatchObject({
+        tools: ["prepare_task", "submit_task"],
+        excludeTools: ["mcp__*"],
+      });
+    const services = calls.filter(
+      (call) => Array.isArray(call) && call[0] === "services",
+    ) as unknown[][];
+    for (const call of services)
+      expect(call[3]).toMatchObject({
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noContextFiles: true,
+        additionalExtensionPaths: [],
+        systemPrompt: "Clarify only",
+      });
+    expect(
+      (await created.session.getConfig()).commands.map(
+        (command) => command.name,
+      ),
+    ).toEqual(["model", "thinking"]);
   });
 
   it("fails closed when an extension owns a custom tool name", async () => {

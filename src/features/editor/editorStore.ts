@@ -31,6 +31,7 @@ export type ResourceTab =
       id: string;
       worktreeId: string;
       type: "chat";
+      kind?: "task-intake";
       sessionId: string;
       title: string;
       preview: false;
@@ -106,6 +107,9 @@ function restoreTab(value: unknown, worktreeId: string): ResourceTab | null {
       id: chatResourceId(worktreeId, candidate.sessionId),
       worktreeId,
       type: "chat",
+      ...(candidate.kind === "task-intake"
+        ? { kind: "task-intake" as const }
+        : {}),
       sessionId: candidate.sessionId,
       title:
         candidate.title === "New chat" ? "" : candidate.title.slice(0, 256),
@@ -211,6 +215,7 @@ interface EditorState {
     worktreeId: string,
     sessionId: string,
     title: string,
+    kind?: "task-intake",
   ) => ResourceTab;
   renameChat: (worktreeId: string, sessionId: string, title: string) => void;
   setTerminalStatus: (
@@ -261,9 +266,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const existing = view.tabs.find((tab) => tab.id === incoming.id);
       let tabs: ResourceTab[];
       if (existing) {
-        tabs = view.tabs.map((tab) =>
-          tab.id === incoming.id && keep ? { ...tab, preview: false } : tab,
-        );
+        tabs = view.tabs.map((tab) => {
+          if (tab.id !== incoming.id) return tab;
+          if (tab.type === "chat" && incoming.type === "chat" && incoming.kind)
+            return { ...tab, kind: incoming.kind, preview: false };
+          return keep ? { ...tab, preview: false } : tab;
+        });
       } else if (incoming.type === "terminal" || incoming.type === "chat") {
         tabs = [...view.tabs, incoming];
       } else {
@@ -310,11 +318,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
     return terminal;
   },
-  openChat: (worktreeId, sessionId, title) => {
+  openChat: (worktreeId, sessionId, title, kind) => {
     const chat: ResourceTab = {
       id: chatResourceId(worktreeId, sessionId),
       worktreeId,
       type: "chat",
+      ...(kind ? { kind } : {}),
       sessionId,
       title,
       preview: false,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import type { ChatApi } from "./chatApi";
 import { chatRuntime, type ChatRuntime, useChatSession } from "./chatRuntime";
@@ -27,6 +27,12 @@ export interface ChatViewProps {
   sessionId: string;
   api: ChatApi;
   runtime?: ChatRuntime;
+  intro?: ReactNode;
+  afterMessages?: ReactNode;
+  composerPlaceholder?: string;
+  composerLabel?: string;
+  inputDisabled?: boolean;
+  allowFollowUp?: boolean;
   onError?: (error: ReturnType<typeof toChatError>) => void;
 }
 
@@ -36,8 +42,13 @@ function ChatViewContent({
   api,
   runtime,
   onError,
-}: Required<Pick<ChatViewProps, "worktreeId" | "sessionId" | "api">> &
-  Pick<ChatViewProps, "onError"> & { runtime: ChatRuntime }) {
+  intro,
+  afterMessages,
+  composerPlaceholder,
+  composerLabel,
+  inputDisabled,
+  allowFollowUp,
+}: Omit<ChatViewProps, "runtime"> & { runtime: ChatRuntime }) {
   const { t } = useTranslation();
   const state = useChatSession(sessionId, runtime);
   const running = state.status === "streaming";
@@ -111,6 +122,7 @@ function ChatViewContent({
     <section className="chat-view" aria-label={t("chat.session")}>
       <div className="chat-transcript-shell">
         <div ref={transcriptRef} className="chat-transcript" aria-live="polite">
+          {intro}
           {state.status === "loading" && (
             <div>{t("chat.loadingConversation")}</div>
           )}
@@ -161,6 +173,7 @@ function ChatViewContent({
                 );
             }
           })}
+          {afterMessages}
         </div>
         {showScrollToBottom && (
           <button
@@ -186,8 +199,12 @@ function ChatViewContent({
       )}
       <ChatComposer
         running={running}
+        placeholder={composerPlaceholder}
+        inputLabel={composerLabel}
+        allowFollowUp={allowFollowUp}
         queue={state.queue}
         disabled={
+          inputDisabled ||
           state.status === "loading" ||
           state.status === "reconnecting" ||
           state.status === "failed" ||
@@ -209,6 +226,7 @@ export function ChatView({
   api,
   runtime = chatRuntime,
   onError,
+  ...options
 }: ChatViewProps) {
   runtime.ensure(sessionId, worktreeId);
   return (
@@ -218,6 +236,7 @@ export function ChatView({
       api={api}
       runtime={runtime}
       onError={onError}
+      {...options}
     />
   );
 }

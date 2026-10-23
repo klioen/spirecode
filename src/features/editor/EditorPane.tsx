@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   RiChatNewLine,
+  RiTaskLine,
   RiChatHistoryLine,
   RiCloseLine,
   RiFileCodeLine,
@@ -31,6 +32,7 @@ import {
   trackEditorDocumentSave,
 } from "./editorDocumentOperations";
 import { chatRuntime, ChatHistory, ChatView, hostChatApi } from "../chat";
+import { TaskIntakeView } from "../tasks/TaskIntakeView";
 import { useChangesStore } from "../changes/changesStore";
 import { useProjectsStore } from "../projects/projectsStore";
 import { defineMonacoTheme, monacoThemeName } from "../theme/themeColors";
@@ -570,7 +572,13 @@ function DiffView({ diff }: { diff: GitDiff }) {
   );
 }
 
-export function EditorPane({ worktreeId }: { worktreeId: string }) {
+export function EditorPane({
+  worktreeId,
+  onOpenTask,
+}: {
+  worktreeId: string;
+  onOpenTask?: (taskId: string) => void;
+}) {
   const { t } = useTranslation();
   const view = useEditorStore((state) => state.views[worktreeId]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -620,7 +628,24 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
       if (useEditorStore.getState().navigationGeneration === navigation)
         useEditorStore
           .getState()
-          .openChat(worktreeId, session.sessionId, session.title);
+          .openChat(worktreeId, session.sessionId, session.title, session.kind);
+    } catch (error) {
+      useProjectsStore.getState().setError(commandError(error));
+    }
+  };
+  const createTaskIntake = async () => {
+    const navigation = useEditorStore.getState().beginNavigation();
+    try {
+      const session = await commands.taskIntakeCreate(worktreeId);
+      if (useEditorStore.getState().navigationGeneration === navigation)
+        useEditorStore
+          .getState()
+          .openChat(
+            worktreeId,
+            session.sessionId,
+            session.title,
+            "task-intake",
+          );
     } catch (error) {
       useProjectsStore.getState().setError(commandError(error));
     }
@@ -704,7 +729,8 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
     tab.type === "terminal"
       ? t("editor.terminalTitle", { number: tab.sequence })
       : tab.type === "chat"
-        ? tab.title || t("editor.newChat")
+        ? tab.title ||
+          t(tab.kind === "task-intake" ? "editor.newTask" : "editor.newChat")
         : tab.relativePath.split("/").slice(-1)[0];
   return (
     <main className="editor-pane">
@@ -735,6 +761,8 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                     <RiGitCommitLine size={14} />
                   ) : tab.type === "terminal" ? (
                     <RiTerminalBoxLine size={14} />
+                  ) : tab.type === "chat" && tab.kind === "task-intake" ? (
+                    <RiTaskLine size={14} />
                   ) : tab.type === "chat" ? (
                     <RiChatNewLine size={14} />
                   ) : (
@@ -806,6 +834,14 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
               <RiChatNewLine size={16} />
             </button>
           </Tooltip>
+          <Tooltip label={t("editor.newTask")}>
+            <button
+              aria-label={t("editor.newTask")}
+              onClick={() => void createTaskIntake()}
+            >
+              <RiTaskLine size={16} />
+            </button>
+          </Tooltip>
           <Tooltip label={t("editor.newTerminal")} align="end">
             <button
               aria-label={t("editor.newTerminal")}
@@ -847,7 +883,12 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
               onOpen={(session) => {
                 useEditorStore
                   .getState()
-                  .openChat(worktreeId, session.sessionId, session.title);
+                  .openChat(
+                    worktreeId,
+                    session.sessionId,
+                    session.title,
+                    session.kind,
+                  );
                 setHistoryOpen(false);
               }}
             />
@@ -878,6 +919,13 @@ export function EditorPane({ worktreeId }: { worktreeId: string }) {
                 terminalId={active.terminalId}
               />
             </div>
+          ) : active.type === "chat" && active.kind === "task-intake" ? (
+            <TaskIntakeView
+              key={active.id}
+              worktreeId={worktreeId}
+              sessionId={active.sessionId}
+              onOpenTask={onOpenTask}
+            />
           ) : active.type === "chat" ? (
             <ChatView
               key={active.id}

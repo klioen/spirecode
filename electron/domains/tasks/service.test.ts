@@ -142,6 +142,27 @@ async function runTask(detail: Awaited<ReturnType<TaskService["get"]>>) {
 }
 
 describe("TaskService", () => {
+  it("uses a durable intake identity to return the same Task and initial Run on retry", async () => {
+    const input = createInput(true);
+    const idempotencyId = "b0000000-0000-4000-8000-000000000001";
+    const first = await service.create(input, idempotencyId);
+    const second = await service.create(input, idempotencyId);
+    expect(first.task.id).toBe(idempotencyId);
+    expect(second.task.id).toBe(idempotencyId);
+    expect(second.runs).toHaveLength(1);
+    await expect(
+      service.create({ ...input, description: "different" }, idempotencyId),
+    ).rejects.toMatchObject({ code: "TASK_CONFLICT" });
+    await service.whenIdle();
+    expect(dependencies.createWorktree).toHaveBeenCalledWith(
+      projectId,
+      expect.any(String),
+      "origin/main",
+      idempotencyId,
+    );
+    expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+  });
+
   it("returns a durable queued task before provisioning and dispatches it in the background", async () => {
     const detail = await service.create(createInput(true));
 
@@ -430,6 +451,7 @@ describe("TaskService", () => {
       projectId,
       expect.stringMatching(/^task-20000000-implement-task-service$/),
       "origin/main",
+      detail.task.id,
     );
     expect(dependencies.createSession).toHaveBeenCalledWith(
       managedWorktreeId,

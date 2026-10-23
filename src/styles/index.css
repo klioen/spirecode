@@ -5191,3 +5191,41 @@ details[open] > summary > .chat-disclosure-icon {
     transform: rotate(360deg);
   }
 }
+
+.task-intake-intro,
+.task-intake-review,
+.task-intake-submitted {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+
+.task-intake-intro p,
+.task-intake-submitted p,
+.task-intake-review p {
+  margin: 8px 0;
+}
+
+.task-intake-intro small {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.task-intake-review pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  margin: 12px 0;
+}
+
+.task-intake-confirmation {
+  font-weight: 600;
+}
+
+.task-intake-submitted button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  cursor: pointer;
+}

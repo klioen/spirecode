@@ -6,6 +6,7 @@ import {
   type PiAdapter,
   type PiAdapterOptions,
   type PiSessionRecord,
+  type PiSessionLoadOptions,
 } from "./piAdapter.js";
 import { normalizeEvent, normalizeSummary, normalizeTimeline } from "./wire.js";
 import {
@@ -24,9 +25,9 @@ import {
 const MAX_BUFFERED_EVENTS = 512;
 const MAX_PROMPT_BYTES = 64 * 1024;
 
-export interface ChatSessionInternalOptions {
-  customTools?: unknown[];
-  sessionId?: string;
+export interface ChatSessionInternalOptions extends PiSessionLoadOptions {
+  onSend?: (text: string) => Promise<void>;
+  restoreEmpty?: boolean;
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
@@ -50,9 +51,14 @@ export interface ChatServiceOptions {
   selectSkills?: PiAdapterOptions["selectSkills"];
   maxBufferedEvents?: number;
   trashItem?: (sessionPath: string) => Promise<void>;
+  resolveSessionOptions?: (
+    worktreeId: string,
+    sessionId: string,
+  ) => ChatSessionInternalOptions | undefined;
 }
 
 export class ChatService {
+  private readonly resolveSessionOptions?: ChatServiceOptions["resolveSessionOptions"];
   private readonly sessions = new Map<string, SessionState>();
   private readonly owners = new Map<string, string>();
   private adapterPromise?: Promise<PiAdapter>;
@@ -73,6 +79,7 @@ export class ChatService {
       );
     this.maxBufferedEvents = options.maxBufferedEvents ?? MAX_BUFFERED_EVENTS;
     this.trashItem = options.trashItem;
+    this.resolveSessionOptions = options.resolveSessionOptions;
   }
 
   async create(
@@ -82,17 +89,11 @@ export class ChatService {
     const cwd = await this.root(worktreeId);
     try {
       const adapter = await this.adapter();
+      options = this.sessionOptions(worktreeId, options.sessionId, options);
       const created =
-        options.customTools === undefined && options.sessionId === undefined
+        Object.keys(options).length === 0
           ? await adapter.create(cwd)
-          : await adapter.create(cwd, {
-              ...(options.customTools === undefined
-                ? {}
-                : { customTools: options.customTools }),
-              ...(options.sessionId === undefined
-                ? {}
-                : { sessionId: options.sessionId }),
-            });
+          : await adapter.create(cwd, this.loadOptions(options));
       const record = this.register(created, worktreeId, cwd, options);
       return this.summary(record);
     } catch (error) {
@@ -130,6 +131,7 @@ export class ChatService {
   ): Promise<ChatSessionSummary> {
     return this.runLifecycle(sessionId, async () => {
       const cwd = await this.root(worktreeId);
+      options = this.sessionOptions(worktreeId, sessionId, options);
       let record = this.sessions.get(sessionId);
       if (record) {
         this.assertOwner(record, worktreeId);
@@ -142,13 +144,15 @@ export class ChatService {
         const info = (await adapter.list(cwd)).find(
           (item) => item.sessionId === sessionId,
         );
-        if (!info) throw notFound();
-        const opened =
-          options.customTools === undefined
+        if (!info && !options.restoreEmpty) throw notFound();
+        const opened = !info
+          ? await adapter.create(cwd, {
+              ...this.loadOptions(options),
+              sessionId,
+            })
+          : Object.keys(options).length === 0
             ? await adapter.open(info, cwd)
-            : await adapter.open(info, cwd, {
-                customTools: options.customTools,
-              });
+            : await adapter.open(info, cwd, this.loadOptions(options));
         record = this.register(opened, worktreeId, cwd, options);
         return this.summary(record);
       } catch (error) {
@@ -175,6 +179,7 @@ export class ChatService {
   ): Promise<ChatSessionSummary> {
     return this.runLifecycle(sessionId, async () => {
       const cwd = await this.root(worktreeId);
+      options = this.sessionOptions(worktreeId, sessionId, options);
       const loaded = this.sessions.get(sessionId);
       let subscriber: ChatEventSubscriber | undefined;
       let sequence = 0;
@@ -198,9 +203,14 @@ export class ChatService {
           (item) => item.sessionId === sessionId,
         );
         if (!info) throw notFound();
-        const opened = await adapter.open(info, cwd, {
-          customTools: options.customTools ?? [],
-        });
+        const opened = await adapter.open(
+          info,
+          cwd,
+          this.loadOptions({
+            ...options,
+            customTools: options.customTools ?? [],
+          }),
+        );
         const record = this.register(opened, worktreeId, cwd, options);
         record.sequence = sequence;
         record.subscriber = subscriber;
@@ -267,7 +277,14 @@ export class ChatService {
         if (!summary.sessionId)
           throw protocolError("Agent SDK returned an invalid session");
         this.establishOwnership(summary.sessionId, worktreeId);
-        return { ...summary, worktreeId };
+        return {
+          ...summary,
+          worktreeId,
+          ...(this.resolveSessionOptions?.(worktreeId, summary.sessionId)
+            ?.readOnly
+            ? { kind: "task-intake" as const }
+            : {}),
+        };
       });
     } catch (error) {
       throw mapChatError(error, "Unable to list agent sessions");
@@ -299,9 +316,18 @@ export class ChatService {
         const info = (await adapter.list(cwd)).find(
           (item) => item.sessionId === sessionId,
         );
-        if (!info) throw notFound();
+        const options = this.sessionOptions(worktreeId, sessionId);
+        if (!info && !options.restoreEmpty) throw notFound();
         this.establishOwnership(sessionId, worktreeId);
-        record = this.register(await adapter.open(info, cwd), worktreeId, cwd);
+        const opened = !info
+          ? await adapter.create(cwd, {
+              ...this.loadOptions(options),
+              sessionId,
+            })
+          : Object.keys(options).length === 0
+            ? await adapter.open(info, cwd)
+            : await adapter.open(info, cwd, this.loadOptions(options));
+        record = this.register(opened, worktreeId, cwd, options);
       }
       return await this.attachRecord(record, subscriber);
     } catch (error) {
@@ -444,6 +470,22 @@ export class ChatService {
       return { accepted: true };
     }
     const record = this.requireUsable(worktreeId, sessionId);
+    const options = this.sessionOptions(worktreeId, sessionId);
+    if (options.readOnly && record.status === "streaming")
+      throw new ChatError(
+        "CHAT_SESSION_BUSY",
+        "Wait for the clarification agent to finish",
+      );
+    try {
+      await options.onSend?.(text);
+    } catch (error) {
+      throw new ChatError(
+        "CHAT_FAILED",
+        error instanceof Error
+          ? error.message
+          : "Task input could not be accepted",
+      );
+    }
     try {
       await record.session.send(text);
       return { accepted: true };
@@ -849,6 +891,39 @@ export class ChatService {
     return {
       ...normalizeSummary(record as unknown as Record<string, unknown>),
       worktreeId: record.worktreeId,
+      ...(this.resolveSessionOptions?.(record.worktreeId, record.sessionId)
+        ?.readOnly
+        ? { kind: "task-intake" as const }
+        : {}),
+    };
+  }
+
+  private sessionOptions(
+    worktreeId: string,
+    sessionId?: string,
+    options: ChatSessionInternalOptions = {},
+  ): ChatSessionInternalOptions {
+    return {
+      ...options,
+      ...(sessionId
+        ? this.resolveSessionOptions?.(worktreeId, sessionId)
+        : undefined),
+    };
+  }
+
+  private loadOptions(
+    options: ChatSessionInternalOptions,
+  ): PiSessionLoadOptions {
+    return {
+      ...(options.customTools === undefined
+        ? {}
+        : { customTools: options.customTools }),
+      ...(options.sessionId === undefined
+        ? {}
+        : { sessionId: options.sessionId }),
+      ...(options.readOnly
+        ? { readOnly: true, systemPrompt: options.systemPrompt }
+        : {}),
     };
   }
 

@@ -144,11 +144,12 @@ export function ChatHistory({
 
   const normalizedQuery = query.trim().toLocaleLowerCase(locale);
   const untitled = t("chat.history.untitled");
+  const sessionTitle = (session: ChatSessionSummary) =>
+    session.title ||
+    (session.kind === "task-intake" ? t("editor.newTask") : untitled);
   const filtered = (sessions ?? [])
     .filter((session) =>
-      (session.title || untitled)
-        .toLocaleLowerCase(locale)
-        .includes(normalizedQuery),
+      sessionTitle(session).toLocaleLowerCase(locale).includes(normalizedQuery),
     )
     .map((session) => ({ session, date: sessionDate(session) }))
     .sort(
@@ -266,7 +267,7 @@ export function ChatHistory({
                 <h3>{groupLabel}</h3>
                 <ul aria-label={groupLabel}>
                   {items.map(({ session, date }) => {
-                    const title = session.title || untitled;
+                    const title = sessionTitle(session);
                     const deleting = deletingIds.has(session.sessionId);
                     return (
                       <li

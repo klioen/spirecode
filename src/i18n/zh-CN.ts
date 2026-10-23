@@ -535,6 +535,23 @@ export const zhCN = {
   "editor.closeTab": "关闭 {name}",
   "editor.discardConfirm": "放弃对 {path} 的未保存更改？",
   "editor.chatHistory": "聊天历史",
+  "editor.newTask": "新建任务",
+  "tasks.intake.placeholder": "描述你想完成的任务…",
+  "tasks.intake.inputLabel": "任务描述或澄清回复",
+  "tasks.intake.intro":
+    "描述你的任务。Agent 会先只读分析代码、逐个澄清关键问题，再请你确认提交。",
+  "tasks.intake.baseline": "项目：{project} · 基准分支：{branch} · {commit}",
+  "tasks.intake.review": "最终任务方案",
+  "tasks.intake.confirmHint":
+    "回复「确认提交」「确认」或「开始」，授权执行这份方案。如需修改，请直接描述修改点，Agent 将重新准备方案并请你确认。",
+  "tasks.intake.submitting":
+    "正在完成提交。如果提交未完成，可回复「确认提交」重试同一个任务。",
+  "tasks.intake.submitted": "任务已提交",
+  "tasks.intake.queued": "已进入后台执行队列",
+  "tasks.intake.backgroundHint":
+    "可以关闭此 Tab。任务会在 SpireCode 运行期间后台执行，需要验收或处理问题时会通知你。",
+  "tasks.intake.viewTask": "查看任务",
+  "tasks.intake.loadFailed": "无法加载任务澄清会话。",
   "editor.newChat": "新建聊天",
   "editor.newTerminal": "新建终端",
   "editor.terminalTitle": "终端{number}",

@@ -630,3 +630,33 @@ describe("Task IPC validation", () => {
     ).toThrow("unexpected fields");
   });
 });
+
+it("allowlists intake create/get with worktree ownership IDs only", () => {
+  expect(
+    validateCommandArgs("task_intake_create", { worktreeId: "w1" }),
+  ).toEqual({ worktreeId: "w1" });
+  expect(
+    validateCommandArgs("task_intake_get", {
+      worktreeId: "w1",
+      sessionId: "s1",
+    }),
+  ).toEqual({ worktreeId: "w1", sessionId: "s1" });
+  expect(() =>
+    validateCommandArgs("task_intake_create", {
+      worktreeId: "w1",
+      path: "/tmp",
+    }),
+  ).toThrow();
+  expect(() =>
+    validateCommandArgs("task_intake_get", {
+      worktreeId: "w1",
+      sessionId: null,
+    }),
+  ).toThrow();
+  expect(() =>
+    validateCommandArgs("task_intake_create", {
+      worktreeId: "w1",
+      baseCommit: "a".repeat(40),
+    }),
+  ).toThrow();
+});

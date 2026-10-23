@@ -363,7 +363,14 @@ export function Workbench() {
             }}
           />
         ) : active ? (
-          <EditorPane worktreeId={active.worktree.id} />
+          <EditorPane
+            worktreeId={active.worktree.id}
+            onOpenTask={(taskId) => {
+              taskSessionNavigationGeneration.current += 1;
+              useTasksStore.getState().selectTask(taskId);
+              setTasksOpen(true);
+            }}
+          />
         ) : (
           <EmptyWorkbench />
         )}

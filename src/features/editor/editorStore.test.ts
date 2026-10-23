@@ -344,3 +344,29 @@ describe("preview and keep tabs", () => {
     ).toMatchObject({ status: "exited" });
   });
 });
+
+it("persists intake tab kind without persisting conversation bodies", () => {
+  useEditorStore.getState().openChat("w-intake", "s-intake", "", "task-intake");
+  const restored = loadPersistedEditorViews();
+  expect(restored["w-intake"].tabs[0]).toMatchObject({
+    type: "chat",
+    kind: "task-intake",
+    sessionId: "s-intake",
+  });
+  expect(restored["w-intake"].tabs[0]).not.toHaveProperty("proposal");
+  expect(restored["w-intake"].tabs[0]).not.toHaveProperty("items");
+});
+
+it("restores an authoritative intake kind onto an existing untyped placement without duplicating it", () => {
+  useEditorStore.getState().openChat("w-intake", "s-intake", "");
+  useEditorStore.getState().openChat("w-intake", "s-intake", "", "task-intake");
+  expect(useEditorStore.getState().views["w-intake"].tabs).toHaveLength(1);
+  expect(useEditorStore.getState().views["w-intake"].tabs[0]).toMatchObject({
+    type: "chat",
+    kind: "task-intake",
+  });
+  useEditorStore.getState().openChat("w-intake", "s-intake", "");
+  expect(useEditorStore.getState().views["w-intake"].tabs[0]).toMatchObject({
+    kind: "task-intake",
+  });
+});

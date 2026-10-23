@@ -88,7 +88,7 @@ export function ProjectSessionList({
       if (!(await onSelectWorktree(worktreeId))) return;
       useEditorStore
         .getState()
-        .openChat(worktreeId, session.sessionId, session.title);
+        .openChat(worktreeId, session.sessionId, session.title, session.kind);
       onOpenSession?.();
     } catch (failure) {
       setLoadError(commandError(failure).message);
@@ -156,7 +156,13 @@ export function ProjectSessionList({
           </div>
         )}
         {sessions.map((session) => {
-          const title = session.title || t("chat.history.untitled");
+          const title =
+            session.title ||
+            t(
+              session.kind === "task-intake"
+                ? "editor.newTask"
+                : "chat.history.untitled",
+            );
           const deleting = deletingIds.has(session.sessionId);
           const current =
             activeWorktree &&

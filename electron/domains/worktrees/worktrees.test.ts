@@ -129,6 +129,41 @@ afterEach(async () => {
 });
 
 describe("WorktreeService", () => {
+  it("provisions an intake workspace at the approved commit even after its origin branch advances", async () => {
+    const value = await fixture();
+    const approved = (
+      await git(value.project.path, ["rev-parse", "HEAD"])
+    ).trim();
+    await writeFile(
+      path.join(value.project.path, "tracked.txt"),
+      "updated origin\n",
+    );
+    await git(value.project.path, ["add", "tracked.txt"]);
+    await git(value.project.path, ["commit", "-qm", "advance"]);
+    await git(value.project.path, ["push", "-q", "origin", "main"]);
+    const created = await value.service.create(
+      value.project.id,
+      "pinned-task",
+      "origin/main",
+      approved,
+    );
+    expect((await git(created.path, ["rev-parse", "HEAD"])).trim()).toBe(
+      approved,
+    );
+    expect(await readFile(path.join(created.path, "tracked.txt"), "utf8")).toBe(
+      "head\n",
+    );
+    expect(created.baseRef).toBe("origin/main");
+    await expect(
+      value.service.create(
+        value.project.id,
+        "invalid-task",
+        "origin/main",
+        "--upload-pack=evil",
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+
   it("uses the SpireCode home for newly managed worktrees", () => {
     expect(defaultManagedHome("/Users/example")).toBe(
       path.join("/Users/example", ".spirecode"),
