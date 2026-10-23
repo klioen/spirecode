@@ -671,6 +671,8 @@ export const en = {
   "chat.notice.compactionEnd": "Conversation context compacted",
   "chat.notice.retryStart": "Retrying…",
   "chat.notice.retryEnd": "Retry finished",
+  "common.searchOptions": "Search {label}",
+  "common.noOptionsFound": "No options found",
 } as const;
 
 export type TranslationKey = keyof typeof en;

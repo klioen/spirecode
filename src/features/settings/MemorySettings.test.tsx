@@ -167,15 +167,16 @@ describe("MemorySettings", () => {
       screen.queryByRole("textbox", { name: /Model/ }),
     ).not.toBeInTheDocument();
 
-    fireEvent.change(phase1, { target: { value: "openai/gpt-5.6" } });
-    fireEvent.change(
+    fireEvent.click(phase1);
+    fireEvent.click(screen.getByRole("option", { name: "GPT 5.6" }));
+    fireEvent.click(
       screen.getByRole("combobox", { name: "Phase 1 Reasoning Effort" }),
-      { target: { value: "high" } },
     );
-    fireEvent.change(
+    fireEvent.click(screen.getByRole("option", { name: "High" }));
+    fireEvent.click(
       screen.getByRole("combobox", { name: "Phase 2 Reasoning Effort" }),
-      { target: { value: "max" } },
     );
+    fireEvent.click(screen.getByRole("option", { name: "Maximum" }));
     const save = screen.getByRole("button", {
       name: "Save Memory configuration",
     });
@@ -219,10 +220,10 @@ describe("MemorySettings", () => {
       { provider: "", id: "bad", label: "Invalid model", reasoning: true },
     ]);
     render(<MemorySettings />);
-    fireEvent.change(
+    fireEvent.click(
       await screen.findByRole("combobox", { name: "Phase 1 Model" }),
-      { target: { value: "/bad" } },
     );
+    fireEvent.click(screen.getByRole("option", { name: "Invalid model" }));
     const save = screen.getByRole("button", {
       name: "Save Memory configuration",
     });
@@ -252,6 +253,7 @@ describe("MemorySettings", () => {
       name: "Phase 1 Model",
     });
     expect(phase1).toHaveValue("missing/old");
+    fireEvent.click(phase1);
     expect(
       screen.getByRole("option", { name: "missing/old (Unavailable)" }),
     ).toBeInTheDocument();
@@ -283,7 +285,8 @@ describe("MemorySettings", () => {
     const phase1 = await screen.findByRole("combobox", {
       name: "Phase 1 Model",
     });
-    fireEvent.change(phase1, { target: { value: "openai/gpt-5.6" } });
+    fireEvent.click(phase1);
+    fireEvent.click(screen.getByRole("option", { name: "GPT 5.6" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Save Memory configuration" }),
     );

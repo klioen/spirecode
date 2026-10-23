@@ -572,9 +572,8 @@ describe("ProjectRail", () => {
     manage.focus();
     fireEvent.click(manage);
     fireEvent.click(screen.getByRole("menuitem", { name: "Move to group…" }));
-    fireEvent.change(screen.getByLabelText("Group"), {
-      target: { value: "group-1" },
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Group" }));
+    fireEvent.click(screen.getByRole("option", { name: "Client" }));
     fireEvent.click(screen.getByRole("button", { name: "Move to group…" }));
 
     await vi.waitFor(() =>

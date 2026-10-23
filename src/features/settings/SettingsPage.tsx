@@ -23,6 +23,7 @@ import {
   type SkillSetting,
 } from "../../bindings";
 import { commandError } from "../../lib/errors";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { SpireCodeMark } from "../../components/SpireCodeMark";
 import { useThemeStore, type ThemeMode } from "../theme/themeStore";
 import { useSettingsStore } from "./settingsStore";
@@ -256,34 +257,36 @@ function GeneralSettings() {
           <b>{t("settings.general.theme.label")}</b>
           <small>{t("settings.general.theme.description")}</small>
         </div>
-        <select
-          aria-label={t("settings.general.theme.label")}
+        <SearchableSelect
+          ariaLabel={t("settings.general.theme.label")}
           value={mode}
-          onChange={(event) => setMode(event.target.value as ThemeMode)}
-        >
-          <option value="system">{t("settings.general.theme.system")}</option>
-          <option value="light">{t("settings.general.theme.light")}</option>
-          <option value="dark">{t("settings.general.theme.dark")}</option>
-        </select>
+          options={(["system", "light", "dark"] as ThemeMode[]).map(
+            (value) => ({
+              value,
+              label: t(`settings.general.theme.${value}`),
+            }),
+          )}
+          onChange={(value) => setMode(value as ThemeMode)}
+        />
       </div>
       <div className="setting-row">
         <div>
           <b>{t("settings.general.language.label")}</b>
           <small>{t("settings.general.language.description")}</small>
         </div>
-        <select
-          aria-label={t("settings.general.language.label")}
+        <SearchableSelect
+          ariaLabel={t("settings.general.language.label")}
           value={language}
           disabled={languageSaving}
-          onChange={(event) =>
-            void changeLanguage(event.target.value as AppLanguage)
-          }
-        >
-          <option value="en">{t("settings.general.language.english")}</option>
-          <option value="zh-CN">
-            {t("settings.general.language.chinese")}
-          </option>
-        </select>
+          options={[
+            { value: "en", label: t("settings.general.language.english") },
+            {
+              value: "zh-CN",
+              label: t("settings.general.language.chinese"),
+            },
+          ]}
+          onChange={(value) => void changeLanguage(value as AppLanguage)}
+        />
       </div>
       <div className="setting-row">
         <div>
@@ -394,32 +397,31 @@ function EditorSettings() {
         <div>
           <b>{t("settings.editor.fontSize")}</b>
         </div>
-        <select
-          aria-label={t("settings.editor.fontSize.aria")}
-          value={fontSize}
-          onChange={(e) =>
-            set("editorFontSize", Number(e.target.value) as 13 | 14 | 16 | 18)
+        <SearchableSelect
+          ariaLabel={t("settings.editor.fontSize.aria")}
+          value={String(fontSize)}
+          options={[13, 14, 16, 18].map((value) => ({
+            value: String(value),
+            label: `${value}px`,
+          }))}
+          onChange={(value) =>
+            set("editorFontSize", Number(value) as 13 | 14 | 16 | 18)
           }
-        >
-          {[13, 14, 16, 18].map((v) => (
-            <option key={v} value={v}>
-              {v}px
-            </option>
-          ))}
-        </select>
+        />
       </div>
       <div className="setting-row">
         <div>
           <b>{t("settings.editor.wordWrap")}</b>
         </div>
-        <select
-          aria-label={t("settings.editor.wordWrap")}
+        <SearchableSelect
+          ariaLabel={t("settings.editor.wordWrap")}
           value={wordWrap}
-          onChange={(e) => set("wordWrap", e.target.value as "off" | "on")}
-        >
-          <option value="off">{t("settings.common.off")}</option>
-          <option value="on">{t("settings.common.on")}</option>
-        </select>
+          options={(["off", "on"] as const).map((value) => ({
+            value,
+            label: t(`settings.common.${value}`),
+          }))}
+          onChange={(value) => set("wordWrap", value as "off" | "on")}
+        />
       </div>
     </section>
   );
@@ -439,40 +441,36 @@ function TerminalSettings() {
         <div>
           <b>{t("settings.editor.fontSize")}</b>
         </div>
-        <select
-          aria-label={t("settings.terminal.fontSize.aria")}
-          value={fontSize}
-          onChange={(e) =>
-            set("terminalFontSize", Number(e.target.value) as 12 | 13 | 14 | 16)
+        <SearchableSelect
+          ariaLabel={t("settings.terminal.fontSize.aria")}
+          value={String(fontSize)}
+          options={[12, 13, 14, 16].map((value) => ({
+            value: String(value),
+            label: `${value}px`,
+          }))}
+          onChange={(value) =>
+            set("terminalFontSize", Number(value) as 12 | 13 | 14 | 16)
           }
-        >
-          {[12, 13, 14, 16].map((v) => (
-            <option key={v} value={v}>
-              {v}px
-            </option>
-          ))}
-        </select>
+        />
       </div>
       <div className="setting-row">
         <div>
           <b>{t("settings.terminal.scrollback")}</b>
         </div>
-        <select
-          aria-label={t("settings.terminal.scrollback.aria")}
-          value={scrollback}
-          onChange={(e) =>
+        <SearchableSelect
+          ariaLabel={t("settings.terminal.scrollback.aria")}
+          value={String(scrollback)}
+          options={[1000, 5000, 10000, 20000].map((value) => ({
+            value: String(value),
+            label: formatNumber(value),
+          }))}
+          onChange={(value) =>
             set(
               "terminalScrollback",
-              Number(e.target.value) as 1000 | 5000 | 10000 | 20000,
+              Number(value) as 1000 | 5000 | 10000 | 20000,
             )
           }
-        >
-          {[1000, 5000, 10000, 20000].map((v) => (
-            <option key={v} value={v}>
-              {formatNumber(v)}
-            </option>
-          ))}
-        </select>
+        />
       </div>
     </section>
   );

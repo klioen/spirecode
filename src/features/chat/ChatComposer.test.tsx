@@ -131,31 +131,27 @@ describe("ChatComposer", () => {
     );
 
     const modelSelect = screen.getByRole("combobox", { name: "Model" });
-    const providerGroups = Array.from(modelSelect.querySelectorAll("optgroup"));
-    expect(providerGroups.map((group) => group.label)).toEqual([
-      "traex",
-      "local",
-    ]);
+    fireEvent.click(modelSelect);
+    expect(screen.getByText("traex")).toBeInTheDocument();
+    expect(screen.getByText("local")).toBeInTheDocument();
     expect(
-      providerGroups.map((group) =>
-        Array.from(group.querySelectorAll("option"), (option) => option.text),
-      ),
-    ).toEqual([["Reasoning Model", "Fast Model"], ["plain"]]);
-
-    fireEvent.change(modelSelect, {
-      target: { value: "local/plain" },
-    });
-    fireEvent.change(screen.getByRole("combobox", { name: "Thinking level" }), {
-      target: { value: "xhigh" },
-    });
+      screen.getByRole("option", { name: "Reasoning Model" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Fast Model" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "plain" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "plain" }));
     await waitFor(() =>
       expect(onModelChange).toHaveBeenCalledWith("local", "plain"),
     );
-    expect(onThinkingLevelChange).toHaveBeenCalledWith("xhigh");
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Thinking level" }));
     expect(screen.getByRole("option", { name: "Off" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("option", { name: "Extra high" }),
-    ).toBeInTheDocument();
+    const extraHigh = screen.getByRole("option", { name: "Extra high" });
+    expect(extraHigh).toBeInTheDocument();
+    fireEvent.click(extraHigh);
+    expect(onThinkingLevelChange).toHaveBeenCalledWith("xhigh");
   });
 
   it("filters and completes runtime slash commands with keyboard controls", async () => {
@@ -231,7 +227,7 @@ describe("ChatComposer", () => {
       ".chat-composer-config",
     );
     expect(actions).toContainElement(config);
-    expect(config?.querySelectorAll("select")).toHaveLength(2);
+    expect(config?.querySelectorAll('[role="combobox"]')).toHaveLength(2);
     expect(actions?.lastElementChild).toHaveClass("chat-composer-submit");
 
     const css = readFileSync("src/styles/index.css", "utf8");
@@ -240,7 +236,7 @@ describe("ChatComposer", () => {
       /\.chat-composer-config\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 [^;]+;/s,
     );
     expect(css).toMatch(
-      /\.chat-composer-config select\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s,
+      /\.chat-composer-config \.searchable-select\s*\{[^}]*max-width:\s*min\(220px, 100%\);[^}]*flex:\s*0 1 auto;/s,
     );
     expect(css).toMatch(/\.chat-composer-submit\s*\{[^}]*flex:\s*0 0 32px;/s);
   });

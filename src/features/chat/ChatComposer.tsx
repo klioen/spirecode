@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { formatNumber, useTranslation, type TranslationKey } from "../../i18n";
 import type {
   ChatQueuedInput,
@@ -37,22 +38,6 @@ export interface ChatComposerProps {
   onThinkingLevelChange?: (level: ChatThinkingLevel) => Promise<void>;
   onSend: (text: string) => Promise<void>;
   onStop: () => Promise<string[] | void>;
-}
-
-function groupModelsByProvider(models: ChatSessionConfig["models"]) {
-  const groups = new Map<string, ChatSessionConfig["models"]>();
-  for (const model of models) {
-    const providerModels = groups.get(model.provider);
-    if (providerModels) {
-      providerModels.push(model);
-    } else {
-      groups.set(model.provider, [model]);
-    }
-  }
-  return Array.from(groups, ([provider, providerModels]) => ({
-    provider,
-    models: providerModels,
-  }));
 }
 
 function commandQuery(value: string): string | undefined {
@@ -101,8 +86,14 @@ export function ChatComposer({
     () => matchingCommands(config?.commands ?? [], commandQuery(value)),
     [config?.commands, value],
   );
-  const modelGroups = useMemo(
-    () => groupModelsByProvider(config?.models ?? []),
+  const modelOptions = useMemo(
+    () =>
+      (config?.models ?? []).map((model) => ({
+        value: `${model.provider}/${model.id}`,
+        label: model.label.trim() || model.id,
+        group: model.provider,
+        keywords: [model.id],
+      })),
     [config?.models],
   );
 
@@ -275,56 +266,49 @@ export function ChatComposer({
         )}
         <div className="chat-composer-actions">
           <div className="chat-composer-config">
-            <select
-              aria-label={t("chat.composer.model")}
+            <SearchableSelect
+              ariaLabel={t("chat.composer.model")}
               value={modelValue}
               disabled={controlsDisabled}
-              onChange={(event) => {
-                const separator = event.target.value.indexOf("/");
+              options={
+                modelValue
+                  ? modelOptions
+                  : [
+                      {
+                        value: "",
+                        label: t("chat.composer.noModel"),
+                      },
+                      ...modelOptions,
+                    ]
+              }
+              onChange={(value) => {
+                const separator = value.indexOf("/");
                 if (separator < 1 || !onModelChange) return;
                 void runMutation(() =>
                   onModelChange(
-                    event.target.value.slice(0, separator),
-                    event.target.value.slice(separator + 1),
+                    value.slice(0, separator),
+                    value.slice(separator + 1),
                   ),
                 );
               }}
-            >
-              {!modelValue && (
-                <option value="">{t("chat.composer.noModel")}</option>
-              )}
-              {modelGroups.map((group) => (
-                <optgroup key={group.provider} label={group.provider}>
-                  {group.models.map((model) => (
-                    <option
-                      key={`${model.provider}/${model.id}`}
-                      value={`${model.provider}/${model.id}`}
-                    >
-                      {model.label.trim() || model.id}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            <select
-              aria-label={t("chat.composer.thinkingLevel")}
+            />
+            <SearchableSelect
+              ariaLabel={t("chat.composer.thinkingLevel")}
               value={config?.thinkingLevel ?? "off"}
               disabled={controlsDisabled}
-              onChange={(event) => {
+              options={(config?.availableThinkingLevels ?? ["off"]).map(
+                (level) => ({
+                  value: level,
+                  label: t(THINKING_KEYS[level]),
+                }),
+              )}
+              onChange={(value) => {
                 if (!onThinkingLevelChange) return;
                 void runMutation(() =>
-                  onThinkingLevelChange(
-                    event.target.value as ChatThinkingLevel,
-                  ),
+                  onThinkingLevelChange(value as ChatThinkingLevel),
                 );
               }}
-            >
-              {(config?.availableThinkingLevels ?? ["off"]).map((level) => (
-                <option key={level} value={level}>
-                  {t(THINKING_KEYS[level])}
-                </option>
-              ))}
-            </select>
+            />
           </div>
           {(byteLength > MAX_INPUT_BYTES * 0.8 || tooLarge) && (
             <span className="chat-composer-count">

@@ -648,4 +648,6 @@ export const zhCN = {
   "chat.notice.compactionEnd": "对话上下文已压缩",
   "chat.notice.retryStart": "正在重试…",
   "chat.notice.retryEnd": "重试完成",
+  "common.searchOptions": "搜索{label}",
+  "common.noOptionsFound": "未找到选项",
 } as const satisfies Record<TranslationKey, string>;

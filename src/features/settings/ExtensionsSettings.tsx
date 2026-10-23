@@ -6,6 +6,7 @@ import type {
   ExtensionCatalogSort,
   ExtensionSetting,
 } from "../../bindings";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { settingsApi } from "./settingsApi";
@@ -204,22 +205,20 @@ export function ExtensionsSettings({
               maxLength={160}
               onChange={(event) => setDraftQuery(event.target.value)}
             />
-            <select
-              aria-label={t("settings.extensions.sort")}
+            <SearchableSelect
+              ariaLabel={t("settings.extensions.sort")}
               value={sort}
-              onChange={(event) => {
+              options={(["downloads", "recent", "name"] as const).map(
+                (value) => ({
+                  value,
+                  label: t(`settings.extensions.sort.${value}`),
+                }),
+              )}
+              onChange={(value) => {
                 setPage(1);
-                setSort(event.target.value as ExtensionCatalogSort);
+                setSort(value as ExtensionCatalogSort);
               }}
-            >
-              <option value="downloads">
-                {t("settings.extensions.sort.downloads")}
-              </option>
-              <option value="recent">
-                {t("settings.extensions.sort.recent")}
-              </option>
-              <option value="name">{t("settings.extensions.sort.name")}</option>
-            </select>
+            />
             <button type="submit">
               {t("settings.extensions.search.action")}
             </button>

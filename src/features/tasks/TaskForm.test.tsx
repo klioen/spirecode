@@ -116,9 +116,8 @@ describe("TaskForm", () => {
     });
     fireEvent.click(screen.getByText("Workspace settings"));
     fireEvent.click(screen.getByRole("radio", { name: "Existing worktree" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Worktree" }), {
-      target: { value: "dirty" },
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Worktree" }));
+    fireEvent.click(screen.getByRole("option", { name: "feature (dirty)" }));
     fireEvent.click(
       screen.getByRole("checkbox", {
         name: "Allow Agent to use this dirty worktree",

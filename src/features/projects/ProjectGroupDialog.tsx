@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import type { ProjectGroupSummary, ProjectSummary } from "../../bindings";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { useTranslation } from "../../i18n";
 import { commandError } from "../../lib/errors";
 import { useDialogFocus } from "../../lib/useDialogFocus";
@@ -259,22 +260,23 @@ export function MoveProjectDialog({
       pending={pending}
     >
       <form onSubmit={(event) => void move(event)}>
-        <label>
-          {t("projects.group.destination")}
-          <select
+        <div className="dialog-field">
+          <span>{t("projects.group.destination")}</span>
+          <SearchableSelect
+            ariaLabel={t("projects.group.destination")}
             autoFocus
             value={groupId}
-            onChange={(event) => setGroupId(event.target.value)}
             disabled={pending}
-          >
-            <option value="">{t("projects.group.ungrouped")}</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={[
+              { value: "", label: t("projects.group.ungrouped") },
+              ...groups.map((group) => ({
+                value: group.id,
+                label: group.name,
+              })),
+            ]}
+            onChange={setGroupId}
+          />
+        </div>
         <ErrorMessage message={error} />
         <div className="dialog-actions">
           <button type="button" onClick={onClose} disabled={pending}>
