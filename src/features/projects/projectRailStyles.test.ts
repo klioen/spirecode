@@ -16,4 +16,10 @@ describe("project rail styles", () => {
       /\.project-session-row\[aria-current="page"\]\s*\{[^}]*background:\s*var\(--interactive-selected\);/s,
     );
   });
+
+  it("keeps the shared project session spinner circular and non-shrinking", () => {
+    expect(css).toMatch(
+      /\.project-session-spinner\s*\{(?=[^}]*width:\s*12px;)(?=[^}]*height:\s*12px;)(?=[^}]*aspect-ratio:\s*1;)(?=[^}]*flex:\s*0 0 12px;)(?=[^}]*border-width:\s*2px;)[^}]*\}/s,
+    );
+  });
 });
