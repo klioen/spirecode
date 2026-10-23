@@ -1,10 +1,13 @@
 import type {
   CreateTaskInput,
+  TaskMetadata,
+  TaskReviewMetadata,
   TaskRunReport,
   WorkspaceRequest,
 } from "./types.js";
 
 const encoder = new TextEncoder();
+export const MAX_TASK_METADATA_BYTES = 16 * 1024;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -136,6 +139,59 @@ function boundedArray(
   return value;
 }
 
+export function validateTaskReviewMetadata(
+  review: unknown,
+  field = "metadata.review",
+): TaskReviewMetadata {
+  requireExactKeys(review, ["kind", "url", "draft"], field);
+  const value = review as Record<string, unknown>;
+  if (
+    !(["github_pr", "gitlab_mr", "other"] as const).includes(
+      value.kind as TaskReviewMetadata["kind"],
+    )
+  )
+    fail(`${field}.kind is invalid`);
+  if (typeof value.url !== "string") fail(`${field}.url must be a string`);
+  let url: URL;
+  try {
+    url = new URL(value.url);
+  } catch {
+    return fail(`${field}.url is invalid`);
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    typeof value.draft !== "boolean"
+  )
+    fail(`${field} must contain a credential-free HTTPS URL`);
+  const kind = value.kind as TaskReviewMetadata["kind"];
+  const providerMatches =
+    kind === "other" ||
+    (kind === "github_pr" &&
+      url.hostname.toLowerCase() === "github.com" &&
+      /\/pull\/\d+\/?$/u.test(url.pathname)) ||
+    (kind === "gitlab_mr" &&
+      url.hostname.toLowerCase() === "gitlab.com" &&
+      /\/-\/merge_requests\/\d+\/?$/u.test(url.pathname));
+  if (!providerMatches) fail(`${field}.url does not match its kind`);
+  url.hash = "";
+  return { kind, url: url.toString(), draft: value.draft };
+}
+
+export function validateTaskMetadata(metadata: unknown): TaskMetadata {
+  if (!isPlainRecord(metadata)) fail("metadata must be an object");
+  const keys = Object.keys(metadata);
+  if (keys.some((key) => key !== "review"))
+    fail("metadata contains unsupported fields");
+  const normalized: TaskMetadata = {};
+  if ("review" in metadata)
+    normalized.review = validateTaskReviewMetadata(metadata.review);
+  if (byteLength(JSON.stringify(normalized)) > MAX_TASK_METADATA_BYTES)
+    fail(`metadata exceeds ${MAX_TASK_METADATA_BYTES} bytes`);
+  return normalized;
+}
+
 export function validateTaskRunReport(report: TaskRunReport): TaskRunReport {
   requireExactKeys(
     report,
@@ -178,47 +234,11 @@ export function validateTaskRunReport(report: TaskRunReport): TaskRunReport {
     summary: requireString(report.summary, "report.summary", 64 * 1024),
     tests,
   };
-  if (report.changeRequest) {
-    requireExactKeys(
+  if (report.changeRequest)
+    normalized.changeRequest = validateTaskReviewMetadata(
       report.changeRequest,
-      ["kind", "url", "draft"],
       "report.changeRequest",
     );
-    if (
-      !(["github_pr", "gitlab_mr", "other"] as const).includes(
-        report.changeRequest.kind,
-      )
-    )
-      fail("change request kind is invalid");
-    let url: URL;
-    try {
-      url = new URL(report.changeRequest.url);
-    } catch {
-      return fail("change request URL is invalid");
-    }
-    if (
-      url.protocol !== "https:" ||
-      url.username ||
-      url.password ||
-      typeof report.changeRequest.draft !== "boolean"
-    )
-      fail("change request must be a credential-free HTTPS URL");
-    const providerMatches =
-      report.changeRequest.kind === "other" ||
-      (report.changeRequest.kind === "github_pr" &&
-        url.hostname.toLowerCase() === "github.com" &&
-        /\/pull\/\d+\/?$/u.test(url.pathname)) ||
-      (report.changeRequest.kind === "gitlab_mr" &&
-        url.hostname.toLowerCase() === "gitlab.com" &&
-        /\/-\/merge_requests\/\d+\/?$/u.test(url.pathname));
-    if (!providerMatches) fail("change request URL does not match its kind");
-    url.hash = "";
-    normalized.changeRequest = {
-      kind: report.changeRequest.kind,
-      url: url.toString(),
-      draft: report.changeRequest.draft,
-    };
-  }
   if (byteLength(JSON.stringify(normalized)) > 256 * 1024)
     fail("report exceeds 256 KiB");
   return normalized;

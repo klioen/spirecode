@@ -1308,11 +1308,12 @@ export class TaskService {
       .find((step) => step.step === "git_delivery");
     const completed = parseGitDeliveryResult(deliveryStep?.details);
     if (deliveryStep?.state === "done" && completed) {
-      if (completed.changed && !run.report?.changeRequest)
-        run = this.repository.replaceRunReport(run.id, run.revision, {
-          ...run.report!,
-          changeRequest: completed.changeRequest!,
-        });
+      if (completed.changeRequest)
+        run = this.repository.applyVerifiedReview(
+          run.id,
+          run.revision,
+          completed.changeRequest,
+        );
       return run;
     }
     const previous = this.#previousDelivery(run);
@@ -1340,10 +1341,11 @@ export class TaskService {
       );
     this.repository.upsertRunStep(run.id, "git_delivery", "done", delivered);
     if (delivered.changeRequest)
-      run = this.repository.replaceRunReport(run.id, run.revision, {
-        ...run.report!,
-        changeRequest: delivered.changeRequest,
-      });
+      run = this.repository.applyVerifiedReview(
+        run.id,
+        run.revision,
+        delivered.changeRequest,
+      );
     return run;
   }
 

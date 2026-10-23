@@ -2,12 +2,18 @@ import { lstatSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import type { DatabaseSync as DatabaseConnection } from "node:sqlite";
+import type { TaskRunReport } from "./types.js";
+import {
+  TaskValidationError,
+  validateTaskMetadata,
+  validateTaskRunReport,
+} from "./validation.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: new (path: string) => DatabaseConnection;
 };
 
-export const CURRENT_TASK_SCHEMA_VERSION = 5;
+export const CURRENT_TASK_SCHEMA_VERSION = 6;
 
 export type TaskDatabaseErrorCode =
   | "TASK_DATABASE_UNAVAILABLE"
@@ -187,6 +193,46 @@ CREATE TABLE task_archive_states (
 ) STRICT;
 `;
 
+function migrateReviewMetadata(connection: DatabaseConnection): void {
+  connection.exec(
+    "ALTER TABLE tasks ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata_json) AND length(CAST(metadata_json AS BLOB)) <= 16384)",
+  );
+  const taskIds = connection.prepare("SELECT id FROM tasks").all() as Array<{
+    id: string;
+  }>;
+  const reports = connection.prepare(
+    `SELECT report_json FROM task_runs
+     WHERE task_id = ? AND report_json IS NOT NULL
+     ORDER BY attempt DESC, id DESC`,
+  );
+  const update = connection.prepare(
+    "UPDATE tasks SET metadata_json = ? WHERE id = ?",
+  );
+  for (const task of taskIds) {
+    let metadataJson = "{}";
+    for (const row of reports.all(task.id) as Array<{ report_json: string }>) {
+      try {
+        const report = validateTaskRunReport(
+          JSON.parse(row.report_json) as TaskRunReport,
+        );
+        if (!report.changeRequest) continue;
+        metadataJson = JSON.stringify(
+          validateTaskMetadata({ review: report.changeRequest }),
+        );
+        break;
+      } catch (error) {
+        if (
+          error instanceof TaskValidationError ||
+          error instanceof SyntaxError
+        )
+          continue;
+        throw error;
+      }
+    }
+    update.run(metadataJson, task.id);
+  }
+}
+
 function tableExists(connection: DatabaseConnection, name: string): boolean {
   return Boolean(
     connection
@@ -249,6 +295,12 @@ function migrate(
           "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
         )
         .run(5, "migration-v5", now());
+      migrateReviewMetadata(connection);
+      connection
+        .prepare(
+          "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        )
+        .run(6, "migration-v6", now());
       connection.exec("COMMIT");
       return CURRENT_TASK_SCHEMA_VERSION;
     } catch (error) {
@@ -300,6 +352,7 @@ function migrate(
       else if (targetVersion === 3) connection.exec(MIGRATION_3);
       else if (targetVersion === 4) connection.exec(MIGRATION_4);
       else if (targetVersion === 5) connection.exec(MIGRATION_5);
+      else if (targetVersion === 6) migrateReviewMetadata(connection);
       else throw new Error(`No Task migration for schema ${targetVersion}`);
       connection
         .prepare(

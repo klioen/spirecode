@@ -896,6 +896,7 @@ export class AppState {
       queueReason,
       lastActivityAt: task.updatedAt,
       workspace: task.workspace,
+      metadata: task.metadata,
       status: task.status,
       activeRunId: task.activeRunId,
       resolvedWorktreeId: task.resolvedWorktreeId,

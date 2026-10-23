@@ -504,18 +504,21 @@ describe("Task IPC validation", () => {
     expect(validateCommandArgs("task_create", { input: createInput })).toEqual({
       input: createInput,
     });
-    expect(() =>
-      validateCommandArgs("task_create", {
-        input: { ...createInput, acceptanceCriteria: [] },
-      }),
-    ).toThrow("unexpected fields");
-    expect(() =>
-      validateCommandArgs("task_update", {
-        taskId: "task-1",
-        expectedRevision: 1,
-        patch: { acceptanceCriteria: [] },
-      }),
-    ).toThrow("unexpected fields");
+    for (const input of [
+      { ...createInput, acceptanceCriteria: [] },
+      { ...createInput, metadata: {} },
+    ])
+      expect(() => validateCommandArgs("task_create", { input })).toThrow(
+        "unexpected fields",
+      );
+    for (const patch of [{ acceptanceCriteria: [] }, { metadata: {} }])
+      expect(() =>
+        validateCommandArgs("task_update", {
+          taskId: "task-1",
+          expectedRevision: 1,
+          patch,
+        }),
+      ).toThrow("unexpected fields");
   });
 
   it("accepts first-page and paginated notification requests with bounded numeric limits", () => {

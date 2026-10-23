@@ -545,6 +545,9 @@ describe("TaskService", () => {
       url: "https://github.com/acme/widgets/pull/12",
       draft: false,
     });
+    expect(reported.task.metadata.review).toEqual(
+      reported.runs[0]?.report?.changeRequest,
+    );
   });
 
   it("fails instead of entering review when required Git delivery fails", async () => {
@@ -568,6 +571,7 @@ describe("TaskService", () => {
 
     const failed = await service.get(detail.task.id);
     expect(failed.task.status).toBe("failed");
+    expect(failed.task.metadata).toEqual({});
     expect(failed.runs[0]?.error).toMatchObject({
       code: "TASK_DELIVERY_PUSH_FAILED",
       retryable: true,
@@ -589,6 +593,9 @@ describe("TaskService", () => {
     const recovered = await service.get(failed.task.id);
     expect(recovered.task.status).toBe("needs_review");
     expect(recovered.runs[0]?.attempt).toBe(run.attempt);
+    expect(recovered.task.metadata.review).toEqual(
+      recovered.runs[0]?.report?.changeRequest,
+    );
     expect(dependencies.sendPrompt).toHaveBeenCalledTimes(promptCalls);
   });
 
@@ -835,6 +842,52 @@ describe("TaskService", () => {
     const final = await service.get(first.task.id);
     expect(final.runs[0]?.report?.changeRequest).toEqual(changeRequest);
     expect(final.runs[1]?.report?.changeRequest).toEqual(changeRequest);
+    expect(final.task.metadata.review).toEqual(changeRequest);
+  });
+
+  it("retains Task review metadata when a later Run has no new verified review", async () => {
+    const changeRequest = {
+      kind: "gitlab_mr" as const,
+      url: "https://gitlab.com/acme/widgets/-/merge_requests/22",
+      draft: true,
+    };
+    vi.mocked(dependencies.deliverGitChanges)
+      .mockResolvedValueOnce({
+        changed: true,
+        head: "b".repeat(40),
+        changeRequest,
+      })
+      .mockResolvedValueOnce({
+        changed: false,
+        head: "b".repeat(40),
+      });
+    const first = await createRunningTask(createInput(true));
+    await reportResult!({
+      runId: first.runs[0]!.id,
+      outcome: "success",
+      summary: "First delivery",
+      tests: [],
+    });
+    await settleAgent();
+    const review = await service.get(first.task.id);
+    await service.requestChanges(
+      review.task.id,
+      review.task.revision,
+      "No follow-up delivery needed",
+    );
+    await service.whenIdle();
+    const followUp = await service.get(first.task.id);
+    await reportResult!({
+      runId: followUp.runs[0]!.id,
+      outcome: "success",
+      summary: "No code changes",
+      tests: [],
+    });
+    await settleAgent();
+
+    const final = await service.get(first.task.id);
+    expect(final.runs[0]?.report?.changeRequest).toBeUndefined();
+    expect(final.task.metadata.review).toEqual(changeRequest);
   });
 
   it("reuses the Task-level resolved workspace when the latest failed run never bound one", async () => {
@@ -1193,6 +1246,34 @@ describe("TaskService", () => {
     const recovered = await service.get(created.task.id);
     expect(recovered.task.status).toBe("needs_review");
     expect(recovered.runs[0]).toMatchObject({ status: "reported" });
+  });
+
+  it("replays a persisted verified delivery into metadata after a crash", async () => {
+    const created = await createRunningTask(createInput(true));
+    await reportResult!({
+      runId: created.runs[0]!.id,
+      outcome: "success",
+      summary: "Done before delivery snapshot update",
+      tests: [],
+    });
+    const changeRequest = {
+      kind: "github_pr" as const,
+      url: "https://github.com/acme/widgets/pull/30",
+      draft: false,
+    };
+    repository.upsertRunStep(created.runs[0]!.id, "git_delivery", "done", {
+      changed: true,
+      head: "b".repeat(40),
+      changeRequest,
+    });
+    vi.mocked(dependencies.sessionStatus).mockResolvedValue("idle");
+
+    await service.recover();
+
+    const recovered = await service.get(created.task.id);
+    expect(recovered.task.metadata.review).toEqual(changeRequest);
+    expect(recovered.runs[0]?.report?.changeRequest).toEqual(changeRequest);
+    expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
   });
 
   it("converges a recovered idle running session to awaiting_report", async () => {

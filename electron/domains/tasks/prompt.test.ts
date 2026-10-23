@@ -9,6 +9,7 @@ const task = {
   projectId: "20000000-0000-4000-8000-000000000001",
   workspace: { mode: "new_managed", baseRef: "origin/main" },
   automationEnabled: true,
+  metadata: {},
   status: "running",
   activeRunId: "30000000-0000-4000-8000-000000000001",
   resolvedWorktreeId: "40000000-0000-4000-8000-000000000001",

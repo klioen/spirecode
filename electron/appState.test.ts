@@ -132,6 +132,13 @@ describe("Task workbench read model", () => {
     projectId: "90000000-0000-4000-8000-000000000001",
     workspace: { mode: "existing" as const, worktreeId, allowDirty: false },
     automationEnabled: true,
+    metadata: {
+      review: {
+        kind: "github_pr" as const,
+        url: "https://github.com/acme/widgets/pull/12",
+        draft: false,
+      },
+    },
     status: "queued" as const,
     activeRunId: "20000000-0000-4000-8000-000000000001",
     resolvedWorktreeId: worktreeId,
@@ -180,6 +187,8 @@ describe("Task workbench read model", () => {
       },
       tasks: {
         get: vi.fn(async () => ({ task, runs: [run] })),
+        list: vi.fn(async () => ({ items: [task], nextCursor: null })),
+        counts: vi.fn(() => ({ incompleteCount: 1, activeCount: 1 })),
         listNotifications: vi.fn(() => ({
           items: [
             {
@@ -218,6 +227,10 @@ describe("Task workbench read model", () => {
       executionStatus: "queued",
       queueReason: "dispatch",
       supportsChanges: true,
+      metadata: task.metadata,
+    });
+    expect(await state().taskList({ limit: 10 })).toMatchObject({
+      items: [{ metadata: task.metadata }],
     });
     expect(
       await state([
@@ -249,11 +262,11 @@ describe("Task database diagnostics", () => {
       tasks: null,
       taskUnavailableCode: "TASK_SCHEMA_TOO_NEW",
       taskUnavailableReason:
-        "Task database schema 6 is newer than supported schema 5",
+        "Task database schema 7 is newer than supported schema 6",
     }) as AppState;
     await expect(state.taskGet("task")).rejects.toMatchObject({
       code: "TASK_SCHEMA_TOO_NEW",
-      message: "Task database schema 6 is newer than supported schema 5",
+      message: "Task database schema 7 is newer than supported schema 6",
     });
   });
   it("does not expose a raw database open failure or filesystem path", async () => {

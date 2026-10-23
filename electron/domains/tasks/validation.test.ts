@@ -3,6 +3,7 @@ import type { CreateTaskInput, TaskRunReport } from "./types.js";
 import {
   TaskValidationError,
   validateCreateTaskInput,
+  validateTaskMetadata,
   validateTaskRunReport,
 } from "./validation.js";
 
@@ -48,6 +49,52 @@ describe("task validation", () => {
         ...report,
         acceptanceCriteria: [],
       } as unknown as TaskRunReport),
+    ).toThrow(TaskValidationError);
+  });
+
+  it("accepts only bounded, known, safe Task metadata", () => {
+    expect(validateTaskMetadata({})).toEqual({});
+    expect(
+      validateTaskMetadata({
+        review: {
+          kind: "github_pr",
+          url: "https://github.com/acme/widgets/pull/1#discussion",
+          draft: false,
+        },
+      }),
+    ).toEqual({
+      review: {
+        kind: "github_pr",
+        url: "https://github.com/acme/widgets/pull/1",
+        draft: false,
+      },
+    });
+    expect(() => validateTaskMetadata({ arbitrary: true })).toThrow(
+      TaskValidationError,
+    );
+    expect(() =>
+      validateTaskMetadata({
+        review: { kind: "other", url: 42, draft: false },
+      }),
+    ).toThrow(TaskValidationError);
+    expect(() =>
+      validateTaskMetadata({
+        review: {
+          kind: "other",
+          url: `https://example.com/${"x".repeat(17 * 1024)}`,
+          draft: true,
+        },
+      }),
+    ).toThrow(TaskValidationError);
+    expect(() =>
+      validateTaskMetadata({
+        review: {
+          kind: "gitlab_mr",
+          url: "https://github.com/acme/widgets/pull/1",
+          draft: false,
+          unknown: true,
+        },
+      }),
     ).toThrow(TaskValidationError);
   });
 
