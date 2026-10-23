@@ -191,6 +191,10 @@ textarea:focus-visible,
   background: var(--surface-popover);
   box-shadow: 0 10px 24px var(--shadow);
 }
+.searchable-select-popover--above {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
 .searchable-select-popover > input {
   width: 100%;
   height: 32px;
