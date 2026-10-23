@@ -115,6 +115,19 @@ describe("ProjectRail", () => {
     expect(tasks.closest("[data-project-drag-handle]")).toBeNull();
   });
 
+  it("opens the Projects workspace from the heading, project, and worktree", () => {
+    const onOpenProjects = vi.fn();
+    render(<ProjectRail onOpenProjects={onOpenProjects} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "PROJECTS" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "feature" }));
+
+    expect(onOpenProjects).toHaveBeenCalledTimes(3);
+  });
+
   it("opens an existing folder", async () => {
     vi.mocked(projectsApi.openDialog).mockResolvedValueOnce(null);
     render(<ProjectRail />);

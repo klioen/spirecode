@@ -21,11 +21,13 @@ vi.mock("../projects/ProjectRail", () => ({
     onToggleProjects,
     onOpenSettings,
     onOpenTasks,
+    onOpenProjects,
     onOpenSession,
   }: {
     onToggleProjects: () => void;
     onOpenSettings: () => void;
     onOpenTasks: () => void;
+    onOpenProjects: () => void;
     onOpenSession: () => void;
   }) => (
     <aside>
@@ -33,6 +35,7 @@ vi.mock("../projects/ProjectRail", () => ({
       <button onClick={onToggleProjects}>Toggle projects panel</button>
       <button onClick={onOpenSettings}>Settings</button>
       <button onClick={onOpenTasks}>Tasks</button>
+      <button onClick={onOpenProjects}>Projects workspace</button>
       <button onClick={onOpenSession}>Project session</button>
     </aside>
   ),
@@ -443,6 +446,17 @@ describe("Workbench panel handles", () => {
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getByText("Task page")).toBeInTheDocument();
+    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
+  });
+
+  it("returns from Tasks when Projects is selected", () => {
+    render(<Workbench />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Projects workspace" }));
+
+    expect(screen.queryByText("Task page")).not.toBeInTheDocument();
     expect(screen.getByText("Editor")).toBeInTheDocument();
   });
 
