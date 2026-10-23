@@ -521,6 +521,8 @@ export const en = {
   "changes.discard": "Discard",
   "changes.delete": "Delete",
   "changes.stageAll": "Stage all",
+  "changes.stageAllChanges": "Stage all changes",
+  "changes.stagingAll": "Staging…",
   "changes.unstageAll": "Unstage all",
   "changes.discardAll": "Discard all",
   "changes.deleteAll": "Delete all",

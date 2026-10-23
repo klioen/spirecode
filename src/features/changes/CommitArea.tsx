@@ -4,15 +4,21 @@ export function CommitArea({
   draft,
   disabled,
   pending,
+  stageAllDisabled,
+  stageAllPending,
   error,
   onChange,
+  onStageAll,
   onCommit,
 }: {
   draft: string;
   disabled: boolean;
   pending: boolean;
+  stageAllDisabled: boolean;
+  stageAllPending: boolean;
   error: string | null;
   onChange: (value: string) => void;
+  onStageAll: () => void;
   onCommit: () => void;
 }) {
   const { t } = useTranslation();
@@ -44,13 +50,24 @@ export function CommitArea({
           {error}
         </div>
       )}
-      <button
-        className="changes-commit-button"
-        disabled={disabled}
-        onClick={onCommit}
-      >
-        {pending ? t("changes.committing") : t("changes.commit")}
-      </button>
+      <div className="changes-commit-actions">
+        <button
+          className="changes-stage-all-button"
+          disabled={stageAllDisabled}
+          onClick={onStageAll}
+        >
+          {stageAllPending
+            ? t("changes.stagingAll")
+            : t("changes.stageAllChanges")}
+        </button>
+        <button
+          className="changes-commit-button"
+          disabled={disabled}
+          onClick={onCommit}
+        >
+          {pending ? t("changes.committing") : t("changes.commit")}
+        </button>
+      </div>
     </div>
   );
 }

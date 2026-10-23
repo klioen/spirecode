@@ -456,6 +456,15 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
   const count = snapshot?.changes.length ?? 0;
   const stagedCount =
     snapshot?.changes.filter((change) => change.staged).length ?? 0;
+  const stageableRows = useMemo(
+    () =>
+      snapshot
+        ? projectChanges(snapshot, "")
+            .flatMap((section) => section.rows)
+            .filter((row) => row.canStage)
+        : [],
+    [snapshot],
+  );
   const conflictCount =
     snapshot?.changes.filter((change) => isConflictStatus(change.status))
       .length ?? 0;
@@ -771,10 +780,13 @@ export function ChangesPanel({ worktreeId }: { worktreeId: string }) {
             !draft.trim()
           }
           pending={operation?.kind === "commit"}
+          stageAllDisabled={operationPending || stageableRows.length === 0}
+          stageAllPending={operation?.kind === "stage"}
           error={operationError?.message ?? null}
           onChange={(value) =>
             useChangesStore.getState().setCommitDraft(worktreeId, value)
           }
+          onStageAll={() => void stageChanges(worktreeId, stageableRows)}
           onCommit={commit}
         />
       )}
