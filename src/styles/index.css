@@ -405,6 +405,19 @@ body.panel-resizing-vertical * {
   font-weight: 700;
   letter-spacing: 0.12em;
 }
+.project-rail-title {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.project-rail-title:hover,
+.project-rail-title:focus-visible {
+  color: var(--text-default);
+}
 .project-rail-actions {
   display: flex;
   align-items: center;

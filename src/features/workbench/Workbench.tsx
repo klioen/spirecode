@@ -256,7 +256,11 @@ export function Workbench() {
             }}
             onOpenTasks={() => {
               taskSessionNavigationGeneration.current += 1;
-              setTasksOpen((open) => !open);
+              setTasksOpen(true);
+            }}
+            onOpenProjects={() => {
+              taskSessionNavigationGeneration.current += 1;
+              setTasksOpen(false);
             }}
             onOpenSession={() => {
               taskSessionNavigationGeneration.current += 1;

@@ -156,12 +156,14 @@ export function ProjectRail({
   onToggleProjects = () => undefined,
   onOpenSettings = () => undefined,
   onOpenTasks = () => undefined,
+  onOpenProjects = () => undefined,
   onOpenSession = () => undefined,
   tasksSelected = false,
 }: {
   onToggleProjects?: () => void;
   onOpenSettings?: () => void;
   onOpenTasks?: () => void;
+  onOpenProjects?: () => void;
   onOpenSession?: () => void;
   tasksSelected?: boolean;
 }) {
@@ -475,6 +477,7 @@ export function ProjectRail({
             })}
             aria-expanded={expanded}
             onClick={() => {
+              onOpenProjects();
               if (directory && primaryWorkspace)
                 void select(primaryWorkspace.id);
               toggleProject(project.id);
@@ -624,7 +627,10 @@ export function ProjectRail({
                           path: worktree.path,
                           branch: worktree.branch,
                         })}
-                        onClick={() => void select(worktree.id)}
+                        onClick={() => {
+                          onOpenProjects();
+                          void select(worktree.id);
+                        }}
                         onDoubleClick={() => void reveal(worktree.id)}
                       >
                         <RiGitBranchLine size={14} />
@@ -744,7 +750,13 @@ export function ProjectRail({
         onSelect={onOpenTasks}
       />
       <div className="project-rail-heading">
-        <span>{t("projects.heading")}</span>
+        <button
+          type="button"
+          className="project-rail-title"
+          onClick={onOpenProjects}
+        >
+          {t("projects.heading")}
+        </button>
         <div className="project-rail-actions">
           <button
             className="project-add"
