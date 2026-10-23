@@ -10,4 +10,10 @@ describe("project rail styles", () => {
       /\.project-heading:hover\s+\.worktree-add\s*,\s*\.worktree-add:focus-visible\s*\{[^}]*opacity:\s*1;/s,
     );
   });
+
+  it("uses the selected interaction token for the current session", () => {
+    expect(css).toMatch(
+      /\.project-session-row\[aria-current="page"\]\s*\{[^}]*background:\s*var\(--interactive-selected\);/s,
+    );
+  });
 });

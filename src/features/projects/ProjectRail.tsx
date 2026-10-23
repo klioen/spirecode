@@ -576,6 +576,7 @@ export function ProjectRail({
           (directory ? (
             <ProjectSessionList
               worktreeId={primaryWorkspace.id}
+              activeWorktree={primaryWorkspace.id === store.activeWorktreeId}
               onSelectWorktree={select}
               onOpenSession={onOpenSession}
             />
@@ -686,6 +687,7 @@ export function ProjectRail({
                     {sessionsExpanded && (
                       <ProjectSessionList
                         worktreeId={worktree.id}
+                        activeWorktree={active}
                         onSelectWorktree={select}
                         onOpenSession={onOpenSession}
                       />
