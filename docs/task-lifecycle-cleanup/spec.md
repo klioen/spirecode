@@ -1,5 +1,8 @@
 # Spec: Task 生命周期安全、Session 复用与 Workspace Cleanup
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Draft-only or optional-push statements in this document.
+
+
 Status: accepted. Implements `docs/task-lifecycle-cleanup/intent.md`.
 
 ## 1. Lifecycle

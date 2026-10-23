@@ -196,12 +196,27 @@ export function validateTaskRunReport(report: TaskRunReport): TaskRunReport {
     } catch {
       return fail("change request URL is invalid");
     }
-    if (url.protocol !== "https:" || report.changeRequest.draft !== true)
-      fail("change request must be a draft HTTPS URL");
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      typeof report.changeRequest.draft !== "boolean"
+    )
+      fail("change request must be a credential-free HTTPS URL");
+    const providerMatches =
+      report.changeRequest.kind === "other" ||
+      (report.changeRequest.kind === "github_pr" &&
+        url.hostname.toLowerCase() === "github.com" &&
+        /\/pull\/\d+\/?$/u.test(url.pathname)) ||
+      (report.changeRequest.kind === "gitlab_mr" &&
+        url.hostname.toLowerCase() === "gitlab.com" &&
+        /\/-\/merge_requests\/\d+\/?$/u.test(url.pathname));
+    if (!providerMatches) fail("change request URL does not match its kind");
+    url.hash = "";
     normalized.changeRequest = {
       kind: report.changeRequest.kind,
       url: url.toString(),
-      draft: true,
+      draft: report.changeRequest.draft,
     };
   }
   if (byteLength(JSON.stringify(normalized)) > 256 * 1024)

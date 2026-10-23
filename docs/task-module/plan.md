@@ -1,5 +1,8 @@
 # Plan: 实现全局 Task 与可恢复 TaskRun
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Draft-only or optional-push statements in this document.
+
+
 Status: implemented and verified。 Implements: `docs/task-module/spec.md`。
 
 > 用户已批准高风险实现；本计划记录已采用的交付顺序与验证门禁。
@@ -75,7 +78,7 @@ Add `electron/domains/tasks/piExecution.ts`:
 - prompt marker transcript detection before send；
 - bounded event subscription；
 - Main-owned `task_report_result` custom tool closure-bound to run identity；
-- Draft-only report validation；
+- Ready delivery and historical Draft report validation；
 - abort/clearQueue/dispose lifecycle。
 
 Tests in `electron/domains/tasks/piExecution.test.ts` use an SDK fake to prove:
@@ -241,7 +244,7 @@ Exit proof: Renderer can perform only the listed Task operations and Task failur
 
 Exit proof: UI never labels settled as complete and preserves drafts on failure。
 
-### Phase 9 — Notifications and Draft-only policy
+### Phase 9 — Notifications and Main-verified Ready delivery policy
 
 1. Red tests for trigger set、dedupe、focus gate、unsupported platform、generic body and no startup replay。
 2. Implement application/system notification delivery and click routing。
@@ -329,7 +332,7 @@ rg -n "tasks\.sqlite3|task_report_result|submit_task_rewrite" electron src
 - saga fault matrix 结果和是否发现无法消除的副作用窗口；
 - execution/rewrite tool capability 证明；
 - `agent_settled` 与 `task_report_result` 状态测试证明；
-- IPC/security、通知和 Draft-only 证明；
+- IPC/security、通知和 Ready delivery and historical Draft compatibility proof；
 - focused commands、`pnpm check`、目标 OS `pnpm bundle` 的真实 exit status；
 - 未运行的目标平台/manual checks 与原因；
 - 工作区 diff/status，明确任何无关 pre-existing changes。

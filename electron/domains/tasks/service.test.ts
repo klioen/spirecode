@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openTaskDatabase, type TaskDatabase } from "./database.js";
 import { TaskRepository } from "./repository.js";
+import { TaskDeliveryError } from "./delivery.js";
 import {
   TaskService,
   type TaskServiceDependencies,
@@ -90,6 +91,17 @@ beforeEach(() => {
     abortSession: vi.fn(async () => undefined),
     isWorktreeBusy: vi.fn(async () => false),
     deleteWorktree: vi.fn(async () => undefined),
+    inspectGitDelivery: vi.fn(async (_worktreeId, input) => ({
+      baselineHead: "a".repeat(40),
+      initialDirty: false,
+      branch: input.branch,
+      target: input.persistedTarget ?? "main",
+    })),
+    activateGitDelivery: vi.fn(async () => undefined),
+    deliverGitChanges: vi.fn(async () => ({
+      changed: false,
+      head: "a".repeat(40),
+    })),
     notify: vi.fn(async () => undefined),
     onChanged: vi.fn(),
   };
@@ -444,7 +456,7 @@ describe("TaskService", () => {
       managedWorktreeId,
       sessionBinding.sessionId,
       expect.stringMatching(
-        new RegExp(`^spire-task-run:${run.id}[\\s\\S]*Draft`),
+        new RegExp(`^spire-task-run:${run.id}[\\s\\S]*host will inspect Git`),
       ),
     );
     expect(
@@ -476,6 +488,86 @@ describe("TaskService", () => {
     expect(dependencies.notify).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "needs_review", runId: run.id }),
     );
+  });
+
+  it("replaces an Agent-reported link with a Main-verified Ready change request", async () => {
+    const detail = await createRunningTask(createInput(true));
+    const run = detail.runs[0]!;
+    vi.mocked(dependencies.deliverGitChanges).mockResolvedValueOnce({
+      changed: true,
+      head: "b".repeat(40),
+      changeRequest: {
+        kind: "github_pr",
+        url: "https://github.com/acme/widgets/pull/12",
+        draft: false,
+      },
+    });
+
+    await reportResult!({
+      runId: run.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+      changeRequest: {
+        kind: "other",
+        url: "https://untrusted.example/change/1",
+        draft: true,
+      },
+    });
+    await settleAgent();
+
+    const reported = await service.get(detail.task.id);
+    expect(reported.task.status).toBe("needs_review");
+    expect(reported.runs[0]?.report?.changeRequest).toEqual({
+      kind: "github_pr",
+      url: "https://github.com/acme/widgets/pull/12",
+      draft: false,
+    });
+  });
+
+  it("fails instead of entering review when required Git delivery fails", async () => {
+    const detail = await createRunningTask(createInput(true));
+    const run = detail.runs[0]!;
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      new TaskDeliveryError(
+        "TASK_DELIVERY_PUSH_FAILED",
+        "The task branch could not be pushed to origin",
+        true,
+      ),
+    );
+    await reportResult!({
+      runId: run.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+
+    await settleAgent();
+
+    const failed = await service.get(detail.task.id);
+    expect(failed.task.status).toBe("failed");
+    expect(failed.runs[0]?.error).toMatchObject({
+      code: "TASK_DELIVERY_PUSH_FAILED",
+      retryable: true,
+    });
+
+    vi.mocked(dependencies.deliverGitChanges).mockResolvedValueOnce({
+      changed: true,
+      head: "b".repeat(40),
+      changeRequest: {
+        kind: "github_pr",
+        url: "https://github.com/acme/widgets/pull/13",
+        draft: false,
+      },
+    });
+    const promptCalls = vi.mocked(dependencies.sendPrompt).mock.calls.length;
+    const retrying = await service.run(failed.task.id, failed.task.revision);
+    expect(retrying.runs).toHaveLength(1);
+    await service.whenIdle();
+    const recovered = await service.get(failed.task.id);
+    expect(recovered.task.status).toBe("needs_review");
+    expect(recovered.runs[0]?.attempt).toBe(run.attempt);
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(promptCalls);
   });
 
   it("binds an existing clean workspace without creating one and enforces dirty confirmation", async () => {
@@ -672,6 +764,55 @@ describe("TaskService", () => {
     );
     expect(completed.task.status).toBe("completed");
     expect(completed.task.completedAt).not.toBeNull();
+  });
+
+  it("carries the same verified change request into a no-change Request changes report", async () => {
+    const changeRequest = {
+      kind: "github_pr" as const,
+      url: "https://github.com/acme/widgets/pull/21",
+      draft: false,
+    };
+    vi.mocked(dependencies.deliverGitChanges)
+      .mockResolvedValueOnce({
+        changed: true,
+        head: "b".repeat(40),
+        changeRequest,
+      })
+      .mockImplementationOnce(async (_worktreeId, input) => {
+        expect(input.priorChangeRequest).toEqual(changeRequest);
+        return {
+          changed: false,
+          head: "b".repeat(40),
+          changeRequest,
+        };
+      });
+    const first = await createRunningTask(createInput(true));
+    await reportResult!({
+      runId: first.runs[0]!.id,
+      outcome: "success",
+      summary: "First delivery",
+      tests: [],
+    });
+    await settleAgent();
+    const review = await service.get(first.task.id);
+    await service.requestChanges(
+      review.task.id,
+      review.task.revision,
+      "No code change needed",
+    );
+    await service.whenIdle();
+    const followUp = await service.get(first.task.id);
+    await reportResult!({
+      runId: followUp.runs[0]!.id,
+      outcome: "success",
+      summary: "Confirmed",
+      tests: [],
+    });
+    await settleAgent();
+
+    const final = await service.get(first.task.id);
+    expect(final.runs[0]?.report?.changeRequest).toEqual(changeRequest);
+    expect(final.runs[1]?.report?.changeRequest).toEqual(changeRequest);
   });
 
   it("reuses the Task-level resolved workspace when the latest failed run never bound one", async () => {

@@ -1,5 +1,8 @@
 # Task background dispatch and retained reports
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Draft-only or optional-push statements in this document.
+
+
 ## Intent
 
 User requested decoupling Task creation from execution and keeping completed reports accessible. Creating a Task must not wait for workspace/session provisioning or prompt submission; Main must dispatch durable queued work asynchronously.

@@ -82,25 +82,52 @@ function TaskReport({
         </details>
       ) : null}
       {report.changeRequest ? (
-        <a
-          className="task-external-link"
-          href={report.changeRequest.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          onClick={(event) => {
-            if (
-              !window.confirm(
-                t("tasks.externalLinkConfirm", {
-                  url: report.changeRequest!.url,
-                }),
-              )
-            )
-              event.preventDefault();
-          }}
+        <div
+          className="task-delivery-artifact"
+          role="region"
+          aria-label={t("tasks.delivery.title")}
         >
-          {t("tasks.openDraft")}
-          <RiExternalLinkLine size={13} aria-hidden="true" />
-        </a>
+          <div className="task-delivery-heading">
+            <strong>{t("tasks.delivery.title")}</strong>
+            <span
+              className={`task-delivery-status ${report.changeRequest.draft ? "is-draft" : "is-ready"}`}
+            >
+              {t(
+                report.changeRequest.draft
+                  ? "tasks.delivery.draft"
+                  : "tasks.delivery.ready",
+              )}
+            </span>
+          </div>
+          <p>
+            {t(
+              report.changeRequest.kind === "github_pr"
+                ? "tasks.delivery.githubPr"
+                : report.changeRequest.kind === "gitlab_mr"
+                  ? "tasks.delivery.gitlabMr"
+                  : "tasks.delivery.changeRequest",
+            )}
+          </p>
+          <a
+            className="task-external-link"
+            href={report.changeRequest.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={(event) => {
+              if (
+                !window.confirm(
+                  t("tasks.externalLinkConfirm", {
+                    url: report.changeRequest!.url,
+                  }),
+                )
+              )
+                event.preventDefault();
+            }}
+          >
+            {t("tasks.delivery.open")}
+            <RiExternalLinkLine size={13} aria-hidden="true" />
+          </a>
+        </div>
       ) : null}
     </div>
   );

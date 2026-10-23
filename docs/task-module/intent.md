@@ -1,5 +1,8 @@
 # Intent: 全局 Task 与自动化 TaskRun
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Main-verified Ready delivery or optional-push statements in this document.
+
+
 Author: user。 Status: accepted。
 
 Current queue admission and report-visibility behavior is amended by `docs/task-background-dispatch/change.md`; lifecycle/session/cleanup behavior is amended by `docs/task-lifecycle-cleanup/spec.md`.

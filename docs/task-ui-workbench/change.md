@@ -1,5 +1,8 @@
 # Task state-driven workbench
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Draft-only or optional-push statements in this document.
+
+
 ## Intent
 
 Implement the user's approved UI/interaction review: actionable execution states, searchable scoped lists, current-result-first detail, recognizable notifications, safe draft handling, lazy project configuration, rewrite comparison, and responsive/readable layouts. Preserve the existing Main-owned Task execution and safety boundaries.

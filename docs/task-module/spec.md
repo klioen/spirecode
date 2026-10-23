@@ -1,5 +1,8 @@
 # Spec: 全局 Task、TaskRun 与可恢复自动化
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Main-verified Ready delivery or optional-push statements in this document.
+
+
 Status: accepted。 Implements: `docs/task-module/intent.md`。
 
 Current queue admission and report-visibility behavior is amended by `docs/task-background-dispatch/change.md`; lifecycle/session/cleanup behavior is amended by `docs/task-lifecycle-cleanup/spec.md`.
@@ -24,7 +27,7 @@ Current state-driven UI and bounded read-model filters are amended by `docs/task
 
 - 远端 issue/project-management 同步、协作者与权限分配、截止日期、排期、依赖 DAG。
 - 多个 active Run、同一 Task 的并行 workspace、跨 project Task。
-- 自动清理 branch/worktree/transcript；自动 push、自动创建 PR/MR 不是完成 Task 的必要条件。
+- 自动清理 branch/worktree/transcript；Git Task 有交付变化时，自动 push 并创建或复用 Ready PR/MR 是进入 needs_review 的必要条件。
 - 自动 ready/approve/merge、CI 绕过、部署与 release。
 - Task rewrite 历史、rewrite transcript、rewrite 后台运行。
 - 将完整 Pi transcript、diff、文件正文或 tool output复制进 SQLite。
@@ -167,12 +170,12 @@ task_report_result({
   changeRequest?: {
     kind: "github_pr" | "gitlab_mr" | "other";
     url: string;
-    draft: true;
+    draft: boolean; // new automatic delivery requires false; historical true remains readable
   }
 })
 ```
 
-Main 校验 tool invocation 来自该 Run 的 live session、`runId` 精确匹配、summary/tests 文本与数组大小受限、URL 为 `https`，且 change request 必须 `draft: true`。首个有效报告以 SQLite 事务写入；重复完全相同调用幂等返回成功，内容不同的第二次调用返回 `TASK_RESULT_ALREADY_REPORTED`。报告本身不等于用户验收：任何 outcome 的有效报告都使 Run=`reported`、Task=`needs_review`，由 UI 明确展示 outcome。
+Main 校验 tool invocation 来自该 Run 的 live session、`runId` 精确匹配、summary/tests 文本与数组大小受限、URL 为 `https`，且 change request 必须 `draft: boolean`。首个有效报告以 SQLite 事务写入；重复完全相同调用幂等返回成功，内容不同的第二次调用返回 `TASK_RESULT_ALREADY_REPORTED`。报告本身不等于用户验收：任何 outcome 的有效报告都使 Run=`reported`、Task=`needs_review`，由 UI 明确展示 outcome。
 
 ## 4. State machines
 
@@ -340,7 +343,7 @@ SQLite 无法与 Git worktree 或 Pi JSONL 做分布式事务。每个外部副�
 2. 写 `workspace:intent`。
 3. `new_managed` 调用扩展后的 WorktreeService，用既定 name 创建；`existing` 重新校验 ownership/dirty/busy。探测 catalog + Git worktree list + owner marker 后写 `workspace:done` 与 worktree ID。
 4. 写 `session:intent`。以 worktree canonical cwd 创建持久 Pi session，立即把 session name 设为 `SpireCode Task <runId>`；通过 `SessionManager.list(cwd)` 的唯一 name/ID 探测并收敛，然后写 session ID/path。
-5. 写 `prompt:intent`。prompt 首尾含不可伪造为其他 Run 的固定 marker `spire-task-run:<runId>`、结构化需求、报告工具要求和 Draft-only policy。
+5. 写 `prompt:intent`。prompt 首尾含不可伪造为其他 Run 的固定 marker `spire-task-run:<runId>`、结构化需求、报告工具要求和 Main-verified Ready delivery policy。
 6. attach session 并检查 transcript 是否已有完全匹配 marker 的 user prompt；没有才提交。Pi `preflightResult` 确认 accepted 后写 `prompt:done`。因此崩溃恢复不会重复首个 prompt。
 7. 订阅 session events/tool calls，Run=running、Task=running。
 
@@ -381,7 +384,7 @@ Execution 使用持久 `SessionManager.create/open` 和当前共享 `ModelRuntim
 - 若创建 GitHub PR/GitLab MR，只能 Draft；不得 ready、approve、merge；
 - 不应删除 existing worktree 或更改 Task 数据库。
 
-V1 不承诺阻止 coding Agent 通过 bash 调用所有外部 CLI；Draft-only 是 prompt + 结果 schema + UI/host orchestration 的产品边界，SpireCode 自身绝不提供 ready/approve/merge IPC/tool。若未来需要强制阻断，必须增加命令策略/OS sandbox，另立高风险设计。
+V1 不承诺阻止 coding Agent 通过 bash 调用所有外部 CLI；Main-verified Ready delivery 是 prompt + 结果 schema + UI/host orchestration 的产品边界，SpireCode 自身绝不提供 ready/approve/merge IPC/tool。若未来需要强制阻断，必须增加命令策略/OS sandbox，另立高风险设计。
 
 ### 7.2 AI optimization session
 
@@ -554,7 +557,7 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 7. 只有有效 `task_report_result` 进入 needs_review，只有用户 Accept 进入 completed。
 8. needs_review/awaiting_report/failed 生成去重应用内通知；窗口不活跃时尽力发送系统通知。
 9. AI 优化只能由 `submit_task_rewrite` 改写 title 和 description，可 Undo，不产生持久 session/DB 记录。
-10. PR/MR report 只接受 `draft: true`；产品无 ready/approve/merge action。
+10. PR/MR report 只接受 `draft: boolean`；产品无 ready/approve/merge action。
 
 ### Recovery and data
 

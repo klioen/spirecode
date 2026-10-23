@@ -1,5 +1,8 @@
 # Task session navigation fix
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Draft-only or optional-push statements in this document.
+
+
 ## Intent
 
 Opening a Task session can leave the workbench at `No project open`, hiding the live Pi session. Investigation of the reported `Running` Tasks found that their first attempts had completed and submitted reports, while newer attempts had been explicitly created through `Request changes` and were still executing; Main persistence and Task event invalidation were current, so no status-state repair is required.

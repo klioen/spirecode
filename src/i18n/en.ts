@@ -118,9 +118,15 @@ export const en = {
   "tasks.result": "Task result",
   "tasks.resultLabel": "Result: {result}",
   "tasks.tests": "Tests",
-  "tasks.externalLinkConfirm":
-    "Open this external draft change request?\n\n{url}",
+  "tasks.externalLinkConfirm": "Open this external change request?\n\n{url}",
   "tasks.openDraft": "Open draft change request",
+  "tasks.delivery.title": "Code delivery",
+  "tasks.delivery.ready": "Ready for review",
+  "tasks.delivery.draft": "Draft",
+  "tasks.delivery.githubPr": "GitHub pull request",
+  "tasks.delivery.gitlabMr": "GitLab merge request",
+  "tasks.delivery.changeRequest": "Change request",
+  "tasks.delivery.open": "Open change request",
   "tasks.acceptCompletion": "Accept completion",
   "tasks.changeNote": "Change request note",
   "tasks.requestChanges": "Request changes",
@@ -153,7 +159,8 @@ export const en = {
   "tasks.form.worktree": "Worktree",
   "tasks.form.selectWorktree": "Select a worktree",
   "tasks.form.dirty": "dirty",
-  "tasks.form.allowDirty": "Allow Agent to use this dirty worktree",
+  "tasks.form.allowDirty":
+    "I understand that all existing staged, unstaged, and untracked changes will be committed and pushed together with the Agent's changes",
   "tasks.form.startAutomation": "Queue for background execution",
   "tasks.form.automationWarning":
     "Queued tasks run asynchronously in the background and can modify the selected workspace.",

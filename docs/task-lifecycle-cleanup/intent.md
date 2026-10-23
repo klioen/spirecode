@@ -1,5 +1,8 @@
 # Intent: Task 执行安全与 Workspace 回收
 
+> **Auto-delivery amendment:** Current Git delivery, Ready PR/MR, dirty workspace, branch, failure, retry, and recovery rules are defined by `docs/task-auto-delivery/spec.md`; they supersede older Draft-only or optional-push statements in this document.
+
+
 Status: accepted by user.
 
 ## Problem

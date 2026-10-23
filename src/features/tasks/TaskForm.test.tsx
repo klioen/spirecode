@@ -120,7 +120,7 @@ describe("TaskForm", () => {
     fireEvent.click(screen.getByRole("option", { name: "feature (dirty)" }));
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: "Allow Agent to use this dirty worktree",
+        name: "I understand that all existing staged, unstaged, and untracked changes will be committed and pushed together with the Agent's changes",
       }),
     );
     fireEvent.click(
@@ -243,7 +243,7 @@ it("keeps bound workspace identity read-only while accepting fresh explicit dirt
   expect(screen.getByRole("combobox", { name: "Worktree" })).toBeDisabled();
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: "Allow Agent to use this dirty worktree",
+      name: "I understand that all existing staged, unstaged, and untracked changes will be committed and pushed together with the Agent's changes",
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Save task" }));
