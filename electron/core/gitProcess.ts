@@ -22,16 +22,33 @@ const SAFE_CONFIG = [
   "commit.gpgSign=false",
 ];
 
-function safeGitEnvironment(): NodeJS.ProcessEnv {
+function safeGitEnvironment(
+  overrides?: Readonly<Record<string, string>>,
+): NodeJS.ProcessEnv {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key, value]) => !key.startsWith("GIT_") && value !== undefined,
     ),
   );
+  const allowedOverrides = new Set([
+    "GIT_ASKPASS",
+    "GIT_ASKPASS_REQUIRE",
+    "SPIRECODE_GIT_USERNAME",
+    "SPIRECODE_GIT_TOKEN",
+  ]);
+  if (
+    overrides &&
+    Object.keys(overrides).some((key) => !allowedOverrides.has(key))
+  )
+    throw new CommandError(
+      "GIT_FAILED",
+      "Unsupported Git environment override",
+    );
   return {
     ...environment,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
+    ...overrides,
   };
 }
 
@@ -47,6 +64,7 @@ export interface GitRunOptions {
   diffSafe?: boolean;
   allowFailure?: boolean;
   input?: string | Buffer;
+  environment?: Readonly<Record<string, string>>;
 }
 
 export async function runGit(
@@ -63,7 +81,7 @@ export async function runGit(
   return new Promise((resolve, reject) => {
     const child = spawn("git", [...config, ...args], {
       cwd,
-      env: safeGitEnvironment(),
+      env: safeGitEnvironment(options.environment),
       shell: false,
       stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
@@ -148,13 +166,19 @@ export async function assertNoRepositoryGitCommands(
     "--name-only",
     "--list",
   ]);
-  const executableFilters = output
+  const unsafeKeys = output
     .split(/\r?\n/u)
-    .filter((key) => /^filter\..*\.(?:clean|smudge|process)$/i.test(key));
-  if (executableFilters.length > 0) {
+    .filter(
+      (key) =>
+        /^filter\..*\.(?:clean|smudge|process)$/i.test(key) ||
+        /^core\.(?:sshcommand|gitproxy)$/i.test(key) ||
+        /^remote\..*\.(?:pushurl|receivepack|uploadpack)$/i.test(key) ||
+        /^url\..*\.(?:insteadof|pushinsteadof)$/i.test(key),
+    );
+  if (unsafeKeys.length > 0) {
     throw new CommandError(
       "GIT_UNSAFE_CONFIG",
-      "repository defines executable Git filters; remove them before creating a worktree",
+      "repository defines executable or alternate transport Git configuration",
     );
   }
 }

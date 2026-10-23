@@ -2836,8 +2836,40 @@ body.panel-resizing-vertical * {
   margin: 16px 0 8px;
   font-size: 11px;
 }
+.task-delivery-artifact {
+  margin: 16px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--accent-muted);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-muted) 12%, transparent);
+}
+.task-delivery-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-delivery-artifact p {
+  margin: 5px 0 0;
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+.task-delivery-status {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.task-delivery-status.is-ready {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.task-delivery-status.is-draft {
+  color: var(--text-subtle);
+  background: var(--control-bg);
+}
 .task-external-link {
-  margin: 8px 0 16px;
+  margin: 8px 0 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;

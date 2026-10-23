@@ -12,6 +12,13 @@ import {
   TaskRepositoryError,
   type ListTasksOptions,
 } from "./repository.js";
+import {
+  taskDeliveryBranch,
+  TaskDeliveryError,
+  type ChangeRequest,
+  type GitDeliveryResult,
+  type GitDeliveryStart,
+} from "./delivery.js";
 import type {
   CreateRunInput,
   Page,
@@ -35,6 +42,7 @@ export type TaskServiceErrorCode =
   | "TASK_WORKSPACE_REFERENCED"
   | "TASK_PROMPT_FAILED"
   | "TASK_RESULT_INVALID"
+  | `TASK_DELIVERY_${string}`
   | "TASK_FAILED";
 
 export class TaskServiceError extends Error {
@@ -142,6 +150,28 @@ export interface TaskServiceDependencies {
   abortSession(worktreeId: string, sessionId: string): Promise<void>;
   isWorktreeBusy(worktreeId: string): Promise<boolean>;
   deleteWorktree(worktreeId: string): Promise<void>;
+  inspectGitDelivery(
+    worktreeId: string,
+    input: {
+      mode: "new_managed" | "existing";
+      branch: string;
+      baseRef: string | null;
+      persistedTarget: string | null;
+    },
+  ): Promise<GitDeliveryStart>;
+  activateGitDelivery(
+    worktreeId: string,
+    start: GitDeliveryStart,
+  ): Promise<void>;
+  deliverGitChanges(
+    worktreeId: string,
+    input: {
+      start: GitDeliveryStart;
+      title: string;
+      summary: string;
+      priorChangeRequest?: ChangeRequest;
+    },
+  ): Promise<GitDeliveryResult>;
   notify(request: TaskNotificationRequest): void | Promise<void>;
   onChanged?: (taskId: string, revision: number) => void;
 }
@@ -181,6 +211,7 @@ export class TaskService {
   readonly #inFlight = new Map<string, Promise<TaskDetail>>();
   readonly #background = new Set<Promise<void>>();
   readonly #integrations = new Map<string, TaskSessionIntegration>();
+  readonly #settling = new Map<string, Promise<TaskDetail>>();
   #startTail: Promise<void> = Promise.resolve();
   #scheduling = false;
   #wakeScheduled = false;
@@ -335,6 +366,31 @@ export class TaskService {
           "Task cannot be run from its current state",
         );
       await this.#requireProject(task.projectId);
+      const latestRun = this.repository.listAllRuns(taskId)[0];
+      const deliveryRetry =
+        task.status === "failed" &&
+        latestRun?.status === "failed" &&
+        latestRun.report &&
+        this.repository
+          .listRunSteps(latestRun.id)
+          .some((step) => step.step === "git_delivery");
+      if (deliveryRetry) {
+        const resumed = this.repository.retryRunDelivery(
+          latestRun.id,
+          expectedRevision,
+        );
+        this.repository.appendEvent(taskId, latestRun.id, "delivery.retried");
+        this.#enqueue(async () => {
+          try {
+            await this.#settleRun(resumed.run.id);
+          } catch (error) {
+            await this.#recordFailure(resumed.run.id, error);
+          } finally {
+            this.#emitChanged(taskId);
+          }
+        });
+        return this.get(taskId);
+      }
       const reuseWorktree = task.resolvedWorktreeId
         ? this.repository
             .listAllRuns(taskId)
@@ -799,7 +855,7 @@ export class TaskService {
     if (["reported", "failed", "cancelled"].includes(run.status))
       return this.get(run.taskId);
     const task = this.#requireTask(run.taskId);
-    await this.#requireProject(task.projectId);
+    const project = await this.#requireProject(task.projectId);
     const steps = this.repository.listRunSteps(run.id);
     const cancelStep = steps.find((step) => step.step === "cancel");
     if (cancelStep?.state === "intent") return this.#cancelActiveRun(run);
@@ -930,6 +986,27 @@ export class TaskService {
         run.worktreeName!,
         run.baseRef,
       );
+
+    if (project.kind === "git") {
+      const startStep = this.repository
+        .listRunSteps(run.id)
+        .find((step) => step.step === "git_start");
+      let start = parseGitDeliveryStart(startStep?.details);
+      if (!start) {
+        const previous = this.#previousDelivery(run);
+        start = await this.dependencies.inspectGitDelivery(run.worktreeId!, {
+          mode: task.workspace.mode,
+          branch: run.ownsManagedWorktree
+            ? run.worktreeName!
+            : taskDeliveryBranch(task.id),
+          baseRef: run.baseRef,
+          persistedTarget: previous?.start.target ?? null,
+        });
+        this.repository.upsertRunStep(run.id, "git_start", "intent", start);
+      }
+      await this.dependencies.activateGitDelivery(run.worktreeId!, start);
+      this.repository.upsertRunStep(run.id, "git_start", "done", start);
+    }
 
     if (this.#hasCancelIntent(run.id))
       return this.#cancelActiveRun(this.#requireRun(run.id));
@@ -1101,9 +1178,6 @@ export class TaskService {
           outcome: input.outcome,
           summary: input.summary,
           tests: input.tests,
-          ...(input.changeRequest
-            ? { changeRequest: input.changeRequest }
-            : {}),
         };
         const run = this.#requireRun(runId);
         const result = this.repository.reportRun(runId, run.revision, report);
@@ -1134,32 +1208,36 @@ export class TaskService {
       },
       onEvent: (event) => {
         this.#enqueue(async () => {
-          const run = this.repository.getRun(runId);
-          if (!run || this.#hasCancelIntent(run.id)) return;
-          if (event.type === "agent_settled" && run.status === "running") {
-            await this.#settleRun(run.id);
-          } else if (
-            event.type === "agent_start" &&
-            run.status === "awaiting_report"
-          ) {
-            await this.#withStartLock(async () => {
-              const current = this.repository.getRun(run.id);
-              if (!current || current.status !== "awaiting_report") return;
-              if (!this.#hasExecutionSlot()) {
-                if (current.worktreeId && current.sessionId)
-                  await this.dependencies.abortSession(
-                    current.worktreeId,
-                    current.sessionId,
-                  );
-                return;
-              }
-              this.repository.transitionRun(
-                current.id,
-                current.revision,
-                "running",
-                { sagaPhase: "active" },
-              );
-            });
+          try {
+            const run = this.repository.getRun(runId);
+            if (!run || this.#hasCancelIntent(run.id)) return;
+            if (event.type === "agent_settled" && run.status === "running") {
+              await this.#settleRun(run.id);
+            } else if (
+              event.type === "agent_start" &&
+              run.status === "awaiting_report"
+            ) {
+              await this.#withStartLock(async () => {
+                const current = this.repository.getRun(run.id);
+                if (!current || current.status !== "awaiting_report") return;
+                if (!this.#hasExecutionSlot()) {
+                  if (current.worktreeId && current.sessionId)
+                    await this.dependencies.abortSession(
+                      current.worktreeId,
+                      current.sessionId,
+                    );
+                  return;
+                }
+                this.repository.transitionRun(
+                  current.id,
+                  current.revision,
+                  "running",
+                  { sagaPhase: "active" },
+                );
+              });
+            }
+          } catch (error) {
+            await this.#recordFailure(runId, error);
           }
         });
       },
@@ -1168,8 +1246,18 @@ export class TaskService {
     return integration;
   }
 
-  async #settleRun(runId: string): Promise<TaskDetail> {
-    const run = this.#requireRun(runId);
+  #settleRun(runId: string): Promise<TaskDetail> {
+    const existing = this.#settling.get(runId);
+    if (existing) return existing;
+    const settling = this.#settleRunUnlocked(runId).finally(() => {
+      if (this.#settling.get(runId) === settling) this.#settling.delete(runId);
+    });
+    this.#settling.set(runId, settling);
+    return settling;
+  }
+
+  async #settleRunUnlocked(runId: string): Promise<TaskDetail> {
+    let run = this.#requireRun(runId);
     if (this.#hasCancelIntent(run.id)) return this.get(run.taskId);
     if (
       run.status !== "running" &&
@@ -1177,6 +1265,7 @@ export class TaskService {
     )
       return this.get(run.taskId);
     if (run.report) {
+      run = await this.#deliverReport(run);
       const result = this.repository.finalizeRunReport(
         run.id,
         run.revision,
@@ -1197,6 +1286,86 @@ export class TaskService {
     await this.#notify(result.task.id, run.id, "awaiting_report");
     this.#requestSchedule();
     return this.get(result.task.id);
+  }
+
+  async #deliverReport(initialRun: TaskRun): Promise<TaskRun> {
+    let run = initialRun;
+    const task = this.#requireTask(run.taskId);
+    const project = await this.#requireProject(task.projectId);
+    if (project.kind === "directory") return run;
+    const startStep = this.repository
+      .listRunSteps(run.id)
+      .find((step) => step.step === "git_start");
+    const start = parseGitDeliveryStart(startStep?.details);
+    if (!start || startStep?.state !== "done")
+      throw new TaskServiceError(
+        "TASK_DELIVERY_FAILED",
+        "The persisted Git execution start is unavailable",
+        false,
+      );
+    const deliveryStep = this.repository
+      .listRunSteps(run.id)
+      .find((step) => step.step === "git_delivery");
+    const completed = parseGitDeliveryResult(deliveryStep?.details);
+    if (deliveryStep?.state === "done" && completed) {
+      if (completed.changed && !run.report?.changeRequest)
+        run = this.repository.replaceRunReport(run.id, run.revision, {
+          ...run.report!,
+          changeRequest: completed.changeRequest!,
+        });
+      return run;
+    }
+    const previous = this.#previousDelivery(run);
+    this.repository.upsertRunStep(run.id, "git_delivery", "intent", {
+      branch: start.branch,
+      target: start.target,
+      priorChangeRequest: previous?.changeRequest ?? null,
+    });
+    const delivered = await this.dependencies.deliverGitChanges(
+      run.worktreeId!,
+      {
+        start,
+        title: task.title,
+        summary: run.report!.summary,
+        ...(previous?.changeRequest
+          ? { priorChangeRequest: previous.changeRequest }
+          : {}),
+      },
+    );
+    if (delivered.changed && !delivered.changeRequest)
+      throw new TaskServiceError(
+        "TASK_DELIVERY_FAILED",
+        "Coding changes require a verified Ready change request",
+        false,
+      );
+    this.repository.upsertRunStep(run.id, "git_delivery", "done", delivered);
+    if (delivered.changeRequest)
+      run = this.repository.replaceRunReport(run.id, run.revision, {
+        ...run.report!,
+        changeRequest: delivered.changeRequest,
+      });
+    return run;
+  }
+
+  #previousDelivery(run: TaskRun): {
+    start: GitDeliveryStart;
+    changeRequest?: ChangeRequest;
+  } | null {
+    for (const previous of this.repository.listAllRuns(run.taskId)) {
+      if (previous.id === run.id) continue;
+      const start = parseGitDeliveryStart(
+        this.repository
+          .listRunSteps(previous.id)
+          .find((step) => step.step === "git_start")?.details,
+      );
+      if (!start) continue;
+      const changeRequest = previous.report?.changeRequest;
+      return {
+        start,
+        ...(changeRequest && !changeRequest.draft ? { changeRequest } : {}),
+      };
+    }
+    return null;
   }
 
   async #notify(
@@ -1400,6 +1569,15 @@ export class TaskService {
 
   #serviceError(error: unknown): TaskServiceError {
     if (error instanceof TaskServiceError) return error;
+    if (error instanceof TaskDeliveryError)
+      return new TaskServiceError(
+        error.code.startsWith("TASK_DELIVERY_")
+          ? (error.code as `TASK_DELIVERY_${string}`)
+          : "TASK_DELIVERY_FAILED",
+        error.message,
+        error.retryable,
+        { cause: error },
+      );
     if (error instanceof TaskRepositoryError) {
       const code =
         error.code === "TASK_RUN_NOT_FOUND" ||
@@ -1425,6 +1603,35 @@ export class TaskService {
     if (this.#disposed)
       throw new TaskServiceError("TASK_FAILED", "Task service is disposed");
   }
+}
+
+function parseGitDeliveryStart(value: unknown): GitDeliveryStart | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.baselineHead === "string" &&
+    typeof record.initialDirty === "boolean" &&
+    typeof record.branch === "string" &&
+    typeof record.target === "string"
+    ? {
+        baselineHead: record.baselineHead,
+        initialDirty: record.initialDirty,
+        branch: record.branch,
+        target: record.target,
+      }
+    : null;
+}
+
+function parseGitDeliveryResult(value: unknown): GitDeliveryResult | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.changed !== "boolean" || typeof record.head !== "string")
+    return null;
+  const changeRequest = record.changeRequest as ChangeRequest | undefined;
+  return {
+    changed: record.changed,
+    head: record.head,
+    ...(changeRequest ? { changeRequest } : {}),
+  };
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {

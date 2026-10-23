@@ -77,7 +77,7 @@ describe("TaskDetail", () => {
     fireEvent.click(reportSummary);
     expect(screen.getByText("Implemented and tested")).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Open draft change request" }),
+      screen.getByRole("link", { name: "Open change request" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Accept completion" }),
@@ -99,7 +99,7 @@ describe("TaskDetail", () => {
       "pnpm test: Passed",
     );
     expect(
-      screen.getByRole("link", { name: "Open draft change request" }),
+      screen.getByRole("link", { name: "Open change request" }),
     ).toHaveAttribute("href", "https://github.com/example/repo/pull/1");
     expect(
       screen.queryByRole("button", { name: "Accept completion" }),
@@ -168,11 +168,49 @@ describe("TaskDetail", () => {
       "pnpm test: Passed",
     );
     expect(
-      screen.getByRole("link", { name: "Open draft change request" }),
+      screen.getByRole("link", { name: "Open change request" }),
     ).toHaveAttribute("href", "https://github.com/example/repo/pull/1");
     fireEvent.click(screen.getByRole("button", { name: "Accept completion" }));
     await waitFor(() => expect(api.complete).toHaveBeenCalledWith("task-1", 1));
     expect(onChange).toHaveBeenCalled();
+  });
+
+  it("shows a Main-verified Ready PR as a prominent delivery artifact without Draft copy", () => {
+    render(
+      <TaskDetail
+        api={createTasksApiMock()}
+        onChange={vi.fn()}
+        task={{
+          ...reviewTask,
+          runs: [
+            {
+              ...reviewTask.runs[0]!,
+              report: {
+                ...reviewTask.runs[0]!.report!,
+                changeRequest: {
+                  kind: "gitlab_mr",
+                  url: "https://gitlab.com/example/repo/-/merge_requests/2",
+                  draft: false,
+                },
+              },
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("region", { name: "Code delivery" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ready for review")).toBeInTheDocument();
+    expect(screen.getByText("GitLab merge request")).toBeInTheDocument();
+    expect(screen.queryByText("Draft")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open change request" }),
+    ).toHaveAttribute(
+      "href",
+      "https://gitlab.com/example/repo/-/merge_requests/2",
+    );
   });
 
   it("cleans a completed managed workspace and hides stale session navigation after removal", async () => {

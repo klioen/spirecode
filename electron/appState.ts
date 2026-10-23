@@ -52,6 +52,7 @@ import {
 } from "./domains/tasks/service.js";
 import { TaskIntakeService } from "./domains/tasks/intake.js";
 import { taskSessionName } from "./domains/tasks/prompt.js";
+import { TaskDeliveryService } from "./domains/tasks/delivery.js";
 import {
   createDefaultTaskRewriteService,
   TaskRewriteError,
@@ -302,6 +303,24 @@ export class AppState {
         },
         deleteWorktree: async (worktreeId) => {
           await this.deleteWorktree(worktreeId, false);
+        },
+        inspectGitDelivery: async (worktreeId, input) => {
+          const worktree = await projects.worktree(worktreeId);
+          return new TaskDeliveryService(worktree.path).inspectStart(input);
+        },
+        activateGitDelivery: async (worktreeId, start) => {
+          const worktree = await projects.worktree(worktreeId);
+          await new TaskDeliveryService(worktree.path, {
+            updateBranch: async (branch) => {
+              const current = await projects.worktree(worktreeId);
+              if (current.branch !== branch)
+                await projects.updateWorktree({ ...current, branch });
+            },
+          }).activate(start);
+        },
+        deliverGitChanges: async (worktreeId, input) => {
+          const worktree = await projects.worktree(worktreeId);
+          return new TaskDeliveryService(worktree.path).deliver(input);
         },
         notify: (request) => this.notifyTask(request),
         onChanged: (taskId, revision) =>
@@ -1089,7 +1108,7 @@ function taskReportTool(integration: TaskSessionIntegration) {
                 Type.Literal("other"),
               ]),
               url: Type.String(),
-              draft: Type.Literal(true),
+              draft: Type.Boolean(),
             },
             { additionalProperties: false },
           ),

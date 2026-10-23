@@ -946,6 +946,54 @@ export class TaskRepository {
     });
   }
 
+  retryRunDelivery(
+    runId: string,
+    expectedTaskRevision: number,
+  ): { task: Task; run: TaskRun } {
+    return this.#transaction(() => {
+      const run = this.#requireRun(validateId(runId, "runId"));
+      const task = this.#requireTask(run.task_id);
+      if (task.revision !== expectedTaskRevision)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task revision does not match",
+        );
+      if (
+        task.status !== "failed" ||
+        task.active_run_id ||
+        run.status !== "failed" ||
+        !run.report_json
+      )
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task delivery cannot be retried",
+        );
+      const now = this.#now();
+      this.connection
+        .prepare(
+          `UPDATE task_runs SET status = 'running', saga_phase = 'active',
+          error_code = NULL, error_message = NULL, error_retryable = NULL,
+          finished_at = NULL, revision = revision + 1 WHERE id = ? AND revision = ?`,
+        )
+        .run(runId, run.revision);
+      this.connection
+        .prepare(
+          "DELETE FROM task_run_steps WHERE run_id = ? AND step IN ('failure','failure_stop')",
+        )
+        .run(runId);
+      this.connection
+        .prepare(
+          `UPDATE tasks SET status = 'running', active_run_id = ?,
+          revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`,
+        )
+        .run(runId, now, task.id, expectedTaskRevision);
+      return {
+        task: mapTask(this.#requireTask(task.id)),
+        run: mapRun(this.#requireRun(runId)),
+      };
+    });
+  }
+
   cancelTask(taskId: string, expectedRevision: number): Task {
     return this.#transaction(() => {
       const task = this.#requireTask(validateId(taskId, "taskId"));
@@ -1036,6 +1084,41 @@ export class TaskRepository {
         task: mapTask(this.#requireTask(taskRow.id)),
         run: mapRun(this.#requireRun(runId)),
       };
+    });
+  }
+
+  replaceRunReport(
+    runId: string,
+    expectedRunRevision: number,
+    input: TaskRunReport,
+  ): TaskRun {
+    return this.#transaction(() => {
+      const run = this.#requireRun(validateId(runId, "runId"));
+      if (run.revision !== expectedRunRevision)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task run revision does not match",
+        );
+      if (
+        !run.report_json ||
+        !["running", "awaiting_report"].includes(run.status)
+      )
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task run has no replaceable report",
+        );
+      const report = validateTaskRunReport(input);
+      const result = this.connection
+        .prepare(
+          "UPDATE task_runs SET report_json = ?, revision = revision + 1 WHERE id = ? AND revision = ?",
+        )
+        .run(JSON.stringify(report), runId, expectedRunRevision);
+      if (result.changes !== 1)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task run revision does not match",
+        );
+      return mapRun(this.#requireRun(runId));
     });
   }
 

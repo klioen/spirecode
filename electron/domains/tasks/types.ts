@@ -89,7 +89,7 @@ export interface TaskRunReport {
   changeRequest?: {
     kind: "github_pr" | "gitlab_mr" | "other";
     url: string;
-    draft: true;
+    draft: boolean;
   };
 }
 

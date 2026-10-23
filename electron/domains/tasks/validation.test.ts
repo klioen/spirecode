@@ -51,16 +51,46 @@ describe("task validation", () => {
     ).toThrow(TaskValidationError);
   });
 
-  it("accepts only draft HTTPS change requests and rejects extra report fields", () => {
+  it("accepts Ready and historical Draft change requests with provider-matched HTTPS URLs", () => {
+    expect(
+      validateTaskRunReport({
+        ...report,
+        changeRequest: {
+          kind: "github_pr",
+          url: "https://github.com/acme/widgets/pull/1",
+          draft: false,
+        },
+      }),
+    ).toMatchObject({ changeRequest: { draft: false } });
+    expect(
+      validateTaskRunReport({
+        ...report,
+        changeRequest: {
+          kind: "gitlab_mr",
+          url: "https://gitlab.com/acme/widgets/-/merge_requests/1",
+          draft: true,
+        },
+      }),
+    ).toMatchObject({ changeRequest: { draft: true } });
     expect(() =>
       validateTaskRunReport({
         ...report,
         changeRequest: {
           kind: "github_pr",
-          url: "https://example.com/pr/1",
+          url: "https://gitlab.com/acme/widgets/-/merge_requests/1",
           draft: false,
         },
-      } as unknown as TaskRunReport),
+      }),
+    ).toThrow(TaskValidationError);
+    expect(() =>
+      validateTaskRunReport({
+        ...report,
+        changeRequest: {
+          kind: "other",
+          url: "https://user:secret@example.com/change/1",
+          draft: true,
+        },
+      }),
     ).toThrow(TaskValidationError);
     expect(() =>
       validateTaskRunReport({
