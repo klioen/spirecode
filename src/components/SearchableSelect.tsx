@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -15,6 +16,9 @@ export interface SearchableSelectOption {
   keywords?: string[];
   disabled?: boolean;
 }
+
+const POPOVER_GAP = 4;
+const ESTIMATED_POPOVER_HEIGHT = 32 + 14 + 6 + 240 + 2;
 
 export interface SearchableSelectProps {
   ariaLabel: string;
@@ -45,6 +49,7 @@ export function SearchableSelect({
   const searchRef = useRef<HTMLInputElement>(null);
   const listboxId = `${useId()}-options`;
   const [open, setOpen] = useState(false);
+  const [openAbove, setOpenAbove] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((option) => option.value === value);
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -69,9 +74,28 @@ export function SearchableSelect({
     selectedIndex >= 0 ? selectedIndex : Math.max(firstEnabledIndex, 0),
   );
 
+  const updatePopoverDirection = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    setOpenAbove(spaceBelow < ESTIMATED_POPOVER_HEIGHT + POPOVER_GAP);
+  }, []);
+
   useEffect(() => {
     if (open) searchRef.current?.focus();
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    updatePopoverDirection();
+    window.addEventListener("resize", updatePopoverDirection);
+    window.addEventListener("scroll", updatePopoverDirection, true);
+    return () => {
+      window.removeEventListener("resize", updatePopoverDirection);
+      window.removeEventListener("scroll", updatePopoverDirection, true);
+    };
+  }, [open, updatePopoverDirection]);
 
   useEffect(() => {
     const nextSelected = filteredOptions.findIndex(
@@ -170,12 +194,16 @@ export function SearchableSelect({
         autoFocus={autoFocus}
         onClick={() => {
           setQuery("");
-          setOpen((current) => !current);
+          if (!open) updatePopoverDirection();
+          setOpen(!open);
         }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            if (!open) setOpen(true);
+            if (!open) {
+              updatePopoverDirection();
+              setOpen(true);
+            }
           } else if (event.key === "Escape" && open) {
             event.preventDefault();
             close(false);
@@ -186,7 +214,14 @@ export function SearchableSelect({
         <span aria-hidden="true">⌄</span>
       </button>
       {open ? (
-        <div className="searchable-select-popover">
+        <div
+          className={[
+            "searchable-select-popover",
+            openAbove ? "searchable-select-popover--above" : undefined,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <input
             ref={searchRef}
             type="search"
