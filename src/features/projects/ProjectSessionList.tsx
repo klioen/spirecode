@@ -10,14 +10,19 @@ import { commandError } from "../../lib/errors";
 
 export function ProjectSessionList({
   worktreeId,
+  activeWorktree,
   onSelectWorktree,
   onOpenSession,
 }: {
   worktreeId: string;
+  activeWorktree: boolean;
   onSelectWorktree: (worktreeId: string) => Promise<boolean>;
   onOpenSession?: () => void;
 }) {
   const { t } = useTranslation();
+  const activeTabId = useEditorStore(
+    (state) => state.views[worktreeId]?.activeTabId ?? null,
+  );
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -153,6 +158,9 @@ export function ProjectSessionList({
         {sessions.map((session) => {
           const title = session.title || t("chat.history.untitled");
           const deleting = deletingIds.has(session.sessionId);
+          const current =
+            activeWorktree &&
+            activeTabId === chatResourceId(worktreeId, session.sessionId);
           return (
             <div
               className="project-session-item"
@@ -166,6 +174,7 @@ export function ProjectSessionList({
                 type="button"
                 className="project-session-row"
                 aria-label={title}
+                aria-current={current ? "page" : undefined}
                 title={title}
                 disabled={deleting}
                 ref={(button) => {

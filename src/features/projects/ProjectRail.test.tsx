@@ -343,7 +343,92 @@ describe("ProjectRail", () => {
       ).toBe(chatResourceId("directory-main", "latest")),
     );
     expect(useProjectsStore.getState().activeWorktreeId).toBe("directory-main");
+    expect(
+      screen.getByRole("button", { name: "Latest session" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("button", { name: "Older session" }),
+    ).not.toHaveAttribute("aria-current");
     expect(onOpenSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks only the selected worktree's active Chat session as current", async () => {
+    vi.mocked(hostChatApi.list).mockImplementation((worktreeId) =>
+      Promise.resolve(
+        worktreeId === "main"
+          ? [
+              {
+                sessionId: "main-chat",
+                worktreeId: "main",
+                title: "Main chat",
+                updatedAt: 20,
+              },
+              {
+                sessionId: "second-chat",
+                worktreeId: "main",
+                title: "Second chat",
+                updatedAt: 10,
+              },
+            ]
+          : [
+              {
+                sessionId: "feature-chat",
+                worktreeId: "feature",
+                title: "Feature chat",
+                updatedAt: 30,
+              },
+            ],
+      ),
+    );
+    useEditorStore.getState().openChat("main", "main-chat", "Main chat");
+    useEditorStore
+      .getState()
+      .openChat("feature", "feature-chat", "Feature chat");
+
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Pi sessions for main" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Pi sessions for feature" }),
+    );
+
+    const mainChat = await screen.findByRole("button", { name: "Main chat" });
+    const secondChat = screen.getByRole("button", { name: "Second chat" });
+    const featureChat = await screen.findByRole("button", {
+      name: "Feature chat",
+    });
+    expect(mainChat).toHaveAttribute("aria-current", "page");
+    expect(secondChat).not.toHaveAttribute("aria-current");
+    expect(featureChat).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(secondChat);
+    await vi.waitFor(() =>
+      expect(secondChat).toHaveAttribute("aria-current", "page"),
+    );
+    expect(mainChat).not.toHaveAttribute("aria-current");
+
+    useEditorStore.getState().openTerminal("main", "terminal-1");
+    await vi.waitFor(() =>
+      expect(secondChat).not.toHaveAttribute("aria-current"),
+    );
+
+    useEditorStore
+      .getState()
+      .activate("main", chatResourceId("main", "second-chat"));
+    await vi.waitFor(() =>
+      expect(secondChat).toHaveAttribute("aria-current", "page"),
+    );
+
+    fireEvent.click(featureChat);
+    await vi.waitFor(() =>
+      expect(featureChat).toHaveAttribute("aria-current", "page"),
+    );
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("feature");
+    expect(secondChat).not.toHaveAttribute("aria-current");
   });
 
   it("expands Git worktree sessions and quickly moves a session to Trash", async () => {

@@ -818,6 +818,11 @@ body.panel-resizing-vertical * {
   color: var(--text-default);
   outline: none;
 }
+.project-session-row[aria-current="page"] {
+  background: var(--interactive-selected);
+  color: var(--text-default);
+  box-shadow: inset 0 0 0 1px var(--border-default);
+}
 .project-session-row svg {
   flex: 0 0 auto;
 }
