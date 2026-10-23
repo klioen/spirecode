@@ -170,6 +170,7 @@ export type TerminalMessage =
   | { type: "error"; terminalId: string; error: string };
 
 export interface ChatSessionSummary {
+  kind?: "task-intake";
   sessionId: string;
   worktreeId: string;
   title: string;
@@ -302,4 +303,23 @@ export interface MemoryDocument {
   content: string;
   size: number;
   updatedAt: number;
+}
+
+export interface TaskIntakeSnapshot {
+  sessionId: string;
+  worktreeId: string;
+  projectId: string;
+  projectName: string;
+  baseRef: string;
+  baseCommit: string;
+  phase: "clarifying" | "review" | "submitting" | "submitted";
+  revision: number;
+  proposal: {
+    reviewId: string;
+    title: string;
+    description: string;
+    baseRef: string;
+    baseCommit: string;
+  } | null;
+  task: { id: string; title: string; status: string } | null;
 }

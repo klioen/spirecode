@@ -191,6 +191,89 @@ describe("ChatService", () => {
     expect(create).toHaveBeenNthCalledWith(2, root, { customTools });
   });
 
+  it("restores restricted intake tools through ordinary attach/ensure/rebind and rejects running follow-ups", async () => {
+    const { root, records, adapter } = await fixture();
+    const original = new ChatService(() => root, { adapter });
+    const created = await original.create("w1");
+    const onSend = vi.fn(async () => undefined);
+    const restricted = {
+      readOnly: true,
+      systemPrompt: "Clarify only",
+      customTools: [{ name: "prepare_task" }],
+      onSend,
+    };
+    const open = vi.spyOn(adapter, "open");
+    const service = new ChatService(() => root, {
+      adapter,
+      resolveSessionOptions: (worktreeId, sessionId) => {
+        if (sessionId !== created.sessionId) return undefined;
+        if (worktreeId !== "w1") throw new Error("ownership");
+        return restricted;
+      },
+    });
+    expect((await service.list("w1"))[0].kind).toBe("task-intake");
+    await service.attach("w1", created.sessionId, () => undefined);
+    expect(open).toHaveBeenLastCalledWith(expect.anything(), root, {
+      readOnly: true,
+      systemPrompt: "Clarify only",
+      customTools: restricted.customTools,
+    });
+    await service.send("w1", created.sessionId, "confirm");
+    expect(onSend).toHaveBeenCalledWith("confirm");
+    const session = records.get(created.sessionId)!.session as FakeSession;
+    session.emit({ type: "agent_start" });
+    await expect(
+      service.send("w1", created.sessionId, "yes"),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_BUSY" });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    session.emit({ type: "agent_settled" });
+    await service.rebindSessionTools("w1", created.sessionId, {
+      customTools: [{ name: "bash" }],
+    });
+    expect(open).toHaveBeenLastCalledWith(expect.anything(), root, {
+      readOnly: true,
+      systemPrompt: "Clarify only",
+      customTools: restricted.customTools,
+    });
+    await expect(
+      service.ensureLoaded("other", created.sessionId),
+    ).rejects.toThrow();
+    onSend.mockRejectedValueOnce(new Error("not authorized"));
+    await expect(
+      service.send("w1", created.sessionId, "another task"),
+    ).rejects.toThrow("not authorized");
+    expect(session.calls.filter(([name]) => name === "send")).toEqual([
+      ["send", "confirm"],
+    ]);
+  });
+
+  it("restores an empty intake at its original identity without widening its tools", async () => {
+    const { root, adapter } = await fixture();
+    const create = vi.spyOn(adapter, "create");
+    const restriction = {
+      readOnly: true,
+      restoreEmpty: true,
+      systemPrompt: "Clarify only",
+      customTools: [{ name: "prepare_task" }],
+    };
+    const service = new ChatService(() => root, {
+      adapter,
+      resolveSessionOptions: (_worktreeId, sessionId) =>
+        sessionId === "s1" ? restriction : undefined,
+    });
+    const snapshot = await service.attach("w1", "s1", () => undefined);
+    expect(snapshot.sessionId).toBe("s1");
+    expect(create).toHaveBeenCalledWith(root, {
+      sessionId: "s1",
+      readOnly: true,
+      systemPrompt: "Clarify only",
+      customTools: restriction.customTools,
+    });
+    await expect(
+      service.attach("w1", "unknown", () => undefined),
+    ).rejects.toMatchObject({ code: "CHAT_SESSION_NOT_FOUND" });
+  });
+
   it("resolves a session file only within the adapter-owned session root", async () => {
     const { root, records, adapter } = await fixture();
     const service = new ChatService(() => root, { adapter });

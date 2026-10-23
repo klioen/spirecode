@@ -25,6 +25,7 @@ import type {
   ProjectCatalog,
   ProjectSummary,
   SkillSetting,
+  TaskIntakeSnapshot,
   TerminalMessage,
   TerminalSummary,
   WorktreeDeleteInspection,
@@ -100,6 +101,11 @@ export const commands = {
       targetGroupId,
       beforeProjectId,
     }),
+
+  taskIntakeCreate: (worktreeId: string) =>
+    command<ChatSessionSummary>("task_intake_create", { worktreeId }),
+  taskIntakeGet: (worktreeId: string, sessionId: string) =>
+    command<TaskIntakeSnapshot>("task_intake_get", { worktreeId, sessionId }),
 
   taskList: (input: Record<string, unknown>) =>
     command<unknown>("task_list", input),

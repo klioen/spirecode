@@ -40,6 +40,8 @@ export const COMMANDS = [
   "terminal_resize",
   "terminal_close",
   "terminal_list",
+  "task_intake_create",
+  "task_intake_get",
   "chat_session_create",
   "chat_session_list",
   "chat_session_attach",

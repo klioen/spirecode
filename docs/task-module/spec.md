@@ -4,6 +4,8 @@ Status: accepted。 Implements: `docs/task-module/intent.md`。
 
 Current queue admission and report-visibility behavior is amended by `docs/task-background-dispatch/change.md`; lifecycle/session/cleanup behavior is amended by `docs/task-lifecycle-cleanup/spec.md`.
 Current state-driven UI and bounded read-model filters are amended by `docs/task-ui-workbench/change.md`.
+Conversational New Task intake and approved-commit workspace provisioning are defined by `docs/task-intake/change.md`; existing TaskRun orchestration and manual review remain unchanged.
+Known additive Task schema v5 compatibility and initialization diagnostics are defined by `docs/task-schema-v5-compat/change.md`; existing v5 data is preserved, and unknown newer schemas remain rejected.
 
 ## 1. V1 scope
 

@@ -46,9 +46,29 @@ formally signed releases.
 - Git status and diff views
 - Integrated terminals backed by `node-pty`
 - Persistent, multi-tab pi Agent chat sessions
+- Conversational New Task intake with read-only clarification, explicit confirmation, and independent background execution
 - Standard Pi packages, extensions, skills, prompts, and themes explicitly configured by the user
 
 The React Renderer is sandboxed, has no Node.js access, and communicates through a narrow preload bridge. Filesystem requests use a worktree ID and relative path validated by Electron Main. This does **not** sandbox the Agent, terminals, extensions, or other processes running as your operating-system user.
+
+## New Task
+
+Use **New task**, immediately to the right of **New chat**, to describe a task in
+conversation. The agent investigates a pinned origin-branch baseline with
+restricted read-only tools and clarifies consequential decisions. It then shows
+the final task proposal and asks for an explicit reply such as **confirm**, **start**,
+or **submit**. A modifying reply requires a revised proposal and fresh confirmation.
+
+Confirmed tasks enter the existing background queue and run in a new managed
+worktree at the approved commit, without copying current uncommitted edits. You
+can close the conversation tab and return later through **View task** or the Task
+page. Execution runs while SpireCode is running; results and blockers use the
+existing notifications and manual review flow. This entry requires a Git project
+with an allowed origin branch. Ordinary Chat and the Task form remain available.
+
+Task clarification does not load user executable extensions, skills, prompt
+templates, or generic coding/shell tools. Its transcript and proposal are retained
+locally; it is not an OS sandbox for the separate execution agent.
 
 ## Install from source
 

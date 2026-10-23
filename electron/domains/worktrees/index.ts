@@ -97,6 +97,7 @@ export class WorktreeService {
     projectId: string,
     name: string,
     baseRef: string,
+    approvedCommit?: string,
   ): Promise<WorktreeSummary> {
     return this.mutate(projectId, async () => {
       const project = await this.projects.project(projectId);
@@ -124,6 +125,18 @@ export class WorktreeService {
         );
       }
       const fullRef = `refs/remotes/${baseRef}`;
+      if (approvedCommit) {
+        if (
+          !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(approvedCommit) ||
+          (
+            await gitText(project.path, ["cat-file", "-t", approvedCommit])
+          ).trim() !== "commit"
+        )
+          throw new CommandError(
+            "INVALID_ARGUMENT",
+            "Invalid approved Task baseline",
+          );
+      }
       await assertNoRepositoryGitCommands(project.path);
       await runGit(project.path, [
         "worktree",
@@ -133,7 +146,7 @@ export class WorktreeService {
         name,
         "--no-track",
         "--end-of-options",
-        fullRef,
+        approvedCommit ?? fullRef,
       ]);
 
       const worktree: WorktreeSummary = {

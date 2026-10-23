@@ -327,6 +327,13 @@ async function invoke(
       );
     case "terminal_list":
       return state.terminals.list(text(args, "worktreeId"));
+    case "task_intake_create":
+      return state.taskIntakeCreate(text(args, "worktreeId"));
+    case "task_intake_get":
+      return state.taskIntake.get(
+        text(args, "worktreeId"),
+        text(args, "sessionId"),
+      );
     case "chat_session_create":
       return state.chat.create(text(args, "worktreeId"));
     case "chat_session_list":
@@ -595,6 +602,8 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   terminal_resize: ["terminalId", "cols", "rows"],
   terminal_close: ["terminalId", "force"],
   terminal_list: ["worktreeId"],
+  task_intake_create: ["worktreeId"],
+  task_intake_get: ["worktreeId", "sessionId"],
   chat_session_create: ["worktreeId"],
   chat_session_list: ["worktreeId"],
   chat_session_attach: ["worktreeId", "sessionId", "subscriptionId"],

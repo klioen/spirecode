@@ -33,6 +33,9 @@ export interface ChatComposerProps {
   queue?: ChatQueuedInput[];
   disabled?: boolean;
   initialValue?: string;
+  placeholder?: string;
+  inputLabel?: string;
+  allowFollowUp?: boolean;
   config?: ChatSessionConfig;
   onModelChange?: (provider: string, modelId: string) => Promise<void>;
   onThinkingLevelChange?: (level: ChatThinkingLevel) => Promise<void>;
@@ -63,6 +66,9 @@ export function ChatComposer({
   queue = [],
   disabled = false,
   initialValue = "",
+  placeholder,
+  inputLabel,
+  allowFollowUp = true,
   config,
   onModelChange,
   onThinkingLevelChange,
@@ -79,9 +85,10 @@ export function ChatComposer({
   const byteLength = encoder.encode(value).byteLength;
   const tooLarge = byteLength > MAX_INPUT_BYTES;
   const hasDraft = Boolean(value.trim());
-  const sendDisabled = disabled || pending || tooLarge || !hasDraft;
+  const sendDisabled =
+    disabled || pending || tooLarge || !hasDraft || (running && !allowFollowUp);
   const controlsDisabled = disabled || running || pending || !config;
-  const showStop = running && !hasDraft;
+  const showStop = running && (!hasDraft || !allowFollowUp);
   const commands = useMemo(
     () => matchingCommands(config?.commands ?? [], commandQuery(value)),
     [config?.commands, value],
@@ -237,7 +244,7 @@ export function ChatComposer({
         )}
         <textarea
           ref={textareaRef}
-          aria-label={t("chat.composer.message")}
+          aria-label={inputLabel ?? t("chat.composer.message")}
           aria-autocomplete="list"
           aria-controls={
             commands.length > 0 ? "chat-slash-commands" : undefined
@@ -245,7 +252,7 @@ export function ChatComposer({
           value={value}
           disabled={disabled}
           rows={1}
-          placeholder={t("chat.composer.placeholder")}
+          placeholder={placeholder ?? t("chat.composer.placeholder")}
           onChange={(event) => {
             setValue(event.target.value);
             setActiveCommand(0);

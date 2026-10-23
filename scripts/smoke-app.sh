@@ -79,4 +79,15 @@ if ! kill -0 "$pid" 2>/dev/null; then
 fi
 [[ "$(cat "$user_data/explicit-user-data-marker")" == "must remain" ]]
 
+ELECTRON_RUN_AS_NODE=1 "$executable" -e '
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(process.argv[1], { readOnly: true });
+  const version = db.prepare("SELECT max(version) AS version FROM schema_migrations").get();
+  const check = db.prepare("PRAGMA quick_check").get();
+  const names = ["tasks", "task_runs", "task_run_steps", "task_events", "task_notifications", "task_session_archives", "task_run_retention", "task_artifact_archives", "task_archive_states"];
+  const tables = db.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type=? AND name IN (" + names.map(() => "?").join(",") + ")").get("table", ...names);
+  db.close();
+  process.exit(version?.version === 5 && check?.quick_check === "ok" && tables?.count === 9 ? 0 : 2);
+' "$user_data/tasks.sqlite3"
+
 echo "Electron app smoke passed: $app"

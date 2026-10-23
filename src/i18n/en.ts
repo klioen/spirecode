@@ -557,6 +557,23 @@ export const en = {
   "editor.closeTab": "Close {name}",
   "editor.discardConfirm": "Discard unsaved changes to {path}?",
   "editor.chatHistory": "Chat history",
+  "editor.newTask": "New task",
+  "tasks.intake.placeholder": "Describe the task you want to accomplish…",
+  "tasks.intake.inputLabel": "Task description or clarification reply",
+  "tasks.intake.intro":
+    "Describe your task. The agent will investigate code read-only and clarify important decisions before asking you to confirm submission.",
+  "tasks.intake.baseline": "Project: {project} · Baseline: {branch} · {commit}",
+  "tasks.intake.review": "Final task proposal",
+  "tasks.intake.confirmHint":
+    "Reply “confirm”, “start” or “submit” to authorize this exact proposal. If anything needs changing, describe the changes instead; the agent must prepare a new proposal.",
+  "tasks.intake.submitting":
+    "Submission is being finalized. If it did not finish, reply with confirmation to retry the same task.",
+  "tasks.intake.submitted": "Task submitted",
+  "tasks.intake.queued": "Queued for background execution",
+  "tasks.intake.backgroundHint":
+    "You can close this tab. The task runs while SpireCode is running and will notify you when it needs review or attention.",
+  "tasks.intake.viewTask": "View task",
+  "tasks.intake.loadFailed": "Unable to load the task clarification session.",
   "editor.newChat": "New chat",
   "editor.newTerminal": "New terminal",
   "editor.terminalTitle": "Terminal{number}",

@@ -30,6 +30,7 @@ vi.mock("../../bindings", async (importOriginal) => {
     ...actual,
     commands: {
       ...actual.commands,
+      taskIntakeCreate: vi.fn(),
       fsReadFile: vi.fn(),
       fsWriteFile: vi.fn(),
       gitDiffFile: vi.fn(),
@@ -96,6 +97,12 @@ vi.mock("../chat", async (importOriginal) => {
   };
 });
 
+vi.mock("../tasks/TaskIntakeView", () => ({
+  TaskIntakeView: ({ sessionId }: { sessionId: string }) => (
+    <div>intake body {sessionId}</div>
+  ),
+}));
+
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((complete) => {
@@ -113,6 +120,7 @@ beforeEach(() => {
   vi.mocked(commands.fsWriteFile).mockReset();
   vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
+  vi.mocked(commands.taskIntakeCreate).mockReset();
   vi.mocked(hostChatApi.create).mockReset();
   vi.mocked(hostChatApi.rename).mockReset();
   vi.mocked(hostChatApi.delete).mockReset().mockResolvedValue(undefined);
@@ -140,6 +148,61 @@ describe("EditorPane resources", () => {
       },
       false,
     );
+
+  it("adds New task immediately after New chat and opens an intake without creating a normal chat", async () => {
+    vi.mocked(commands.taskIntakeCreate).mockResolvedValueOnce({
+      sessionId: "intake-1",
+      worktreeId: "p1",
+      title: "",
+      createdAt: 1,
+      updatedAt: 1,
+      kind: "task-intake",
+    });
+    render(<EditorPane worktreeId="p1" />);
+    const actions = screen
+      .getByRole("button", {
+        name: "New chat",
+      })
+      .closest(".editor-resource-actions")!;
+    expect(actions.querySelectorAll("button")[2]).toHaveAttribute(
+      "aria-label",
+      "New task",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New task" }));
+    expect(await screen.findByText("intake body intake-1")).toBeInTheDocument();
+    expect(commands.taskIntakeCreate).toHaveBeenCalledWith("p1");
+    expect(hostChatApi.create).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().views.p1.tabs[0]).toMatchObject({
+      type: "chat",
+      kind: "task-intake",
+      sessionId: "intake-1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close New task" }));
+    expect(screen.queryByText("intake body intake-1")).not.toBeInTheDocument();
+    expect(hostChatApi.delete).not.toHaveBeenCalled();
+  });
+
+  it("does not let late intake creation steal focus after navigation", async () => {
+    const creating =
+      deferred<Awaited<ReturnType<typeof commands.taskIntakeCreate>>>();
+    vi.mocked(commands.taskIntakeCreate).mockReturnValueOnce(creating.promise);
+    render(<EditorPane worktreeId="p1" />);
+    fireEvent.click(screen.getByRole("button", { name: "New task" }));
+    act(() => {
+      useEditorStore.getState().beginNavigation();
+    });
+    await act(async () => {
+      creating.resolve({
+        sessionId: "late",
+        worktreeId: "p1",
+        title: "",
+        createdAt: 1,
+        updatedAt: 1,
+        kind: "task-intake",
+      });
+    });
+    expect(useEditorStore.getState().views.p1?.tabs ?? []).toHaveLength(0);
+  });
 
   it("renders accessible tabs with sibling close buttons and roving focus", async () => {
     vi.mocked(commands.fsReadFile).mockImplementation(

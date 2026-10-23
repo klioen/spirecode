@@ -90,6 +90,7 @@ export interface TaskServiceDependencies {
     projectId: string,
     name: string,
     baseRef: string,
+    taskId?: string,
   ): Promise<TaskWorktreeBinding>;
   findManagedWorktree(
     projectId: string,
@@ -230,8 +231,29 @@ export class TaskService {
     };
   }
 
-  async create(input: CreateTaskRequest): Promise<TaskDetail> {
+  async create(
+    input: CreateTaskRequest,
+    idempotencyId?: string,
+  ): Promise<TaskDetail> {
     this.#assertAvailable();
+    if (idempotencyId) {
+      const existing = this.repository.getTask(idempotencyId);
+      if (existing) {
+        if (
+          existing.projectId !== input.projectId ||
+          existing.title !== input.title.trim() ||
+          existing.description !== input.description.trim() ||
+          JSON.stringify(existing.workspace) !==
+            JSON.stringify(input.workspace) ||
+          existing.automationEnabled !== input.automationEnabled
+        )
+          throw new TaskServiceError(
+            "TASK_CONFLICT",
+            "Idempotent Task input does not match the submitted Task",
+          );
+        return this.get(idempotencyId);
+      }
+    }
     const project = await this.#requireProject(input.projectId);
     if (project.kind === "directory" && input.workspace.mode !== "existing")
       throw new TaskServiceError(
@@ -247,7 +269,7 @@ export class TaskService {
 
     const task = this.repository.createTask(
       {
-        id: this.#uuid(),
+        id: idempotencyId ?? this.#uuid(),
         title: input.title,
         description: input.description,
         projectId: input.projectId,
@@ -257,6 +279,7 @@ export class TaskService {
       input.automationEnabled ? this.#buildRunInput(input, {}) : undefined,
     );
     this.repository.appendEvent(task.id, null, "task.created");
+    this.#emitChanged(task.id);
     if (task.automationEnabled) this.#requestSchedule();
     return this.get(task.id);
   }
@@ -874,6 +897,7 @@ export class TaskService {
             task.projectId,
             run.worktreeName!,
             run.baseRef!,
+            task.id,
           );
         this.#assertWorktreeOwner(worktree, task.projectId);
       }

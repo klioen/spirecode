@@ -242,3 +242,30 @@ describe("Task workbench read model", () => {
     });
   });
 });
+
+describe("Task database diagnostics", () => {
+  it("preserves the specific newer-schema failure for IPC instead of a misleading open error", async () => {
+    const state = Object.assign(Object.create(AppState.prototype), {
+      tasks: null,
+      taskUnavailableCode: "TASK_SCHEMA_TOO_NEW",
+      taskUnavailableReason:
+        "Task database schema 6 is newer than supported schema 5",
+    }) as AppState;
+    await expect(state.taskGet("task")).rejects.toMatchObject({
+      code: "TASK_SCHEMA_TOO_NEW",
+      message: "Task database schema 6 is newer than supported schema 5",
+    });
+  });
+  it("does not expose a raw database open failure or filesystem path", async () => {
+    const state = Object.assign(Object.create(AppState.prototype), {
+      tasks: null,
+      taskUnavailableCode: "TASK_DATABASE_UNAVAILABLE",
+      taskUnavailableReason: "/private/user-path",
+    }) as AppState;
+    await expect(state.taskGet("task")).rejects.toMatchObject({
+      code: "TASK_DATABASE_UNAVAILABLE",
+      message:
+        "Tasks are unavailable because the task database could not be opened.",
+    });
+  });
+});

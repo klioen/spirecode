@@ -51,6 +51,7 @@ export interface ChatSessionConfig {
 }
 
 export interface ChatSessionSummary {
+  kind?: "task-intake";
   sessionId: string;
   worktreeId: string;
   title: string;

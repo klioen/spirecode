@@ -12,6 +12,7 @@ import type {
 import {
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   createAgentSessionFromServices,
   createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
@@ -65,6 +66,8 @@ export interface PiSessionInfo {
 export interface PiSessionLoadOptions {
   customTools?: unknown[];
   sessionId?: string;
+  readOnly?: boolean;
+  systemPrompt?: string;
 }
 
 export interface PiAdapter {
@@ -129,6 +132,9 @@ interface PiResourceLoaderOptions {
   noSkills?: boolean;
   noPromptTemplates?: boolean;
   noThemes?: boolean;
+  noContextFiles?: boolean;
+  disabledBuiltinExtensions?: string[];
+  systemPrompt?: string;
   additionalExtensionPaths: string[];
   additionalSkillPaths?: string[];
   additionalPromptTemplatePaths?: string[];
@@ -163,6 +169,8 @@ export interface PiSdk {
     sessionManager: PiSessionManager;
     model?: unknown;
     customTools?: ToolDefinition[];
+    tools?: string[];
+    excludeTools?: string[];
   }): Promise<{
     session: AgentSession;
     extensionsResult?: {
@@ -220,6 +228,7 @@ export interface PiAdapterOptions {
     resourceLoaderOptions: PiResourceLoaderOptions;
     diagnostics: string[];
   }>;
+  loadReadOnlySettings?: () => Promise<PiSettingsManager>;
   selectSkills?: (cwd: string) => Promise<{
     paths: string[];
     override: (result: SkillsResult) => SkillsResult;
@@ -368,10 +377,30 @@ export async function createPiAdapter(
     metadata: Partial<PiSessionInfo> = {},
     loadOptions: PiSessionLoadOptions = {},
   ): Promise<PiSessionRecord> => {
-    const resources = await loadResources(cwd);
-    const selectedSkills = options.selectSkills
-      ? await options.selectSkills(cwd)
-      : undefined;
+    const resources = loadOptions.readOnly
+      ? {
+          settingsManager: options.loadReadOnlySettings
+            ? await options.loadReadOnlySettings()
+            : await loadReadOnlySettings(),
+          resourceLoaderOptions: {
+            noExtensions: true,
+            noSkills: true,
+            noPromptTemplates: true,
+            noThemes: true,
+            noContextFiles: true,
+            additionalExtensionPaths: [],
+            additionalSkillPaths: [],
+            additionalPromptTemplatePaths: [],
+            additionalThemePaths: [],
+            disabledBuiltinExtensions: ["mcp"],
+            systemPrompt: loadOptions.systemPrompt,
+          },
+        }
+      : await loadResources(cwd);
+    const selectedSkills =
+      !loadOptions.readOnly && options.selectSkills
+        ? await options.selectSkills(cwd)
+        : undefined;
     const services = await sdk.createAgentSessionServices({
       cwd,
       modelRuntime,
@@ -409,6 +438,16 @@ export async function createPiAdapter(
       services,
       sessionManager,
       model,
+      ...(loadOptions.readOnly
+        ? {
+            tools: (loadOptions.customTools ?? []).map((tool) => {
+              if (!isRecord(tool) || typeof tool.name !== "string")
+                throw new Error("Invalid restricted tool");
+              return tool.name;
+            }),
+            excludeTools: ["mcp__*"],
+          }
+        : {}),
       ...(loadOptions.customTools !== undefined
         ? { customTools: loadOptions.customTools as ToolDefinition[] }
         : {}),
@@ -430,7 +469,10 @@ export async function createPiAdapter(
         session,
         sessionManager,
         services.modelRuntime,
-        () => created.extensionsResult?.runtime?.getCommands() ?? [],
+        () =>
+          loadOptions.readOnly
+            ? []
+            : (created.extensionsResult?.runtime?.getCommands() ?? []),
         {
           get: () => activity,
           subscribe(listener) {
@@ -518,6 +560,30 @@ export async function createPiAdapter(
       );
     },
   };
+}
+
+async function loadReadOnlySettings(): Promise<PiSettingsManager> {
+  await bootstrapArkApiKeyFromLoginShell();
+  const settings = (
+    await loadSpireSettings()
+  ).settingsManager.getGlobalSettings();
+  return createReadOnlyPiSettings(settings);
+}
+
+export function createReadOnlyPiSettings(
+  settings: Parameters<typeof SettingsManager.inMemory>[0],
+): SettingsManager {
+  return SettingsManager.inMemory(
+    {
+      ...settings,
+      packages: [],
+      extensions: [],
+      skills: [],
+      prompts: [],
+      themes: [],
+    },
+    { projectTrusted: false },
+  );
 }
 
 async function loadDefaultResources(cwd: string) {
