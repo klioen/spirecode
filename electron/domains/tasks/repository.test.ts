@@ -9,6 +9,7 @@ import type { CreateTaskInput, TaskRunReport } from "./types.js";
 const directories: string[] = [];
 let database: TaskDatabase;
 let repository: TaskRepository;
+let databasePath: string;
 let now: number;
 
 const taskInput: CreateTaskInput = {
@@ -24,7 +25,8 @@ beforeEach(() => {
   const directory = mkdtempSync(join(tmpdir(), "spire-task-repository-"));
   directories.push(directory);
   now = 1_700_000_000_000;
-  database = openTaskDatabase(join(directory, "tasks.sqlite3"), {
+  databasePath = join(directory, "tasks.sqlite3");
+  database = openTaskDatabase(databasePath, {
     now: () => now,
   });
   repository = new TaskRepository(database.connection, { now: () => now });
@@ -149,6 +151,7 @@ describe("TaskRepository", () => {
     const created = createTask();
     expect(created).toMatchObject({
       title: "Ship task foundation",
+      metadata: {},
       status: "backlog",
       revision: 1,
       workspace: { mode: "new_managed", baseRef: "refs/remotes/origin/main" },
@@ -399,6 +402,69 @@ describe("TaskRepository", () => {
       status: "needs_review",
       activeRunId: null,
     });
+  });
+
+  it("atomically applies only a verified review to the run and Task metadata", () => {
+    createTask();
+    const { run } = createRun();
+    const provisioning = repository.transitionRun(run.id, 1, "provisioning", {
+      taskStatus: "running",
+    });
+    const prompting = repository.transitionRun(
+      run.id,
+      provisioning.run.revision,
+      "prompting",
+    );
+    const running = repository.transitionRun(
+      run.id,
+      prompting.run.revision,
+      "running",
+    );
+    const recorded = repository.reportRun(run.id, running.run.revision, {
+      outcome: "success",
+      summary: "Agent supplied no verified delivery",
+      tests: [],
+    });
+    const beforeTask = repository.getTask(taskInput.id)!;
+    const verified = {
+      kind: "github_pr" as const,
+      url: "https://github.com/acme/widgets/pull/9#discussion",
+      draft: false,
+    };
+
+    const applied = repository.applyVerifiedReview(
+      run.id,
+      recorded.run.revision,
+      verified,
+    );
+    expect(applied.report?.changeRequest).toEqual({
+      ...verified,
+      url: "https://github.com/acme/widgets/pull/9",
+    });
+    const task = repository.getTask(taskInput.id)!;
+    expect(task.metadata.review).toEqual(applied.report?.changeRequest);
+    expect(task.revision).toBe(beforeTask.revision + 1);
+
+    const replayed = repository.applyVerifiedReview(
+      run.id,
+      applied.revision,
+      verified,
+    );
+    expect(replayed.revision).toBe(applied.revision);
+    expect(repository.getTask(taskInput.id)?.revision).toBe(task.revision);
+    expect(() =>
+      repository.applyVerifiedReview(run.id, replayed.revision, {
+        kind: "github_pr",
+        url: "https://gitlab.com/acme/widgets/-/merge_requests/9",
+        draft: false,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "TASK_RESULT_INVALID" }));
+    expect(repository.getTask(taskInput.id)?.metadata).toEqual(task.metadata);
+
+    database.close();
+    database = openTaskDatabase(databasePath);
+    repository = new TaskRepository(database.connection, { now: () => now });
+    expect(repository.getTask(taskInput.id)?.metadata).toEqual(task.metadata);
   });
 
   it("stores bounded events, steps, and deduplicated notifications", () => {

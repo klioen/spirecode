@@ -41,6 +41,16 @@ export type WorkspaceRequest =
 export type WorkspaceCleanupStatus =
   "retained" | "intent" | "removed" | "blocked";
 
+export interface TaskReviewMetadata {
+  kind: "github_pr" | "gitlab_mr" | "other";
+  url: string;
+  draft: boolean;
+}
+
+export interface TaskMetadata {
+  review?: TaskReviewMetadata;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -48,6 +58,7 @@ export interface Task {
   projectId: string;
   workspace: WorkspaceRequest;
   automationEnabled: boolean;
+  metadata: TaskMetadata;
   status: TaskStatus;
   activeRunId: string | null;
   resolvedWorktreeId: string | null;
@@ -86,11 +97,7 @@ export interface TaskRunReport {
   outcome: "success" | "blocked" | "failed";
   summary: string;
   tests: ReportedTest[];
-  changeRequest?: {
-    kind: "github_pr" | "gitlab_mr" | "other";
-    url: string;
-    draft: boolean;
-  };
+  changeRequest?: TaskReviewMetadata;
 }
 
 export interface TaskRun {

@@ -27,7 +27,15 @@ afterEach(() => {
   }
 });
 
+function removeV6Schema(connection: DatabaseSync): void {
+  connection.exec(`
+    ALTER TABLE tasks DROP COLUMN metadata_json;
+    DELETE FROM schema_migrations WHERE version = 6;
+  `);
+}
+
 function removeV5Schema(connection: DatabaseSync): void {
+  removeV6Schema(connection);
   connection.exec(`
     DROP TABLE IF EXISTS task_archive_states;
     DROP TABLE IF EXISTS task_artifact_archives;
@@ -93,12 +101,38 @@ describe("task database", () => {
       { version: 3, name: "migration-v3" },
       { version: 4, name: "migration-v4" },
       { version: 5, name: "migration-v5" },
+      { version: 6, name: "migration-v6" },
     ]);
+    expect(
+      database.connection
+        .prepare(
+          "SELECT name, \"notnull\", dflt_value FROM pragma_table_info('tasks') WHERE name = 'metadata_json'",
+        )
+        .get(),
+    ).toEqual({ name: "metadata_json", notnull: 1, dflt_value: "'{}'" });
     expect(
       database.connection
         .prepare("SELECT name FROM pragma_table_info('tasks')")
         .all(),
     ).not.toContainEqual({ name: "acceptance_criteria_json" });
+    new TaskRepository(database.connection).createTask({
+      id: "10000000-0000-4000-8000-000000000001",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      title: "Metadata constraints",
+      description: "",
+      workspace: { mode: "new_managed", baseRef: "origin/main" },
+      automationEnabled: false,
+    });
+    expect(() =>
+      database.connection
+        .prepare("UPDATE tasks SET metadata_json = ?")
+        .run("not-json"),
+    ).toThrow();
+    expect(() =>
+      database.connection
+        .prepare("UPDATE tasks SET metadata_json = ?")
+        .run(JSON.stringify({ review: "x".repeat(17 * 1024) })),
+    ).toThrow();
 
     database.close();
   });
@@ -110,12 +144,12 @@ describe("task database", () => {
     first.close();
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(5);
+    expect(reopened.schemaVersion).toBe(6);
     expect(
       reopened.connection
         .prepare("SELECT count(*) AS count FROM schema_migrations")
         .get(),
-    ).toEqual({ count: 5 });
+    ).toEqual({ count: 6 });
     reopened.close();
   });
 
@@ -131,11 +165,12 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(5);
+    expect(migrated.schemaVersion).toBe(6);
     expect(existsSync(`${path}.pre-v2.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v4.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v5.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
     migrated.close();
   });
 
@@ -192,7 +227,7 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(5);
+    expect(migrated.schemaVersion).toBe(6);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     expect(
       migrated.connection
@@ -292,20 +327,21 @@ describe("task database", () => {
     reopened.close();
   });
 
-  it("migrates v4 to the known additive v5 schema with a pre-v5 recovery backup", () => {
+  it("migrates v4 through the additive v5 and v6 schemas with a pre-v6 recovery backup", () => {
     const path = temporaryDatabasePath();
     const original = openTaskDatabase(path);
     removeV5Schema(original.connection);
     original.close();
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(5);
-    expect(existsSync(`${path}.pre-v5.bak`)).toBe(true);
-    const backup = new DatabaseSync(`${path}.pre-v5.bak`, { readOnly: true });
+    expect(migrated.schemaVersion).toBe(6);
+    expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
+    const backup = new DatabaseSync(`${path}.pre-v6.bak`, { readOnly: true });
     expect(
       backup
         .prepare("SELECT max(version) AS version FROM schema_migrations")
         .get(),
-    ).toEqual({ version: 4 });
+    ).toEqual({ version: 5 });
     backup.close();
     expect(
       migrated.connection
@@ -357,15 +393,13 @@ describe("task database", () => {
       INSERT INTO tasks (id,title,description,project_id,workspace_mode,base_ref,allow_dirty,automation_enabled,status,revision,created_at,updated_at)
         VALUES ('task','Retained','Preserve description','project','new_managed','origin/main',0,0,'completed',1,1,1);
       INSERT INTO task_runs (id,task_id,attempt,status,saga_phase,project_id,owns_managed_worktree,prompt_marker,revision,created_at,report_json)
-        VALUES ('run','task',1,'reported','terminal','project',1,'marker',1,1,'{"outcome":"success","summary":"Retained report","tests":[]}');
+        VALUES ('run','task',1,'reported','terminal','project',1,'marker',1,1,'{"outcome":"success","summary":"Retained report","tests":[],"changeRequest":{"kind":"github_pr","url":"https://github.com/acme/widgets/pull/42#discussion","draft":false}}');
       INSERT INTO task_session_archives VALUES ('task','session','hash',12,1);
       INSERT INTO task_run_retention VALUES ('run','archived',42,1000,1);
       INSERT INTO task_artifact_archives VALUES ('task','run','report.md','hash',12,1);
       INSERT INTO task_archive_states VALUES ('task','ready',NULL,1,'[]');
     `);
     const retainedTables = [
-      "schema_migrations",
-      "tasks",
       "task_runs",
       "task_session_archives",
       "task_run_retention",
@@ -379,15 +413,27 @@ describe("task database", () => {
     writeFileSync(`${path}.pre-v5.bak`, "previous recovery backup");
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(5);
+    expect(reopened.schemaVersion).toBe(6);
     expect(
       retainedTables.map((table) =>
         reopened.connection.prepare(`SELECT * FROM ${table}`).all(),
       ),
     ).toEqual(before);
-    expect(readFileSync(`${path}.pre-v5.bak`, "utf8")).toBe(
-      "previous recovery backup",
-    );
+    expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
+    expect(
+      reopened.connection
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .all(),
+    ).toEqual([1, 2, 3, 4, 5, 6].map((version) => ({ version })));
+    expect(
+      reopened.connection
+        .prepare("SELECT metadata_json FROM tasks WHERE id = 'task'")
+        .get(),
+    ).toEqual({
+      metadata_json:
+        '{"review":{"kind":"github_pr","url":"https://github.com/acme/widgets/pull/42","draft":false}}',
+    });
     const repository = new TaskRepository(reopened.connection);
     const task = repository.createTask({
       id: "10000000-0000-4000-8000-000000000001",
@@ -397,13 +443,73 @@ describe("task database", () => {
       workspace: { mode: "new_managed", baseRef: "origin/main" },
       automationEnabled: false,
     });
-    expect(repository.getTask(task.id)?.title).toBe("New task after restart");
+    expect(repository.getTask(task.id)).toMatchObject({
+      title: "New task after restart",
+      metadata: {},
+    });
     expect(
       reopened.connection
         .prepare("SELECT COUNT(*) AS count FROM task_session_archives")
         .get(),
     ).toEqual({ count: 1 });
     reopened.close();
+  });
+
+  it("backfills the latest structurally valid review and skips unsafe historical candidates", () => {
+    const path = temporaryDatabasePath();
+    const original = openTaskDatabase(path);
+    removeV6Schema(original.connection);
+    original.connection.exec(`
+      INSERT INTO tasks (id,title,description,project_id,workspace_mode,base_ref,allow_dirty,automation_enabled,status,revision,created_at,updated_at)
+        VALUES ('task-valid','Valid','', 'project','new_managed','origin/main',0,0,'completed',1,1,1),
+               ('task-invalid','Invalid','', 'project','new_managed','origin/main',0,0,'completed',1,1,1);
+      INSERT INTO task_runs (id,task_id,attempt,status,saga_phase,project_id,owns_managed_worktree,prompt_marker,revision,created_at,report_json)
+        VALUES
+        ('run-valid-old','task-valid',1,'reported','terminal','project',1,'marker-1',1,1,
+         '{"outcome":"success","summary":"Valid","tests":[],"changeRequest":{"kind":"gitlab_mr","url":"https://gitlab.com/acme/widgets/-/merge_requests/7#note","draft":true}}'),
+        ('run-invalid-new','task-valid',2,'reported','terminal','project',1,'marker-2',1,2,
+         '{"outcome":"success","summary":"Unsafe","tests":[],"changeRequest":{"kind":"github_pr","url":"https://user:secret@github.com/acme/widgets/pull/8","draft":false}}'),
+        ('run-invalid-only','task-invalid',1,'reported','terminal','project',1,'marker-3',1,1,
+         '{"outcome":"success","summary":"Unknown","tests":[],"changeRequest":{"kind":"other","url":"http://example.com/review/1","draft":false,"extra":true}}');
+    `);
+    original.close();
+
+    const migrated = openTaskDatabase(path);
+    expect(
+      migrated.connection
+        .prepare("SELECT id, metadata_json FROM tasks ORDER BY id")
+        .all(),
+    ).toEqual([
+      { id: "task-invalid", metadata_json: "{}" },
+      {
+        id: "task-valid",
+        metadata_json:
+          '{"review":{"kind":"gitlab_mr","url":"https://gitlab.com/acme/widgets/-/merge_requests/7","draft":true}}',
+      },
+    ]);
+    migrated.close();
+  });
+
+  it("rolls back a failed v6 migration and retains the v5 recovery backup", () => {
+    const path = temporaryDatabasePath();
+    const original = openTaskDatabase(path);
+    removeV6Schema(original.connection);
+    original.connection.exec(
+      "ALTER TABLE tasks ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata_json))",
+    );
+    original.close();
+
+    expect(() => openTaskDatabase(path)).toThrowError(
+      expect.objectContaining({ code: "TASK_MIGRATION_FAILED" }),
+    );
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
+    const verify = new DatabaseSync(path, { readOnly: true });
+    expect(
+      verify
+        .prepare("SELECT max(version) AS version FROM schema_migrations")
+        .get(),
+    ).toEqual({ version: 5 });
+    verify.close();
   });
 
   it("rejects an unknown future migration without modifying it", () => {

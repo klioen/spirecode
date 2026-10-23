@@ -23,6 +23,16 @@ export type TaskWorkspace =
   | { mode: "new_managed"; baseRef: string }
   | { mode: "existing"; worktreeId: string; allowDirty: boolean };
 
+export interface TaskReviewMetadata {
+  kind: "github_pr" | "gitlab_mr" | "other";
+  url: string;
+  draft: boolean;
+}
+
+export interface TaskMetadata {
+  review?: TaskReviewMetadata;
+}
+
 export interface TaskSummary {
   id: string;
   title: string;
@@ -34,6 +44,7 @@ export interface TaskSummary {
   queueReason?: "capacity" | "workspace_busy" | "dispatch";
   lastActivityAt?: number;
   workspace: TaskWorkspace;
+  metadata: TaskMetadata;
   status: TaskStatus;
   activeRunId: string | null;
   resolvedWorktreeId: string | null;
@@ -56,11 +67,7 @@ export interface TaskRunReport {
     status: "passed" | "failed" | "not_run";
     summary: string;
   }>;
-  changeRequest?: {
-    kind: "github_pr" | "gitlab_mr" | "other";
-    url: string;
-    draft: boolean;
-  };
+  changeRequest?: TaskReviewMetadata;
 }
 
 export interface TaskRunSummary {

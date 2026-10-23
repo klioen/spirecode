@@ -10,6 +10,7 @@ export const taskDetail = (
   projectId: "project-1",
   projectName: "SpireCode",
   workspace: { mode: "new_managed", baseRef: "origin/main" },
+  metadata: {},
   automationEnabled: true,
   status: "backlog",
   activeRunId: null,

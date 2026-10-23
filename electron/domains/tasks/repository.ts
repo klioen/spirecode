@@ -14,6 +14,7 @@ import {
   type Task,
   type TaskEvent,
   type TaskNotification,
+  type TaskReviewMetadata,
   type TaskRun,
   type TaskRunError,
   type TaskRunReport,
@@ -26,6 +27,8 @@ import {
   validateCreateTaskInput,
   validateId,
   validateJsonPayload,
+  validateTaskMetadata,
+  validateTaskReviewMetadata,
   validateTaskRunReport,
 } from "./validation.js";
 
@@ -89,6 +92,7 @@ interface TaskRow {
   base_ref: string | null;
   allow_dirty: number;
   automation_enabled: number;
+  metadata_json: string;
   status: TaskStatus;
   active_run_id: string | null;
   resolved_worktree_id: string | null;
@@ -144,6 +148,7 @@ function mapTask(row: TaskRow): Task {
     projectId: row.project_id,
     workspace,
     automationEnabled: row.automation_enabled === 1,
+    metadata: validateTaskMetadata(JSON.parse(row.metadata_json)),
     status: row.status,
     activeRunId: row.active_run_id,
     resolvedWorktreeId: row.resolved_worktree_id,
@@ -306,11 +311,11 @@ export class TaskRepository {
         .prepare(
           `INSERT INTO tasks (
           id, title, description, project_id, workspace_mode, requested_worktree_id, base_ref,
-          allow_dirty, automation_enabled, status, active_run_id,
+          allow_dirty, automation_enabled, metadata_json, status, active_run_id,
           resolved_worktree_id, owns_managed_worktree, workspace_cleanup_status,
           workspace_cleaned_at, workspace_cleanup_error_code,
           revision, created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', NULL, NULL, 0, 'retained', NULL, NULL, 1, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 'backlog', NULL, NULL, 0, 'retained', NULL, NULL, 1, ?, ?, NULL)`,
         )
         .run(
           value.id,
@@ -1084,6 +1089,65 @@ export class TaskRepository {
         task: mapTask(this.#requireTask(taskRow.id)),
         run: mapRun(this.#requireRun(runId)),
       };
+    });
+  }
+
+  applyVerifiedReview(
+    runId: string,
+    expectedRunRevision: number,
+    review: TaskReviewMetadata,
+  ): TaskRun {
+    return this.#transaction(() => {
+      const run = this.#requireRun(validateId(runId, "runId"));
+      if (run.revision !== expectedRunRevision)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task run revision does not match",
+        );
+      if (
+        !run.report_json ||
+        !["running", "awaiting_report"].includes(run.status)
+      )
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Task run has no replaceable report",
+        );
+      const normalizedReview = validateTaskReviewMetadata(review);
+      const report = validateTaskRunReport({
+        ...(JSON.parse(run.report_json) as TaskRunReport),
+        changeRequest: normalizedReview,
+      });
+      const reportJson = JSON.stringify(report);
+      if (reportJson !== run.report_json) {
+        const result = this.connection
+          .prepare(
+            "UPDATE task_runs SET report_json = ?, revision = revision + 1 WHERE id = ? AND revision = ?",
+          )
+          .run(reportJson, runId, expectedRunRevision);
+        if (result.changes !== 1)
+          throw new TaskRepositoryError(
+            "TASK_CONFLICT",
+            "Task run revision does not match",
+          );
+      }
+
+      const task = this.#requireTask(run.task_id);
+      const metadata = validateTaskMetadata({ review: normalizedReview });
+      const metadataJson = JSON.stringify(metadata);
+      if (task.metadata_json !== metadataJson) {
+        const result = this.connection
+          .prepare(
+            `UPDATE tasks SET metadata_json = ?, revision = revision + 1, updated_at = ?
+             WHERE id = ? AND revision = ?`,
+          )
+          .run(metadataJson, this.#now(), task.id, task.revision);
+        if (result.changes !== 1)
+          throw new TaskRepositoryError(
+            "TASK_CONFLICT",
+            "Task revision does not match",
+          );
+      }
+      return mapRun(this.#requireRun(runId));
     });
   }
 
