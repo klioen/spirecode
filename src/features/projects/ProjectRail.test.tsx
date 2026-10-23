@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorktreeSummary } from "../../bindings";
+import { setLanguage } from "../../i18n";
 import { hostChatApi } from "../chat/hostChatApi";
 import { chatRuntime } from "../chat/chatRuntime";
 import { chatResourceId, useEditorStore } from "../editor/editorStore";
@@ -41,6 +42,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  setLanguage("en");
   localStorage.clear();
   localStorage.setItem(
     "spirecode.projects.expanded-groups.v1",
@@ -115,7 +117,7 @@ describe("ProjectRail", () => {
     expect(tasks.closest("[data-project-drag-handle]")).toBeNull();
   });
 
-  it("opens the Projects workspace from the heading, project, and worktree", () => {
+  it("opens the Projects workspace and selects a clicked worktree", async () => {
     const onOpenProjects = vi.fn();
     render(<ProjectRail onOpenProjects={onOpenProjects} />);
 
@@ -126,6 +128,34 @@ describe("ProjectRail", () => {
     fireEvent.click(screen.getByRole("button", { name: "feature" }));
 
     expect(onOpenProjects).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() =>
+      expect(projectsApi.selectWorktree).toHaveBeenCalledWith("feature"),
+    );
+    expect(useProjectsStore.getState().activeWorktreeId).toBe("feature");
+  });
+
+  it("does not reveal a double-clicked worktree and localizes its path and branch tooltip", () => {
+    render(<ProjectRail />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand spirecode-client" }),
+    );
+    const worktree = screen.getByRole("button", { name: "feature" });
+
+    expect(worktree).toHaveAttribute("title", "/worktrees/feature · feature");
+    expect(worktree).not.toHaveAttribute(
+      "title",
+      expect.stringContaining("Double-click"),
+    );
+
+    fireEvent.doubleClick(worktree);
+    expect(projectsApi.revealWorktree).not.toHaveBeenCalled();
+
+    setLanguage("zh-CN");
+    expect(worktree).toHaveAttribute("title", "/worktrees/feature · feature");
+    expect(worktree).not.toHaveAttribute(
+      "title",
+      expect.stringContaining("双击"),
+    );
   });
 
   it("opens an existing folder", async () => {

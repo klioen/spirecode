@@ -414,7 +414,7 @@ export const zhCN = {
   "projects.group.validation.required": "分组名称为必填项。",
   "projects.group.validation.tooLong": "请使用不超过 48 字节的名称。",
   "projects.group.validation.duplicate": "已存在同名分组。",
-  "projects.worktree.revealTitle": "{path} · {branch} · 双击显示",
+  "projects.worktree.detailsTitle": "{path} · {branch}",
   "projects.worktree.rename": "重命名",
   "projects.worktree.delete": "删除",
   "projects.worktree.creating": "正在创建工作树…",

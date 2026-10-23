@@ -310,13 +310,6 @@ export function ProjectRail({
       return false;
     }
   };
-  const reveal = async (worktreeId: string) => {
-    try {
-      await projectsApi.revealWorktree(worktreeId);
-    } catch (error) {
-      store.setError(commandError(error));
-    }
-  };
   const revealProject = async (projectId: string) => {
     setProjectActionPending(projectId);
     try {
@@ -624,7 +617,7 @@ export function ProjectRail({
                         className="worktree-name"
                         aria-current={active ? "page" : undefined}
                         aria-label={worktree.name}
-                        title={t("projects.worktree.revealTitle", {
+                        title={t("projects.worktree.detailsTitle", {
                           path: worktree.path,
                           branch: worktree.branch,
                         })}
@@ -632,7 +625,6 @@ export function ProjectRail({
                           onOpenProjects();
                           void select(worktree.id);
                         }}
-                        onDoubleClick={() => void reveal(worktree.id)}
                       >
                         <RiGitBranchLine size={14} />
                         <span>{worktree.name}</span>

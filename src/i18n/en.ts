@@ -432,7 +432,7 @@ export const en = {
   "projects.group.validation.tooLong": "Use 48 bytes or fewer.",
   "projects.group.validation.duplicate":
     "A group with this name already exists.",
-  "projects.worktree.revealTitle": "{path} · {branch} · Double-click to reveal",
+  "projects.worktree.detailsTitle": "{path} · {branch}",
   "projects.worktree.rename": "Rename",
   "projects.worktree.delete": "Delete",
   "projects.worktree.creating": "Creating worktree…",
