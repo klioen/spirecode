@@ -18,7 +18,15 @@ import {
   type ChangeRequest,
   type GitDeliveryResult,
   type GitDeliveryStart,
+  type GitPreparationResult,
 } from "./delivery.js";
+import {
+  buildVerificationPrompt,
+  emptyVerificationEvidence,
+  TASK_VERIFICATION_TOOL_DESCRIPTION,
+  type TaskVerificationToolDescription,
+  type VerificationReportInput,
+} from "./verification.js";
 import type {
   CreateRunInput,
   Page,
@@ -26,6 +34,8 @@ import type {
   TaskNotification,
   TaskRun,
   TaskRunReport,
+  TaskVerification,
+  TaskVerificationReport,
   WorkspaceRequest,
 } from "./types.js";
 
@@ -82,6 +92,13 @@ export interface TaskSessionIntegration {
   onEvent(event: { type: string }): void;
 }
 
+export interface TaskVerificationSessionIntegration {
+  sessionId: string;
+  reportTool: TaskVerificationToolDescription;
+  reportVerification(input: VerificationReportInput): Promise<TaskVerification>;
+  onEvent(event: { type: string }): void;
+}
+
 export interface TaskNotificationRequest {
   taskId: string;
   runId: string;
@@ -112,6 +129,10 @@ export interface TaskServiceDependencies {
   createSession(
     worktreeId: string,
     integration: TaskSessionIntegration,
+  ): Promise<TaskSessionBinding>;
+  createVerificationSession(
+    worktreeId: string,
+    integration: TaskVerificationSessionIntegration,
   ): Promise<TaskSessionBinding>;
   findSession(
     worktreeId: string,
@@ -163,12 +184,21 @@ export interface TaskServiceDependencies {
     worktreeId: string,
     start: GitDeliveryStart,
   ): Promise<void>;
+  prepareGitChanges(
+    worktreeId: string,
+    input: { start: GitDeliveryStart; title: string },
+  ): Promise<GitPreparationResult>;
+  validatePreparedGitChanges(
+    worktreeId: string,
+    prepared: GitPreparationResult,
+  ): Promise<void>;
   deliverGitChanges(
     worktreeId: string,
     input: {
       start: GitDeliveryStart;
       title: string;
       summary: string;
+      prepared: GitPreparationResult;
       priorChangeRequest?: ChangeRequest;
     },
   ): Promise<GitDeliveryResult>;
@@ -182,6 +212,7 @@ export interface CreateTaskRequest {
   projectId: string;
   workspace: WorkspaceRequest;
   automationEnabled: boolean;
+  verificationEnabled?: boolean;
 }
 
 export interface UpdateTaskRequest {
@@ -189,15 +220,18 @@ export interface UpdateTaskRequest {
   description?: string;
   workspace?: WorkspaceRequest;
   automationEnabled?: boolean;
+  verificationEnabled?: boolean;
 }
 
 export interface TaskDetail {
   task: Task;
   runs: TaskRun[];
+  verification: TaskVerification | null;
 }
 
 export interface TaskServiceOptions {
   randomUUID?: () => string;
+  verificationTimeoutMs?: number;
 }
 
 interface StartRunOptions {
@@ -208,6 +242,7 @@ interface StartRunOptions {
 /** Main-owned Task orchestration. All Git, workspace, and session effects are injected. */
 export class TaskService {
   readonly #uuid: () => string;
+  readonly #verificationTimeoutMs: number;
   readonly #inFlight = new Map<string, Promise<TaskDetail>>();
   readonly #background = new Set<Promise<void>>();
   readonly #integrations = new Map<string, TaskSessionIntegration>();
@@ -223,6 +258,7 @@ export class TaskService {
     options: TaskServiceOptions = {},
   ) {
     this.#uuid = options.randomUUID ?? nodeRandomUUID;
+    this.#verificationTimeoutMs = options.verificationTimeoutMs ?? 15 * 60_000;
   }
 
   list(options: ListTasksOptions): Promise<Page<Task>> {
@@ -259,6 +295,7 @@ export class TaskService {
     return {
       task,
       runs: this.repository.listRuns(taskId, { limit: 100 }).items,
+      verification: this.repository.latestVerification(taskId),
     };
   }
 
@@ -276,7 +313,8 @@ export class TaskService {
           existing.description !== input.description.trim() ||
           JSON.stringify(existing.workspace) !==
             JSON.stringify(input.workspace) ||
-          existing.automationEnabled !== input.automationEnabled
+          existing.automationEnabled !== input.automationEnabled ||
+          existing.verificationEnabled !== (input.verificationEnabled !== false)
         )
           throw new TaskServiceError(
             "TASK_CONFLICT",
@@ -306,6 +344,7 @@ export class TaskService {
         projectId: input.projectId,
         workspace: input.workspace,
         automationEnabled: input.automationEnabled,
+        verificationEnabled: input.verificationEnabled !== false,
       },
       input.automationEnabled ? this.#buildRunInput(input, {}) : undefined,
     );
@@ -323,6 +362,25 @@ export class TaskService {
     this.#assertAvailable();
     return this.#singleFlight(taskId, async () => {
       const task = this.#requireTask(taskId);
+      if (
+        Object.keys(patch).every((key) => key === "verificationEnabled") &&
+        patch.verificationEnabled !== undefined
+      ) {
+        const updated = this.repository.updateVerificationEnabled(
+          taskId,
+          expectedRevision,
+          patch.verificationEnabled,
+        );
+        this.repository.appendEvent(
+          taskId,
+          null,
+          "task.verification_setting_updated",
+          {
+            enabled: patch.verificationEnabled,
+          },
+        );
+        return this.get(updated.id);
+      }
       const project = await this.#requireProject(task.projectId);
       const workspace = patch.workspace ?? task.workspace;
       if (project.kind === "directory" && workspace.mode !== "existing")
@@ -341,6 +399,8 @@ export class TaskService {
         description: patch.description ?? task.description,
         workspace,
         automationEnabled: patch.automationEnabled ?? task.automationEnabled,
+        verificationEnabled:
+          patch.verificationEnabled ?? task.verificationEnabled,
       });
       this.repository.appendEvent(taskId, null, "task.updated");
       return this.get(updated.id);
@@ -1316,10 +1376,38 @@ export class TaskService {
         );
       return run;
     }
+    const preparationStep = this.repository
+      .listRunSteps(run.id)
+      .find((step) => step.step === "git_preparation");
+    let prepared = parseGitPreparationResult(preparationStep?.details);
+    if (!prepared || preparationStep?.state !== "done") {
+      this.repository.upsertRunStep(run.id, "git_preparation", "intent", {
+        baselineHead: start.baselineHead,
+      });
+      prepared = await this.dependencies.prepareGitChanges(run.worktreeId!, {
+        start,
+        title: task.title,
+      });
+      this.repository.upsertRunStep(
+        run.id,
+        "git_preparation",
+        "done",
+        prepared,
+      );
+    }
+    if (task.verificationEnabled) {
+      const verification = await this.#verifyPreparedCommit(
+        task,
+        run,
+        prepared,
+      );
+      if (verification.verdict !== "pass") return run;
+    }
     const previous = this.#previousDelivery(run);
     this.repository.upsertRunStep(run.id, "git_delivery", "intent", {
       branch: start.branch,
       target: start.target,
+      commitSha: prepared.head,
       priorChangeRequest: previous?.changeRequest ?? null,
     });
     const delivered = await this.dependencies.deliverGitChanges(
@@ -1328,6 +1416,7 @@ export class TaskService {
         start,
         title: task.title,
         summary: run.report!.summary,
+        prepared,
         ...(previous?.changeRequest
           ? { priorChangeRequest: previous.changeRequest }
           : {}),
@@ -1347,6 +1436,183 @@ export class TaskService {
         delivered.changeRequest,
       );
     return run;
+  }
+
+  async #verifyPreparedCommit(
+    task: Task,
+    run: TaskRun,
+    prepared: GitPreparationResult,
+  ): Promise<TaskVerification> {
+    const existing = this.repository.findVerification(run.id, prepared.head);
+    if (existing?.verdict) return existing;
+    const verification =
+      existing ??
+      this.repository.createVerification({
+        id: this.#uuid(),
+        taskId: task.id,
+        codingRunId: run.id,
+        worktreeId: run.worktreeId!,
+        commitSha: prepared.head,
+      });
+    if (!existing) {
+      this.repository.appendEvent(task.id, run.id, "verification.started", {
+        verificationId: verification.id,
+        commitSha: verification.commitSha,
+      });
+      this.repository.createNotification(
+        task.id,
+        run.id,
+        "verification_started",
+      );
+    }
+
+    let resolveReport!: (value: TaskVerification) => void;
+    const reported = new Promise<TaskVerification>((resolve) => {
+      resolveReport = resolve;
+    });
+    let terminal = false;
+    const finish = (report: TaskVerificationReport): TaskVerification => {
+      if (terminal)
+        throw new TaskServiceError(
+          "TASK_RESULT_INVALID",
+          "Verification result was already reported",
+        );
+      const result = this.repository.finishVerification(
+        verification.id,
+        report,
+      );
+      terminal = true;
+      this.repository.appendEvent(
+        task.id,
+        run.id,
+        `verification.${result.verdict}`,
+        {
+          verificationId: result.id,
+          commitSha: result.commitSha,
+        },
+      );
+      this.repository.createNotification(
+        task.id,
+        run.id,
+        `verification_${result.verdict}`,
+      );
+      this.#emitChanged(task.id);
+      resolveReport(result);
+      return result;
+    };
+    const integration: TaskVerificationSessionIntegration = {
+      sessionId: verification.id,
+      reportTool: TASK_VERIFICATION_TOOL_DESCRIPTION,
+      reportVerification: async (input) => {
+        if (input.verificationId !== verification.id)
+          throw new TaskServiceError(
+            "TASK_RESULT_INVALID",
+            "verificationId does not match the bound verification",
+          );
+        const allowed = new Set([
+          "verificationId",
+          "verdict",
+          "summary",
+          "evidence",
+        ]);
+        if (Object.keys(input).some((key) => !allowed.has(key)))
+          throw new TaskServiceError(
+            "TASK_RESULT_INVALID",
+            "Verification report contains unsupported fields",
+          );
+        if (input.verdict === "pass") {
+          try {
+            await this.dependencies.validatePreparedGitChanges(
+              run.worktreeId!,
+              prepared,
+            );
+          } catch (error) {
+            return finish({
+              verdict: "inconclusive",
+              summary:
+                "The verified commit or clean-worktree invariant changed during verification.",
+              evidence: emptyVerificationEvidence(
+                error instanceof Error
+                  ? error.message
+                  : "Workspace integrity check failed",
+              ),
+            });
+          }
+        }
+        return finish({
+          verdict: input.verdict,
+          summary: input.summary,
+          evidence: input.evidence,
+        });
+      },
+      onEvent: (event) => {
+        if (event.type === "agent_settled" && !terminal)
+          finish({
+            verdict: "inconclusive",
+            summary:
+              "Verifier session settled without submitting a verification report.",
+            evidence: emptyVerificationEvidence(
+              "Verifier did not submit its required report",
+            ),
+          });
+      },
+    };
+    try {
+      const session = await this.dependencies.createVerificationSession(
+        run.worktreeId!,
+        integration,
+      );
+      if (session.sessionId === run.sessionId)
+        throw new TaskServiceError(
+          "TASK_FAILED",
+          "Verifier session must be independent from the coding session",
+        );
+      this.repository.bindVerificationSession(
+        verification.id,
+        session.sessionId,
+      );
+      const accepted = await this.dependencies.sendPrompt(
+        run.worktreeId!,
+        session.sessionId,
+        buildVerificationPrompt(task, verification),
+      );
+      if (!accepted.accepted)
+        throw new TaskServiceError(
+          "TASK_PROMPT_FAILED",
+          "Verification prompt was not accepted",
+          true,
+        );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<TaskVerification>((resolve) => {
+        timer = setTimeout(() => {
+          if (terminal) return;
+          resolve(
+            finish({
+              verdict: "inconclusive",
+              summary:
+                "Verifier session timed out before submitting a verdict.",
+              evidence: emptyVerificationEvidence("Verifier session timed out"),
+            }),
+          );
+        }, this.#verificationTimeoutMs);
+      });
+      try {
+        return await Promise.race([reported, timeout]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    } catch (error) {
+      if (terminal) return await reported;
+      return finish({
+        verdict: "inconclusive",
+        summary: "Verifier infrastructure failed before a conclusive verdict.",
+        evidence: emptyVerificationEvidence(
+          error instanceof Error
+            ? error.message.slice(0, 8_000)
+            : "Verifier infrastructure failed",
+        ),
+      });
+    }
   }
 
   #previousDelivery(run: TaskRun): {
@@ -1605,6 +1871,16 @@ export class TaskService {
     if (this.#disposed)
       throw new TaskServiceError("TASK_FAILED", "Task service is disposed");
   }
+}
+
+function parseGitPreparationResult(
+  value: unknown,
+): GitPreparationResult | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.changed === "boolean" && typeof record.head === "string"
+    ? { changed: record.changed, head: record.head }
+    : null;
 }
 
 function parseGitDeliveryStart(value: unknown): GitDeliveryStart | null {

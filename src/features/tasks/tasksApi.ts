@@ -45,6 +45,7 @@ export interface TaskSummary {
   lastActivityAt?: number;
   workspace: TaskWorkspace;
   metadata: TaskMetadata;
+  verificationEnabled: boolean;
   status: TaskStatus;
   activeRunId: string | null;
   resolvedWorktreeId: string | null;
@@ -83,9 +84,39 @@ export interface TaskRunSummary {
   settledAt: number | null;
 }
 
+export interface TaskVerificationValue {
+  id: string;
+  codingRunId: string;
+  worktreeId: string;
+  commitSha: string;
+  verdict: "pass" | "fail" | "inconclusive" | null;
+  summary: string | null;
+  evidence: {
+    acceptanceCriteria: Array<{
+      criterion: string;
+      status: "pass" | "fail" | "inconclusive";
+      evidence: string[];
+    }>;
+    commands: Array<{
+      command: string;
+      status: "passed" | "failed";
+      summary: string;
+    }>;
+    issues: Array<{
+      severity: "blocker" | "major" | "minor";
+      summary: string;
+      evidence: string;
+    }>;
+  } | null;
+  sessionId: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}
+
 export interface TaskDetailValue extends TaskSummary {
   description: string;
   automationEnabled: boolean;
+  verification: TaskVerificationValue | null;
   completedAt: number | null;
   runs: TaskRunSummary[];
 }
@@ -103,12 +134,17 @@ export interface CreateTaskInput {
   projectId: string;
   workspace: TaskWorkspace;
   automationEnabled: boolean;
+  verificationEnabled?: boolean;
 }
 
 export type UpdateTaskInput = Partial<
   Pick<
     CreateTaskInput,
-    "title" | "description" | "workspace" | "automationEnabled"
+    | "title"
+    | "description"
+    | "workspace"
+    | "automationEnabled"
+    | "verificationEnabled"
   >
 >;
 

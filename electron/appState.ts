@@ -49,9 +49,11 @@ import {
   TaskService,
   type TaskDetail,
   type TaskSessionIntegration,
+  type TaskVerificationSessionIntegration,
 } from "./domains/tasks/service.js";
 import { TaskIntakeService } from "./domains/tasks/intake.js";
 import { taskSessionName } from "./domains/tasks/prompt.js";
+import { verificationSessionName } from "./domains/tasks/verification.js";
 import { TaskDeliveryService } from "./domains/tasks/delivery.js";
 import {
   createDefaultTaskRewriteService,
@@ -247,6 +249,8 @@ export class AppState {
         },
         createSession: (worktreeId, integration) =>
           createTaskSession(this.chat, worktreeId, integration),
+        createVerificationSession: (worktreeId, integration) =>
+          createTaskVerificationSession(this.chat, worktreeId, integration),
         findSession: async (worktreeId, name, sessionId) => {
           const matches = (await this.chat.list(worktreeId)).filter(
             (session) =>
@@ -317,6 +321,14 @@ export class AppState {
                 await projects.updateWorktree({ ...current, branch });
             },
           }).activate(start);
+        },
+        prepareGitChanges: async (worktreeId, input) => {
+          const worktree = await projects.worktree(worktreeId);
+          return new TaskDeliveryService(worktree.path).prepare(input);
+        },
+        validatePreparedGitChanges: async (worktreeId, prepared) => {
+          const worktree = await projects.worktree(worktreeId);
+          await new TaskDeliveryService(worktree.path).assertPrepared(prepared);
         },
         deliverGitChanges: async (worktreeId, input) => {
           const worktree = await projects.worktree(worktreeId);
@@ -897,6 +909,7 @@ export class AppState {
       lastActivityAt: task.updatedAt,
       workspace: task.workspace,
       metadata: task.metadata,
+      verificationEnabled: task.verificationEnabled,
       status: task.status,
       activeRunId: task.activeRunId,
       resolvedWorktreeId: task.resolvedWorktreeId,
@@ -952,6 +965,8 @@ export class AppState {
       ...(await this.taskSummary(detail.task)),
       description: detail.task.description,
       automationEnabled: detail.task.automationEnabled,
+      verificationEnabled: detail.task.verificationEnabled,
+      verification: detail.verification,
       completedAt: detail.task.completedAt,
       runs: detail.runs.map((run) => ({
         id: run.id,
@@ -1070,6 +1085,124 @@ export async function createTaskSession(
     taskSessionName(integration.sessionId),
   );
   return { sessionId: summary.sessionId, sessionPath: null };
+}
+
+export async function createTaskVerificationSession(
+  chat: Pick<ChatService, "create" | "nameLoadedSession">,
+  worktreeId: string,
+  integration: TaskVerificationSessionIntegration,
+): Promise<{ sessionId: string; sessionPath: null }> {
+  const summary = await chat.create(worktreeId, {
+    customTools: [taskVerificationTool(integration)],
+    sessionId: integration.sessionId,
+    readOnly: true,
+    readOnlyTools: ["read", "bash"],
+    systemPrompt:
+      "You are an independent delivery verifier. Never modify the repository, commit, push, create change requests, or weaken the stated acceptance criteria.",
+    onEvent: (event) => {
+      if (typeof event.type === "string")
+        integration.onEvent({ type: event.type });
+    },
+  });
+  await chat.nameLoadedSession(
+    worktreeId,
+    summary.sessionId,
+    verificationSessionName(integration.sessionId),
+  );
+  return { sessionId: summary.sessionId, sessionPath: null };
+}
+
+function taskVerificationTool(integration: TaskVerificationSessionIntegration) {
+  const status = Type.Union([
+    Type.Literal("pass"),
+    Type.Literal("fail"),
+    Type.Literal("inconclusive"),
+  ]);
+  return {
+    name: integration.reportTool.name,
+    label: "Report task verification",
+    description: integration.reportTool.description,
+    parameters: Type.Object(
+      {
+        verificationId: Type.String(),
+        verdict: status,
+        summary: Type.String(),
+        evidence: Type.Object(
+          {
+            acceptanceCriteria: Type.Array(
+              Type.Object(
+                {
+                  criterion: Type.String(),
+                  status,
+                  evidence: Type.Array(Type.String()),
+                },
+                { additionalProperties: false },
+              ),
+            ),
+            commands: Type.Array(
+              Type.Object(
+                {
+                  command: Type.String(),
+                  status: Type.Union([
+                    Type.Literal("passed"),
+                    Type.Literal("failed"),
+                  ]),
+                  summary: Type.String(),
+                },
+                { additionalProperties: false },
+              ),
+            ),
+            issues: Type.Array(
+              Type.Object(
+                {
+                  severity: Type.Union([
+                    Type.Literal("blocker"),
+                    Type.Literal("major"),
+                    Type.Literal("minor"),
+                  ]),
+                  summary: Type.String(),
+                  evidence: Type.String(),
+                },
+                { additionalProperties: false },
+              ),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+      },
+      { additionalProperties: false },
+    ),
+    async execute(_toolCallId: string, params: unknown) {
+      try {
+        const verification = await integration.reportVerification(
+          params as Parameters<
+            TaskVerificationSessionIntegration["reportVerification"]
+          >[0],
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Verification ${verification.verdict} recorded for ${verification.id}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                error instanceof Error
+                  ? error.message
+                  : "Invalid verification report",
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  };
 }
 
 function taskReportTool(integration: TaskSessionIntegration) {

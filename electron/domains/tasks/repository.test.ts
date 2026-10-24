@@ -560,6 +560,54 @@ it("finds matching tasks outside the first unfiltered page and treats SQL text l
   ).toEqual([]);
 });
 
+it("creates, binds, completes, and preserves exact-commit verification history", () => {
+  createTask();
+  const created = createRun();
+  const worktreeId = "90000000-0000-4000-8000-000000000001";
+  repository.bindRunWorkspace(created.run.id, created.run.revision, worktreeId);
+  const verification = repository.createVerification({
+    id: "50000000-0000-4000-8000-000000000001",
+    taskId: taskInput.id,
+    codingRunId: created.run.id,
+    worktreeId,
+    commitSha: "a".repeat(40),
+  });
+  expect(verification).toMatchObject({ verdict: null, sessionId: null });
+  repository.bindVerificationSession(
+    verification.id,
+    "60000000-0000-4000-8000-000000000001",
+  );
+  const finished = repository.finishVerification(verification.id, {
+    verdict: "fail",
+    summary: "A required path failed",
+    evidence: {
+      acceptanceCriteria: [
+        { criterion: "CLI works", status: "fail", evidence: ["exit 1"] },
+      ],
+      commands: [
+        { command: "tool check", status: "failed", summary: "exit 1" },
+      ],
+      issues: [
+        { severity: "major", summary: "CLI failed", evidence: "exit 1" },
+      ],
+    },
+  });
+  expect(repository.latestVerification(taskInput.id)).toEqual(finished);
+  expect(repository.findVerification(created.run.id, "a".repeat(40))).toEqual(
+    finished,
+  );
+  expect(repository.listVerifications(taskInput.id)).toEqual([finished]);
+  expect(() =>
+    repository.finishVerification(verification.id, {
+      verdict: "pass",
+      summary: "duplicate",
+      evidence: { acceptanceCriteria: [], commands: [], issues: [] },
+    }),
+  ).toThrowError(
+    expect.objectContaining({ code: "TASK_VERIFICATION_ALREADY_REPORTED" }),
+  );
+});
+
 it("separates occupied execution slots from idle runs retaining workspace leases", () => {
   createTask();
   const created = createRun();

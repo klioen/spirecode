@@ -504,6 +504,17 @@ describe("Task IPC validation", () => {
     expect(validateCommandArgs("task_create", { input: createInput })).toEqual({
       input: createInput,
     });
+    expect(
+      validateCommandArgs("task_update", {
+        taskId: "task-1",
+        expectedRevision: 1,
+        patch: { verificationEnabled: false },
+      }),
+    ).toEqual({
+      taskId: "task-1",
+      expectedRevision: 1,
+      patch: { verificationEnabled: false },
+    });
     for (const input of [
       { ...createInput, acceptanceCriteria: [] },
       { ...createInput, metadata: {} },

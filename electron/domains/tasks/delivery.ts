@@ -24,9 +24,12 @@ export interface GitDeliveryStart {
   target: string;
 }
 
-export interface GitDeliveryResult {
+export interface GitPreparationResult {
   changed: boolean;
   head: string;
+}
+
+export interface GitDeliveryResult extends GitPreparationResult {
   changeRequest?: ChangeRequest;
 }
 
@@ -448,12 +451,10 @@ export class TaskDeliveryService {
     await this.#updateBranch?.(start.branch);
   }
 
-  async deliver(input: {
+  async prepare(input: {
     start: GitDeliveryStart;
     title: string;
-    summary: string;
-    priorChangeRequest?: ChangeRequest;
-  }): Promise<GitDeliveryResult> {
+  }): Promise<GitPreparationResult> {
     const branch = requireBranch(input.start.branch);
     const current = (
       await gitText(this.root, ["branch", "--show-current"])
@@ -487,10 +488,7 @@ export class TaskDeliveryService {
         ])
       ).stdout.length > 0;
     const changed = beforeHead !== input.start.baselineHead || dirty;
-    if (!changed && !input.priorChangeRequest)
-      return { changed: false, head: beforeHead };
-
-    if (changed && dirty) {
+    if (dirty) {
       await runGit(this.root, ["add", "-A"]);
       const staged = await gitAllowFailure(this.root, [
         "diff",
@@ -520,6 +518,56 @@ export class TaskDeliveryService {
         "Task changes could not be committed",
         true,
       );
+    const remaining = await runGit(this.root, [
+      "status",
+      "--porcelain=v2",
+      "-z",
+      "--untracked-files=all",
+    ]);
+    if (remaining.stdout.length > 0)
+      throw new TaskDeliveryError(
+        "TASK_DELIVERY_WORKTREE_NOT_CLEAN",
+        "The Task workspace is not clean after preparing the verification commit",
+        false,
+      );
+    return { changed, head };
+  }
+
+  async assertPrepared(prepared: GitPreparationResult): Promise<void> {
+    const head = (await gitText(this.root, ["rev-parse", "HEAD"])).trim();
+    if (head !== prepared.head)
+      throw new TaskDeliveryError(
+        "TASK_DELIVERY_COMMIT_CHANGED",
+        "The verified Task commit changed before delivery",
+        false,
+      );
+    const dirty = await runGit(this.root, [
+      "status",
+      "--porcelain=v2",
+      "-z",
+      "--untracked-files=all",
+    ]);
+    if (dirty.stdout.length > 0)
+      throw new TaskDeliveryError(
+        "TASK_DELIVERY_WORKTREE_NOT_CLEAN",
+        "The verified Task workspace changed before delivery",
+        false,
+      );
+  }
+
+  async deliver(input: {
+    start: GitDeliveryStart;
+    title: string;
+    summary: string;
+    priorChangeRequest?: ChangeRequest;
+    prepared?: GitPreparationResult;
+  }): Promise<GitDeliveryResult> {
+    const branch = requireBranch(input.start.branch);
+    const prepared = input.prepared ?? (await this.prepare(input));
+    await this.assertPrepared(prepared);
+    const head = prepared.head;
+    const changed = prepared.changed;
+    if (!changed && !input.priorChangeRequest) return prepared;
 
     let remote: RemoteRepository;
     try {

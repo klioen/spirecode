@@ -27,7 +27,16 @@ afterEach(() => {
   }
 });
 
+function removeV7Schema(connection: DatabaseSync): void {
+  connection.exec(`
+    DROP TABLE task_verifications;
+    ALTER TABLE tasks DROP COLUMN verification_enabled;
+    DELETE FROM schema_migrations WHERE version = 7;
+  `);
+}
+
 function removeV6Schema(connection: DatabaseSync): void {
+  removeV7Schema(connection);
   connection.exec(`
     ALTER TABLE tasks DROP COLUMN metadata_json;
     DELETE FROM schema_migrations WHERE version = 6;
@@ -102,6 +111,7 @@ describe("task database", () => {
       { version: 4, name: "migration-v4" },
       { version: 5, name: "migration-v5" },
       { version: 6, name: "migration-v6" },
+      { version: 7, name: "migration-v7" },
     ]);
     expect(
       database.connection
@@ -110,11 +120,20 @@ describe("task database", () => {
         )
         .get(),
     ).toEqual({ name: "metadata_json", notnull: 1, dflt_value: "'{}'" });
+    const taskColumns = database.connection
+      .prepare("SELECT name FROM pragma_table_info('tasks')")
+      .all();
+    expect(taskColumns).not.toContainEqual({
+      name: "acceptance_criteria_json",
+    });
+    expect(taskColumns).toContainEqual({ name: "verification_enabled" });
     expect(
       database.connection
-        .prepare("SELECT name FROM pragma_table_info('tasks')")
-        .all(),
-    ).not.toContainEqual({ name: "acceptance_criteria_json" });
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'task_verifications'",
+        )
+        .get(),
+    ).toEqual({ name: "task_verifications" });
     new TaskRepository(database.connection).createTask({
       id: "10000000-0000-4000-8000-000000000001",
       projectId: "90000000-0000-4000-8000-000000000001",
@@ -144,12 +163,12 @@ describe("task database", () => {
     first.close();
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(6);
+    expect(reopened.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(
       reopened.connection
         .prepare("SELECT count(*) AS count FROM schema_migrations")
         .get(),
-    ).toEqual({ count: 6 });
+    ).toEqual({ count: CURRENT_TASK_SCHEMA_VERSION });
     reopened.close();
   });
 
@@ -165,12 +184,13 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(existsSync(`${path}.pre-v2.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v4.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v7.bak`)).toBe(true);
     migrated.close();
   });
 
@@ -227,7 +247,7 @@ describe("task database", () => {
     first.close();
 
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(existsSync(`${path}.pre-v3.bak`)).toBe(false);
     expect(
       migrated.connection
@@ -327,21 +347,22 @@ describe("task database", () => {
     reopened.close();
   });
 
-  it("migrates v4 through the additive v5 and v6 schemas with a pre-v6 recovery backup", () => {
+  it("migrates v4 through the additive v7 schema with a pre-v7 recovery backup", () => {
     const path = temporaryDatabasePath();
     const original = openTaskDatabase(path);
     removeV5Schema(original.connection);
     original.close();
     const migrated = openTaskDatabase(path);
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
-    const backup = new DatabaseSync(`${path}.pre-v6.bak`, { readOnly: true });
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v7.bak`)).toBe(true);
+    const backup = new DatabaseSync(`${path}.pre-v7.bak`, { readOnly: true });
     expect(
       backup
         .prepare("SELECT max(version) AS version FROM schema_migrations")
         .get(),
-    ).toEqual({ version: 5 });
+    ).toEqual({ version: 6 });
     backup.close();
     expect(
       migrated.connection
@@ -349,7 +370,7 @@ describe("task database", () => {
           "SELECT count(*) AS count FROM sqlite_schema WHERE type='table' AND name LIKE 'task_%'",
         )
         .get(),
-    ).toEqual({ count: 9 });
+    ).toEqual({ count: 10 });
     migrated.close();
   });
 
@@ -413,19 +434,20 @@ describe("task database", () => {
     writeFileSync(`${path}.pre-v5.bak`, "previous recovery backup");
 
     const reopened = openTaskDatabase(path);
-    expect(reopened.schemaVersion).toBe(6);
+    expect(reopened.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(
       retainedTables.map((table) =>
         reopened.connection.prepare(`SELECT * FROM ${table}`).all(),
       ),
     ).toEqual(before);
     expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v6.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-v6.bak`)).toBe(false);
+    expect(existsSync(`${path}.pre-v7.bak`)).toBe(true);
     expect(
       reopened.connection
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all(),
-    ).toEqual([1, 2, 3, 4, 5, 6].map((version) => ({ version })));
+    ).toEqual([1, 2, 3, 4, 5, 6, 7].map((version) => ({ version })));
     expect(
       reopened.connection
         .prepare("SELECT metadata_json FROM tasks WHERE id = 'task'")

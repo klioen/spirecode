@@ -67,6 +67,7 @@ export interface PiSessionLoadOptions {
   customTools?: unknown[];
   sessionId?: string;
   readOnly?: boolean;
+  readOnlyTools?: string[];
   systemPrompt?: string;
 }
 
@@ -440,11 +441,14 @@ export async function createPiAdapter(
       model,
       ...(loadOptions.readOnly
         ? {
-            tools: (loadOptions.customTools ?? []).map((tool) => {
-              if (!isRecord(tool) || typeof tool.name !== "string")
-                throw new Error("Invalid restricted tool");
-              return tool.name;
-            }),
+            tools: [
+              ...(loadOptions.readOnlyTools ?? []),
+              ...(loadOptions.customTools ?? []).map((tool) => {
+                if (!isRecord(tool) || typeof tool.name !== "string")
+                  throw new Error("Invalid restricted tool");
+                return tool.name;
+              }),
+            ],
             excludeTools: ["mcp__*"],
           }
         : {}),

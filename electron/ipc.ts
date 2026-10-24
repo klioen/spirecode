@@ -764,6 +764,9 @@ function taskCreateInput(
     "projectId",
     "workspace",
     "automationEnabled",
+    ...(Object.prototype.hasOwnProperty.call(input, "verificationEnabled")
+      ? ["verificationEnabled"]
+      : []),
   ]);
   if (Buffer.byteLength(JSON.stringify(input), "utf8") > 96 * 1024)
     throw new TypeError("Task input is too large");
@@ -784,6 +787,10 @@ function taskCreateInput(
     projectId,
     workspace,
     automationEnabled: input.automationEnabled,
+    verificationEnabled:
+      "verificationEnabled" in input
+        ? boolean(input, "verificationEnabled")
+        : true,
   };
 }
 
@@ -791,7 +798,15 @@ function taskUpdateInput(
   args: Args,
 ): import("./domains/tasks/service.js").UpdateTaskRequest {
   const patch = strictRecord(args.patch, "patch");
-  exactKeys(patch, ["title", "description", "workspace", "automationEnabled"]);
+  const allowedPatchKeys = new Set([
+    "title",
+    "description",
+    "workspace",
+    "automationEnabled",
+    "verificationEnabled",
+  ]);
+  if (Object.keys(patch).some((key) => !allowedPatchKeys.has(key)))
+    throw new TypeError("Task input contains unexpected fields");
   if (Object.keys(patch).length === 0) throw new TypeError("patch is empty");
   if (Buffer.byteLength(JSON.stringify(patch), "utf8") > 96 * 1024)
     throw new TypeError("Task patch is too large");
@@ -809,6 +824,11 @@ function taskUpdateInput(
     if (typeof patch.automationEnabled !== "boolean")
       throw new TypeError("automationEnabled must be a boolean");
     result.automationEnabled = patch.automationEnabled;
+  }
+  if ("verificationEnabled" in patch) {
+    if (typeof patch.verificationEnabled !== "boolean")
+      throw new TypeError("verificationEnabled must be a boolean");
+    result.verificationEnabled = patch.verificationEnabled;
   }
   return result;
 }

@@ -922,7 +922,11 @@ export class ChatService {
         ? {}
         : { sessionId: options.sessionId }),
       ...(options.readOnly
-        ? { readOnly: true, systemPrompt: options.systemPrompt }
+        ? {
+            readOnly: true,
+            readOnlyTools: options.readOnlyTools,
+            systemPrompt: options.systemPrompt,
+          }
         : {}),
     };
   }

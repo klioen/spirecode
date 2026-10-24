@@ -12,6 +12,8 @@ export const taskDetail = (
   workspace: { mode: "new_managed", baseRef: "origin/main" },
   metadata: {},
   automationEnabled: true,
+  verificationEnabled: true,
+  verification: null,
   status: "backlog",
   activeRunId: null,
   resolvedWorktreeId: null,
