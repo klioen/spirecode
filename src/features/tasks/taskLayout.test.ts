@@ -21,4 +21,16 @@ describe("Task layout", () => {
       /@container task-surface \(max-width: 420px\)[\s\S]*?\.task-dashboard-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
     );
   });
+
+  it("uses a four-column overview and flat detail sections", () => {
+    expect(css).toMatch(
+      /\.task-dashboard-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s,
+    );
+    expect(css).toMatch(
+      /\.task-detail\s*>\s*\.task-detail-section\s*\{[^}]*border:\s*0;[^}]*border-top:\s*1px solid var\(--border-muted\);[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/s,
+    );
+    expect(css).toMatch(
+      /\.task-metrics-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s,
+    );
+  });
 });
