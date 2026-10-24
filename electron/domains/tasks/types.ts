@@ -167,6 +167,19 @@ export interface TaskRun {
   finishedAt: number | null;
 }
 
+export type TaskMetricRun = Pick<
+  TaskRun,
+  | "taskId"
+  | "attempt"
+  | "status"
+  | "worktreeId"
+  | "sessionId"
+  | "sessionPath"
+  | "startedAt"
+  | "settledAt"
+  | "finishedAt"
+>;
+
 export interface CreateRunInput {
   id: string;
   projectId: string;
@@ -210,4 +223,21 @@ export interface TaskNotification {
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;
+}
+
+export interface TaskDashboardCounts {
+  total: number;
+  active: number;
+  attention: number;
+  completed: number;
+  createdLast7Days: number;
+  completedLast7Days: number;
+  byStatus: Record<TaskStatus, number>;
+}
+
+export interface TaskDashboard extends TaskDashboardCounts {
+  durationMs: number;
+  tokenCount: number;
+  measuredAt: number;
+  advancingRunCount: number;
 }

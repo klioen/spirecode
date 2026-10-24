@@ -6,6 +6,7 @@ it("adapts future host bindings without importing unavailable generated commands
   const unsubscribe = vi.fn();
   const host = {
     taskList: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    taskDashboard: vi.fn().mockResolvedValue({ total: 0 }),
     taskGet: vi.fn(),
     taskCreate: vi.fn(),
     taskRun: vi.fn().mockResolvedValue(undefined),
@@ -20,6 +21,7 @@ it("adapts future host bindings without importing unavailable generated commands
   const api = createHostTasksApi(host);
 
   await api.list({ limit: 25, statuses: ["running"] });
+  await api.dashboard();
   await api.run("task-1", 3);
   const stop = api.subscribe(listener);
 
@@ -27,6 +29,7 @@ it("adapts future host bindings without importing unavailable generated commands
     limit: 25,
     statuses: ["running"],
   });
+  expect(host.taskDashboard).toHaveBeenCalledWith();
   expect(host.taskRun).toHaveBeenCalledWith({
     taskId: "task-1",
     expectedRevision: 3,

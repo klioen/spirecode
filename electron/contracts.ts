@@ -54,6 +54,7 @@ export const COMMANDS = [
   "chat_session_rename",
   "chat_session_delete",
   "task_list",
+  "task_dashboard",
   "task_get",
   "task_create",
   "task_update",

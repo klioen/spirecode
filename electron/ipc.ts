@@ -418,6 +418,8 @@ async function invoke(
     }
     case "task_list":
       return state.taskList(taskListInput(args));
+    case "task_dashboard":
+      return state.taskDashboard();
     case "task_get":
       return state.taskGet(text(args, "taskId"));
     case "task_create":
@@ -623,6 +625,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
     "projectId",
     "attentionOnly",
   ],
+  task_dashboard: [],
   task_get: ["taskId"],
   task_create: ["input"],
   task_update: ["taskId", "expectedRevision", "patch"],

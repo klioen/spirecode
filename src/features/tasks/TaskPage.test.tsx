@@ -71,6 +71,192 @@ it("loads the global list and opens a task detail without an active project", as
   expect(screen.getByRole("button", { name: "Run task" })).toBeInTheDocument();
 });
 
+it("renders a global dashboard above filters and applies dashboard filters without changing list scope", async () => {
+  const api = createTasksApiMock();
+  vi.mocked(api.dashboard).mockResolvedValue({
+    total: 10,
+    active: 3,
+    attention: 4,
+    completed: 2,
+    createdLast7Days: 5,
+    completedLast7Days: 1,
+    durationMs: 125_000,
+    tokenCount: 12_345,
+    measuredAt: Date.now() - 60_000,
+    advancingRunCount: 1,
+    byStatus: {
+      backlog: 2,
+      queued: 1,
+      running: 2,
+      needs_review: 1,
+      completed: 2,
+      failed: 1,
+      cancelled: 1,
+    },
+  });
+  render(
+    <TaskPage
+      api={api}
+      projects={[
+        {
+          id: "project-1",
+          name: "SpireCode",
+          kind: "git",
+          baseRefs: [],
+          worktrees: [],
+        },
+      ]}
+    />,
+  );
+
+  const heading = await screen.findByRole("heading", { name: "Overview" });
+  const toolbar = screen
+    .getByRole("searchbox", { name: "Search tasks" })
+    .closest(".task-list-toolbar")!;
+  expect(
+    heading.closest(".task-dashboard")!.compareDocumentPosition(toolbar) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(screen.getByText("12.3K")).toBeInTheDocument();
+  expect(screen.getByText("3m 5s")).toBeInTheDocument();
+  expect(screen.getByText("May overlap with Active")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /Active: 3/ }));
+  await waitFor(() =>
+    expect(api.list).toHaveBeenLastCalledWith({
+      limit: 50,
+      statuses: ["queued", "running"],
+    }),
+  );
+  fireEvent.click(screen.getByRole("combobox", { name: "Filter by project" }));
+  fireEvent.click(screen.getByRole("option", { name: "SpireCode" }));
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search tasks" }), {
+    target: { value: "keep scope" },
+  });
+  await waitFor(() =>
+    expect(api.list).toHaveBeenLastCalledWith({
+      limit: 50,
+      statuses: ["queued", "running"],
+      query: "keep scope",
+      projectId: "project-1",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Cancelled: 1/ }));
+  await waitFor(() =>
+    expect(api.list).toHaveBeenLastCalledWith({
+      limit: 50,
+      statuses: ["cancelled"],
+      query: "keep scope",
+      projectId: "project-1",
+    }),
+  );
+  expect(api.dashboard).toHaveBeenCalledTimes(1);
+});
+
+it("keeps dashboard failure independent from the list and recovers to an explicit empty state", async () => {
+  const api = createTasksApiMock();
+  vi.mocked(api.list).mockResolvedValue({
+    items: [taskDetail({ title: "List remains available" })],
+    nextCursor: null,
+  });
+  vi.mocked(api.dashboard)
+    .mockRejectedValueOnce(new Error("Overview offline"))
+    .mockResolvedValueOnce({
+      total: 0,
+      active: 0,
+      attention: 0,
+      completed: 0,
+      createdLast7Days: 0,
+      completedLast7Days: 0,
+      durationMs: 0,
+      tokenCount: 0,
+      measuredAt: Date.now(),
+      advancingRunCount: 0,
+      byStatus: {
+        backlog: 0,
+        queued: 0,
+        running: 0,
+        needs_review: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 0,
+      },
+    });
+
+  render(<TaskPage api={api} projects={[]} />);
+  expect(
+    await screen.findByRole("button", { name: /List remains available/ }),
+  ).toBeInTheDocument();
+  const error = await screen.findByText("Overview offline");
+  fireEvent.click(
+    within(error.closest("section")!).getByRole("button", {
+      name: "Retry overview",
+    }),
+  );
+  expect(
+    await screen.findByText(
+      "No tasks yet. Every status currently has 0 tasks.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("0").length).toBeGreaterThan(7);
+});
+
+it("coalesces dashboard event storms and ignores the invalidated response", async () => {
+  const api = createTasksApiMock();
+  let listener!: Parameters<typeof api.subscribe>[0];
+  vi.mocked(api.subscribe).mockImplementation((value) => {
+    listener = value;
+    return () => undefined;
+  });
+  let release!: (value: Awaited<ReturnType<typeof api.dashboard>>) => void;
+  const first = new Promise<Awaited<ReturnType<typeof api.dashboard>>>(
+    (resolve) => {
+      release = resolve;
+    },
+  );
+  const fresh = {
+    total: 2,
+    active: 0,
+    attention: 0,
+    completed: 0,
+    createdLast7Days: 0,
+    completedLast7Days: 0,
+    durationMs: 0,
+    tokenCount: 0,
+    measuredAt: Date.now(),
+    advancingRunCount: 0,
+    byStatus: {
+      backlog: 2,
+      queued: 0,
+      running: 0,
+      needs_review: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    },
+  } as const;
+  vi.mocked(api.dashboard).mockImplementationOnce(() => first);
+  vi.mocked(api.dashboard).mockResolvedValue(fresh);
+
+  render(<TaskPage api={api} projects={[]} />);
+  await waitFor(() => expect(api.dashboard).toHaveBeenCalledTimes(1));
+  act(() => {
+    listener({ kind: "changed", taskId: "task-1", revision: 2 });
+    listener({ kind: "changed", taskId: "task-1", revision: 3 });
+    listener({ kind: "notification", taskId: "task-1" });
+  });
+  release({
+    ...fresh,
+    total: 99,
+    byStatus: { ...fresh.byStatus, backlog: 99 },
+  });
+
+  await waitFor(() => expect(api.dashboard).toHaveBeenCalledTimes(2));
+  const total = await screen.findByText("Total tasks");
+  expect(total.closest(".task-dashboard-metric")).toHaveTextContent("2");
+  expect(total.closest(".task-dashboard-metric")).not.toHaveTextContent("99");
+});
+
 it("keeps the list, toolbar, header and notices in one centered content column", async () => {
   const api = createTasksApiMock();
   vi.mocked(api.list).mockResolvedValue({

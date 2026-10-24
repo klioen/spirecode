@@ -33,6 +33,27 @@ export const taskDetail = (
 
 export const createTasksApiMock = (): TasksApi => ({
   list: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+  dashboard: vi.fn().mockResolvedValue({
+    total: 0,
+    active: 0,
+    attention: 0,
+    completed: 0,
+    createdLast7Days: 0,
+    completedLast7Days: 0,
+    durationMs: 0,
+    tokenCount: 0,
+    measuredAt: Date.now(),
+    advancingRunCount: 0,
+    byStatus: {
+      backlog: 0,
+      queued: 0,
+      running: 0,
+      needs_review: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    },
+  }),
   get: vi.fn().mockResolvedValue(taskDetail()),
   create: vi.fn().mockResolvedValue(taskDetail()),
   update: vi.fn().mockResolvedValue(taskDetail()),

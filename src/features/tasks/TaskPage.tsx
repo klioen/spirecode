@@ -8,11 +8,14 @@ import {
 } from "react";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { formatDateTime, useTranslation } from "../../i18n";
+import { TaskDashboard } from "./TaskDashboard";
 import { TaskDetail } from "./TaskDetail";
 import { TaskForm, type TaskProjectOption } from "./TaskForm";
 import type {
+  TaskDashboardValue,
   TaskDetailValue,
   TaskNotificationValue,
+  TaskStatus,
   TasksApi,
 } from "./tasksApi";
 import { formatTaskDuration, formatTaskTokens } from "./taskMetrics";
@@ -47,10 +50,10 @@ export function TaskPage({
 }: TaskPageProps) {
   const { language, t } = useTranslation();
   const store = useTasksStore();
-  const [, setClock] = useState(0);
+  const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!document.hidden) setClock((tick) => tick + 1);
+      if (!document.hidden) setClock(Date.now());
     }, 60_000);
     return () => clearInterval(timer);
   }, []);
@@ -88,6 +91,44 @@ export function TaskPage({
   const notificationGeneration = useRef(0);
   const [cleaningWorkspaces, setCleaningWorkspaces] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<TaskDashboardValue | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const dashboardGeneration = useRef(0);
+  const dashboardRequest = useRef<{ token: number; again: boolean } | null>(
+    null,
+  );
+
+  const refreshDashboard = useCallback(
+    async function fetchDashboard(): Promise<void> {
+      if (dashboardRequest.current) {
+        dashboardRequest.current.again = true;
+        dashboardGeneration.current++;
+        return;
+      }
+      const token = ++dashboardGeneration.current;
+      const request = { token, again: false };
+      dashboardRequest.current = request;
+      setLoadingDashboard(true);
+      setDashboardError(null);
+      try {
+        const value = await api.dashboard();
+        if (dashboardGeneration.current === token) setDashboard(value);
+      } catch (error) {
+        if (dashboardGeneration.current === token)
+          setDashboardError(
+            taskErrorMessage(error, t("tasks.dashboard.loadFailed")),
+          );
+      } finally {
+        if (dashboardRequest.current === request) {
+          dashboardRequest.current = null;
+          if (request.again) void fetchDashboard();
+          else setLoadingDashboard(false);
+        }
+      }
+    },
+    [api, t],
+  );
 
   const refreshDetail = useCallback(
     async function fetchDetail(taskId: string): Promise<void> {
@@ -184,7 +225,10 @@ export function TaskPage({
     )
       void useTasksStore.getState().load(api);
     void refreshNotifications();
+    void refreshDashboard();
     return api.subscribe((event) => {
+      if (event.kind === "changed" || event.kind === "notification")
+        void refreshDashboard();
       if (event.kind === "notification") void refreshNotifications();
       if (
         (event.kind === "changed" || event.kind === "notification") &&
@@ -192,7 +236,7 @@ export function TaskPage({
       )
         void refreshDetail(event.taskId!);
     });
-  }, [api, refreshDetail, refreshNotifications]);
+  }, [api, refreshDashboard, refreshDetail, refreshNotifications]);
   useEffect(() => {
     const id = store.selectedTaskId;
     if (id && id !== lastSelection.current) {
@@ -237,7 +281,9 @@ export function TaskPage({
     () => () => {
       detailGeneration.current++;
       notificationGeneration.current++;
+      dashboardGeneration.current++;
       detailRequest.current = null;
+      dashboardRequest.current = null;
     },
     [],
   );
@@ -509,6 +555,23 @@ export function TaskPage({
                 </button>
               </div>
             </header>
+            <TaskDashboard
+              value={dashboard}
+              loading={loadingDashboard}
+              error={dashboardError}
+              language={language}
+              now={clock}
+              t={t}
+              onRetry={() => void refreshDashboard()}
+              onSelectView={(view) => {
+                store.setView(view);
+                void useTasksStore.getState().load(api);
+              }}
+              onSelectStatus={(status: TaskStatus) => {
+                store.setStatuses([status]);
+                void useTasksStore.getState().load(api);
+              }}
+            />
             {cleanupResult ? (
               <p className="task-page-message" role="status">
                 {cleanupResult}
