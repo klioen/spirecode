@@ -53,8 +53,7 @@ export function activeWorkItem(
     .reverse()
     .find(
       (item): item is ActiveWorkItem =>
-        (item.type === "tool" && item.status === "running") ||
-        (item.type === "thinking" && item.status === "streaming"),
+        item.type === "tool" || item.type === "thinking",
     );
 }
 
@@ -111,32 +110,39 @@ export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
           undefined
         }
       >
-        <span className="chat-work-label" aria-live="off">
-          {label}
+        <span className="chat-work-summary-heading">
+          <span className="chat-work-label" aria-live="off">
+            {label}
+          </span>
+          <RiArrowRightSLine
+            className="chat-disclosure-icon"
+            aria-hidden="true"
+          />
         </span>
         {active?.type === "thinking" && (
           <span className="chat-work-active">
-            <ReasoningIcon running />
+            <ReasoningIcon running={active.status === "streaming"} />
             <span className="chat-work-active-text">{t("chat.thinking")}</span>
           </span>
         )}
         {active?.type === "tool" && activeTool && ActiveToolIcon && (
           <span className="chat-work-active">
             <ActiveToolIcon
-              className="chat-status-icon chat-process-icon-active"
+              className={`chat-status-icon${active.status === "running" ? " chat-process-icon-active" : ""}`}
               data-process-icon={activeTool.iconKind}
               aria-hidden="true"
             />
             <span className="chat-work-active-text">
-              {t(activeTool.activeActionKey, { name: active.name })}
+              {t(
+                active.status === "running"
+                  ? activeTool.activeActionKey
+                  : activeTool.actionKey,
+                { name: active.name },
+              )}
               {activeTool.summary ? ` · ${activeTool.summary}` : ""}
             </span>
           </span>
         )}
-        <RiArrowRightSLine
-          className="chat-disclosure-icon"
-          aria-hidden="true"
-        />
       </summary>
       <div className="chat-work-details">
         {work.items.map((item) => {
