@@ -9,8 +9,9 @@ Risk classification: standard change because it alters shared user-visible Rende
 ## Spec
 
 - Shared `Working for …` and `Worked for …` disclosures are closed on first render and never open or close automatically when lifecycle status changes.
-- A collapsed running summary shows the latest running Tool or streaming Thinking item in timeline order. Tool activity reuses its existing icon, localized action, and compact semantic object summary; Thinking uses only its localized label and icon.
-- The running summary is a single truncating line and never includes raw reasoning, arguments, output, result, stderr, or error details.
+- A running summary shows its duration on the first line and the latest Tool or Thinking activity on a dedicated second line.
+- The latest activity remains visible after that Tool or Thinking completes and is replaced only when a later Tool or Thinking item arrives. It disappears when the turn changes from `Working for …` to `Worked for …`.
+- Tool activity reuses its existing icon, localized action, and compact semantic object summary; Thinking uses only its localized label and icon. The activity line truncates responsively and never includes raw reasoning, arguments, output, result, stderr, or error details.
 - Expanded work preserves timeline order and continues to render Thinking, Tool, Todo, and intermediate assistant messages.
 - Tool and Thinking disclosures are also closed on first render regardless of status. User-controlled disclosure state and Tool tab state survive ordinary streaming rerenders.
 - Existing duration timing, final-answer placement, notices/errors, scrolling, localization, keyboard/details semantics, focus styles, and reduced-motion behavior remain intact.
@@ -18,8 +19,7 @@ Risk classification: standard change because it alters shared user-visible Rende
 
 ## Plan
 
-1. Add regression tests for closed active/completed work, active-item selection and switching, private-detail exclusion, closed active Tool/Thinking items, and preserved manual disclosure/tab state.
-2. Replace lifecycle-driven disclosure state with stable user-controlled state initialized closed.
-3. Add a small active-work selector and render the semantic activity inside the running work summary by reusing `toolPresentation` and `ReasoningIcon`.
-4. Add narrowly scoped flex/ellipsis styles for a one-line responsive collapsed row.
-5. Run focused Chat/Task tests, `pnpm check`, and `pnpm build`; review the diff for scope and accessibility regressions.
+1. Add regression tests proving the activity occupies a dedicated line, remains after completion, and switches only when a later Tool or Thinking arrives.
+2. Change the active-work selector to retain the latest Tool or Thinking item for the lifetime of a running turn.
+3. Split the running summary into a duration heading row and a responsive, truncating activity row while reusing `toolPresentation` and `ReasoningIcon`.
+4. Run focused Chat tests and `pnpm check`; review the diff for scope and accessibility regressions.

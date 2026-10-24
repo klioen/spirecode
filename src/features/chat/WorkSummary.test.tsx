@@ -67,12 +67,15 @@ describe("WorkSummary", () => {
 
     const details = screen.getByText("Working for 10s").closest("details");
     expect(details).not.toHaveAttribute("open");
-    expect(details?.querySelector(".chat-work-active")).toBeNull();
+    expect(details?.querySelector(".chat-work-active-text")).toHaveTextContent(
+      "Read file · chat.tsx",
+    );
     void act(() => vi.advanceTimersByTime(2_000));
     expect(screen.getByText("Working for 12s")).toBeVisible();
 
     rerender(<WorkSummary work={worked} />);
     expect(details).not.toHaveAttribute("open");
+    expect(details?.querySelector(".chat-work-active")).toBeNull();
   });
 
   it("shows only the latest semantic active item and updates it in place", () => {
@@ -102,6 +105,10 @@ describe("WorkSummary", () => {
     const summary = details.querySelector("summary")!;
 
     expect(details).not.toHaveAttribute("open");
+    expect(
+      summary.querySelector(":scope > .chat-work-summary-heading"),
+    ).not.toBeNull();
+    expect(summary.querySelector(":scope > .chat-work-active")).not.toBeNull();
     expect(summary.querySelector(".chat-work-active-text")).toHaveTextContent(
       "Reading file · very-long-file.tsx",
     );
@@ -115,8 +122,26 @@ describe("WorkSummary", () => {
       <WorkSummary
         work={{
           ...activeWork,
+          items: activeWork.items.map((item) =>
+            item.type === "tool" ? { ...item, status: "done" as const } : item,
+          ),
+        }}
+      />,
+    );
+    expect(summary.querySelector(".chat-work-active-text")).toHaveTextContent(
+      "Read file · very-long-file.tsx",
+    );
+
+    rerender(
+      <WorkSummary
+        work={{
+          ...activeWork,
           items: [
-            ...activeWork.items,
+            ...activeWork.items.map((item) =>
+              item.type === "tool"
+                ? { ...item, status: "done" as const }
+                : item,
+            ),
             {
               type: "thinking",
               id: "thinking-latest",

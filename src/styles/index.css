@@ -3961,8 +3961,9 @@ details[open] > summary > .chat-disclosure-icon {
   display: flex;
   width: fit-content;
   max-width: 100%;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   color: var(--text-subtle);
   font-size: 13px;
   line-height: 22px;
@@ -3977,7 +3978,12 @@ details[open] > summary > .chat-disclosure-icon {
 .chat-work-summary > summary:focus-visible {
   color: var(--text-muted);
 }
-.chat-work-summary > summary > .chat-disclosure-icon {
+.chat-work-summary-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-work-summary-heading > .chat-disclosure-icon {
   visibility: visible !important;
   opacity: 1 !important;
   transform: none;
@@ -4004,10 +4010,10 @@ details[open] > summary > .chat-disclosure-icon {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-work-summary[open] > summary .chat-work-active {
-  display: none;
-}
-.chat-work-summary[open] > summary > .chat-disclosure-icon {
+.chat-work-summary[open]
+  > summary
+  > .chat-work-summary-heading
+  > .chat-disclosure-icon {
   transform: rotate(90deg);
 }
 .chat-work-details {
@@ -4156,6 +4162,7 @@ details[open] > summary > .chat-disclosure-icon {
   white-space: nowrap;
 }
 .chat-process-shimmer > span:not(.chat-work-active),
+.chat-process-shimmer .chat-work-label,
 .chat-process-shimmer .chat-work-active-text {
   color: transparent !important;
   background-image: linear-gradient(
