@@ -24,6 +24,12 @@ afterEach(async () => {
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "spire-intake-"));
   directories.push(root);
+  const configDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "spire-intake-git-config-"),
+  );
+  directories.push(configDirectory);
+  const globalConfig = path.join(configDirectory, "global.gitconfig");
+  await writeFile(globalConfig, "");
   const git = (...args: string[]) =>
     execFileSync("git", args, {
       cwd: root,
@@ -31,7 +37,7 @@ async function fixture() {
       env: {
         ...process.env,
         GIT_CONFIG_NOSYSTEM: "1",
-        GIT_CONFIG_GLOBAL: os.devNull,
+        GIT_CONFIG_GLOBAL: globalConfig,
       },
     }).trim();
   git("init", "-b", "main");
