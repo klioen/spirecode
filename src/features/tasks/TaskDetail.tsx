@@ -13,6 +13,7 @@ import {
   useTranslation,
   type TranslationKey,
 } from "../../i18n";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import type {
   TaskDetailValue,
   TaskRunSummary,
@@ -547,7 +548,10 @@ export function TaskDetail({
         open={task.status === "backlog"}
       >
         <summary>{t("tasks.requirements")}</summary>
-        <p>{task.description || t("tasks.noDescription")}</p>
+        <MarkdownContent
+          className="task-markdown"
+          content={task.description || t("tasks.noDescription")}
+        />
       </details>
       {task.runs.length > 1 ? (
         <details className="task-detail-section task-history">

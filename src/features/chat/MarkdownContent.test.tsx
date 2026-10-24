@@ -21,6 +21,8 @@ describe("MarkdownContent", () => {
           "```",
           "",
           "<script>window.__unsafe = true</script>",
+          "",
+          "![hidden diagram](https://example.com/diagram.png)",
         ].join("\n")}
       />,
     );
@@ -29,6 +31,8 @@ describe("MarkdownContent", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByText("const ready = true;")).toBeInTheDocument();
     expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.queryByText("hidden diagram")).toBeNull();
     expect(screen.getByText(/<script>/)).toBeInTheDocument();
   });
 

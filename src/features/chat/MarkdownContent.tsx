@@ -19,6 +19,7 @@ import {
 export interface MarkdownContentProps {
   content: string;
   running?: boolean;
+  className?: string;
 }
 
 const RUNNING_INDICATOR_TAG = "chat-running-indicator";
@@ -137,11 +138,12 @@ function safeUrlTransform(url: string): string {
 export function MarkdownContent({
   content,
   running = false,
+  className,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
   const components = useMemo(() => markdownComponents(t), [t]);
   return (
-    <div className="chat-markdown">
+    <div className={["chat-markdown", className].filter(Boolean).join(" ")}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={running ? [rehypeRunningIndicator] : []}

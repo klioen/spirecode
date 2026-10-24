@@ -46,6 +46,55 @@ it("starts, applies, undoes, and cancels an isolated rewrite", async () => {
   );
 });
 
+it("renders original and suggested descriptions as safe GFM Markdown", async () => {
+  const api = createTasksApiMock();
+  let emit!: (event: TaskEvent) => void;
+  vi.mocked(api.subscribe).mockImplementation((listener) => {
+    emit = listener;
+    return () => undefined;
+  });
+  const original = {
+    title: "Original",
+    description: "## Original scope\n\n- Keep behavior\n\n`inline`",
+  };
+  const suggested = {
+    title: "Suggested",
+    description: [
+      "## Suggested scope",
+      "",
+      "| check | result |",
+      "| --- | --- |",
+      "| tests | pass |",
+      "",
+      "```ts",
+      "const improved = true;",
+      "```",
+      "",
+      "<script>window.__rewriteUnsafe = true</script>",
+      "[unsafe](javascript:alert(1))",
+    ].join("\n"),
+  };
+  const { container } = render(
+    <TaskRewriteControl api={api} value={original} onApply={vi.fn()} />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "AI optimize" }));
+  await waitFor(() => expect(api.rewriteStart).toHaveBeenCalled());
+  emit({ kind: "rewrite_result", rewriteId: "rewrite-1", payload: suggested });
+
+  expect(
+    await screen.findByRole("heading", { name: "Original scope" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Suggested scope" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("table")).toBeInTheDocument();
+  expect(screen.getByText("const improved = true;")).toBeInTheDocument();
+  expect(container.querySelector("script")).toBeNull();
+  expect(screen.queryByRole("link", { name: "unsafe" })).toBeNull();
+  expect(screen.getByText(/<script>/)).toBeInTheDocument();
+});
+
 it("compares the captured original and rejects stale suggestions", async () => {
   const api = createTasksApiMock();
   let emit!: (event: TaskEvent) => void;
