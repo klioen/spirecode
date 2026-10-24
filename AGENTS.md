@@ -25,4 +25,5 @@
 - In Electron Main, `process.execPath` is the application executable, not Node. Never use it as a Node shebang for Git askpass or other helpers; use a self-contained platform helper to avoid recursively launching the application.
 - Test Git configuration isolation with a real empty file. Node's `os.devNull` Windows device path is not a valid Git config file path.
 - Update both packaged Task smoke checks when the Task schema advances; keep version, migration name, new columns, and integrity assertions in sync with Main.
+- Packaged GUI PATH may omit Homebrew hosting CLIs. Resolve gh/glab from Main-owned trusted installation locations without sourcing shell startup files; reconcile a merged Task PR only against its exact source repository, branch, target, and clean local HEAD before persisting review metadata.
 - Add repeated pitfalls here, not in source comments.

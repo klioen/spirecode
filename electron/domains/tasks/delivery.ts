@@ -1,7 +1,4 @@
 import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, realpath, stat } from "node:fs/promises";
-import path from "node:path";
 import {
   assertNoRepositoryGitCommands,
   gitText,
@@ -9,6 +6,7 @@ import {
 } from "../../core/gitProcess.js";
 import type { TaskRunReport } from "./types.js";
 import { withGitAskpass } from "./gitAskpass.js";
+import { findProviderExecutable } from "./providerExecutable.js";
 
 const MAX_OUTPUT = 1024 * 1024;
 const PROVIDER_TIMEOUT_MS = 30_000;
@@ -82,6 +80,9 @@ interface RemoteChangeRequest {
   state: string;
   head: string;
   base: string;
+  headSha?: string;
+  sourceProject?: string;
+  merged?: boolean;
 }
 
 function safeProviderEnvironment(executable: "gh" | "glab"): NodeJS.ProcessEnv {
@@ -90,6 +91,7 @@ function safeProviderEnvironment(executable: "gh" | "glab"): NodeJS.ProcessEnv {
     "HOME",
     "USERPROFILE",
     "XDG_CONFIG_HOME",
+    "GH_CONFIG_DIR",
     "APPDATA",
     "LOCALAPPDATA",
     "LANG",
@@ -110,29 +112,12 @@ function safeProviderEnvironment(executable: "gh" | "glab"): NodeJS.ProcessEnv {
 async function resolveProviderExecutable(
   executable: "gh" | "glab",
 ): Promise<string> {
-  const names =
-    process.platform === "win32" ? [`${executable}.exe`] : [executable];
-  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!directory) continue;
-    for (const name of names) {
-      const candidate = path.resolve(directory, name);
-      try {
-        await access(candidate, constants.X_OK);
-        const resolved = await realpath(candidate);
-        if (process.platform !== "win32") {
-          const parent = await stat(path.dirname(resolved));
-          if ((parent.mode & 0o002) !== 0) continue;
-        }
-        return resolved;
-      } catch {
-        // Continue through the controlled PATH candidates.
-      }
-    }
-  }
+  const resolved = await findProviderExecutable(executable);
+  if (resolved) return resolved;
   throw new TaskDeliveryError(
     "TASK_DELIVERY_CLI_MISSING",
-    `${executable} is not installed or could not be started`,
-    false,
+    `${executable} was not found in trusted executable locations. Install the hosting CLI and retry delivery.`,
+    true,
   );
 }
 
@@ -187,7 +172,7 @@ export async function runProviderCli(
         reject(
           new TaskDeliveryError(
             "TASK_DELIVERY_AUTH_OR_PERMISSION",
-            `${executable} is not authenticated or lacks repository permission`,
+            `${executable} hosting request failed (exit ${code ?? "signal"}); check authentication, repository permission, and network connectivity.`,
             true,
           ),
         );
@@ -455,6 +440,17 @@ export class TaskDeliveryService {
     start: GitDeliveryStart;
     title: string;
   }): Promise<GitPreparationResult> {
+    try {
+      return await this.#prepare(input);
+    } catch (error) {
+      throw taskDeliveryFailure(error, "preparation");
+    }
+  }
+
+  async #prepare(input: {
+    start: GitDeliveryStart;
+    title: string;
+  }): Promise<GitPreparationResult> {
     const branch = requireBranch(input.start.branch);
     const current = (
       await gitText(this.root, ["branch", "--show-current"])
@@ -562,6 +558,20 @@ export class TaskDeliveryService {
     priorChangeRequest?: ChangeRequest;
     prepared?: GitPreparationResult;
   }): Promise<GitDeliveryResult> {
+    try {
+      return await this.#deliver(input);
+    } catch (error) {
+      throw taskDeliveryFailure(error, "delivery");
+    }
+  }
+
+  async #deliver(input: {
+    start: GitDeliveryStart;
+    title: string;
+    summary: string;
+    priorChangeRequest?: ChangeRequest;
+    prepared?: GitPreparationResult;
+  }): Promise<GitDeliveryResult> {
     const branch = requireBranch(input.start.branch);
     const prepared = input.prepared ?? (await this.prepare(input));
     await this.assertPrepared(prepared);
@@ -581,6 +591,33 @@ export class TaskDeliveryService {
         "origin is missing or unsupported",
         false,
       );
+    }
+    let candidates = await this.#listChangeRequests(
+      remote,
+      branch,
+      input.start.target,
+    );
+    if (candidates.length > 1)
+      throw new TaskDeliveryError(
+        "TASK_DELIVERY_CHANGE_REQUEST_AMBIGUOUS",
+        "Multiple change requests match; no branch was pushed.",
+        false,
+      );
+    for (const candidate of candidates) {
+      if (candidate.head !== branch || candidate.base !== input.start.target)
+        throw new TaskDeliveryError(
+          "TASK_DELIVERY_CHANGE_REQUEST_MISMATCH",
+          "The matching change request has an unexpected branch or target; no branch was pushed.",
+          false,
+        );
+      if (candidate.state !== "open" || candidate.draft)
+        throw new TaskDeliveryError(
+          candidate.draft
+            ? "TASK_DELIVERY_CHANGE_REQUEST_DRAFT"
+            : "TASK_DELIVERY_CHANGE_REQUEST_CLOSED",
+          "The matching change request is Draft, closed, or merged; no branch was pushed. Handle it manually or recover its merged receipt.",
+          false,
+        );
     }
     const remoteExists = await this.#remoteBranchExists(remote, branch);
     if (input.priorChangeRequest && !remoteExists)
@@ -602,11 +639,12 @@ export class TaskDeliveryService {
         );
       }
 
-    const candidates = await this.#listChangeRequests(
-      remote,
-      branch,
-      input.start.target,
-    );
+    if (changed && candidates.length > 0)
+      candidates = await this.#listChangeRequests(
+        remote,
+        branch,
+        input.start.target,
+      );
     let changeRequest: RemoteChangeRequest;
     if (input.priorChangeRequest) {
       const priorUrl = canonicalChangeRequestUrl(
@@ -769,6 +807,61 @@ export class TaskDeliveryService {
     );
   }
 
+  async findMergedDelivery(
+    start: GitDeliveryStart,
+  ): Promise<GitDeliveryResult | null> {
+    try {
+      const branch = requireBranch(start.branch);
+      if (
+        (await gitText(this.root, ["branch", "--show-current"])).trim() !==
+        branch
+      )
+        return null;
+      await assertNoRepositoryGitCommands(this.root);
+      const head = (await gitText(this.root, ["rev-parse", "HEAD"])).trim();
+      await this.assertPrepared({ changed: true, head });
+      const remote = parseOriginRemote(
+        await gitText(this.root, ["config", "--get", "remote.origin.url"]),
+      );
+      const candidates = await this.#listChangeRequests(
+        remote,
+        branch,
+        start.target,
+      );
+      if (candidates.length !== 1) return null;
+      const candidate = candidates[0]!;
+      if (
+        !candidate.merged ||
+        candidate.state !==
+          (remote.provider === "github" ? "closed" : "merged") ||
+        candidate.draft ||
+        candidate.head !== branch ||
+        candidate.base !== start.target ||
+        candidate.headSha !== head ||
+        candidate.sourceProject?.toLowerCase() !== remote.project.toLowerCase()
+      )
+        return null;
+      // Recheck local invariants after the hosting request; no publish operation is used here.
+      if (
+        (await gitText(this.root, ["branch", "--show-current"])).trim() !==
+        branch
+      )
+        return null;
+      await this.assertPrepared({ changed: true, head });
+      return {
+        changed: true,
+        head,
+        changeRequest: {
+          kind: remote.provider === "github" ? "github_pr" : "gitlab_mr",
+          url: candidate.url,
+          draft: false,
+        },
+      };
+    } catch (error) {
+      throw taskDeliveryFailure(error, "reconciliation");
+    }
+  }
+
   async #listChangeRequests(
     remote: RemoteRepository,
     branch: string,
@@ -799,6 +892,19 @@ export class TaskDeliveryService {
           state: requireString(record.state).toLowerCase(),
           head: requireString(requireRecord(record.head).ref),
           base: requireString(requireRecord(record.base).ref),
+          headSha:
+            typeof requireRecord(record.head).sha === "string"
+              ? (requireRecord(record.head).sha as string)
+              : undefined,
+          sourceProject:
+            typeof requireRecord(record.head).repo === "object" &&
+            requireRecord(record.head).repo !== null
+              ? requireString(
+                  requireRecord(requireRecord(record.head).repo).full_name,
+                )
+              : undefined,
+          merged:
+            typeof record.merged_at === "string" && record.merged_at.length > 0,
         };
       });
     }
@@ -819,6 +925,13 @@ export class TaskDeliveryService {
       const record = requireRecord(item);
       const state = requireString(record.state).toLowerCase();
       return {
+        headSha: typeof record.sha === "string" ? record.sha : undefined,
+        sourceProject:
+          record.source_project_id === record.target_project_id &&
+          typeof record.source_project_id === "number"
+            ? remote.project
+            : undefined,
+        merged: state === "merged",
         url: canonicalChangeRequestUrl(requireString(record.web_url), remote),
         draft: requireBoolean(record.draft),
         state: state === "opened" ? "open" : state,
@@ -954,7 +1067,11 @@ function canonicalChangeRequestUrl(
     url.hostname.toLowerCase() !== remote.host ||
     url.username ||
     url.password ||
-    !url.pathname.startsWith(`/${remote.project}${marker}`)
+    url.port ||
+    !url.pathname.startsWith(`/${remote.project}${marker}`) ||
+    !/^[1-9][0-9]*\/?$/.test(
+      url.pathname.slice(`/${remote.project}${marker}`.length),
+    )
   )
     throw new TaskDeliveryError(
       "TASK_DELIVERY_PROVIDER_RESPONSE_INVALID",
@@ -962,10 +1079,42 @@ function canonicalChangeRequestUrl(
       true,
     );
   url.hash = "";
+  url.search = "";
   return url.toString();
 }
 
 export function taskDeliveryBranch(taskId: string): string {
   const compact = taskId.replace(/-/gu, "").slice(0, 16).toLowerCase();
   return requireBranch(`spire/task-${compact}`);
+}
+
+export function taskDeliveryFailure(
+  error: unknown,
+  phase: "preparation" | "delivery" | "reconciliation",
+): TaskDeliveryError {
+  if (error instanceof TaskDeliveryError) return error;
+  const record =
+    error && typeof error === "object"
+      ? (error as {
+          code?: unknown;
+          name?: unknown;
+          details?: { exitCode?: unknown };
+        })
+      : {};
+  const code =
+    typeof record.code === "string" &&
+    /^[A-Z][A-Z0-9_]{0,63}$/.test(record.code)
+      ? record.code
+      : "UNEXPECTED_ERROR";
+  const exitCode = record.details?.exitCode;
+  const suffix =
+    typeof exitCode === "string" && /^[0-9]{1,3}$/.test(exitCode)
+      ? `; exit ${exitCode}`
+      : "";
+  return new TaskDeliveryError(
+    `TASK_DELIVERY_${code}`,
+    `Task Git ${phase} failed (${code}${suffix}). The coding report was retained; retry delivery after resolving the host error.`,
+    code !== "GIT_UNSAFE_CONFIG",
+    { cause: error },
+  );
 }

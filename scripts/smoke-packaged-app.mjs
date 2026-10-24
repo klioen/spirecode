@@ -257,12 +257,12 @@ async function launchGui(command) {
 const db = new DatabaseSync(${JSON.stringify(taskDatabase)}, { readOnly: true });
 const migration = db.prepare("SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
 const integrity = db.prepare("PRAGMA quick_check").get();
-const tables = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('tasks','task_runs','task_run_steps','task_events','task_notifications','task_session_archives','task_run_retention','task_artifact_archives','task_archive_states')").get();
+const tables = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('tasks','task_runs','task_run_steps','task_events','task_notifications','task_session_archives','task_run_retention','task_artifact_archives','task_archive_states','task_verifications')").get();
 const columns = db.prepare("PRAGMA table_info(tasks)").all();
 const metadata = columns.find((column) => column.name === "metadata_json");
 const verification = columns.find((column) => column.name === "verification_enabled");
 db.close();
-const valid = migration?.version === 7 && migration?.name === "migration-v7" && integrity?.quick_check === "ok" && tables?.count === 9 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "'{}'" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
+const valid = migration?.version === 7 && migration?.name === "migration-v7" && integrity?.quick_check === "ok" && tables?.count === 10 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "'{}'" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
 if (!valid) console.error("Task schema smoke failed", { migration, integrity, tables, metadata, verification });
 process.exit(valid ? 0 : 2);`,
     ],
