@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { commands, type TerminalMessage } from "../../bindings";
+import { commands } from "../../bindings";
 import { useEditorStore } from "../editor/editorStore";
 import { terminalTheme } from "../theme/themeColors";
 import { useThemeStore } from "../theme/themeStore";
 import { useSettingsStore } from "../settings/settingsStore";
 import { terminalRegistry } from "./terminalRegistry";
-import { decodeTerminalOutput, terminalStream } from "./terminalStream";
+import { attachTerminalSession } from "./terminalReplay";
 
 export function TerminalInstance({
   worktreeId,
@@ -51,24 +51,22 @@ export function TerminalInstance({
         fit.fit();
         terminal.focus();
         terminalRegistry.set(terminalId, terminal);
-        const unsubscribe = terminalStream.subscribe(
+        const session = attachTerminalSession(
           terminalId,
-          (message: TerminalMessage) => {
-            if (message.type === "output")
-              terminal.write(decodeTerminalOutput(terminalId, message.data));
-            else
-              useEditorStore
-                .getState()
-                .setTerminalStatus(
-                  worktreeId,
-                  terminalId,
-                  message.type === "exit" ? "exited" : "error",
-                );
+          terminal,
+          (data) => {
+            void commands.terminalWrite(terminalId, data);
+          },
+          (message) => {
+            useEditorStore
+              .getState()
+              .setTerminalStatus(
+                worktreeId,
+                terminalId,
+                message.type === "exit" ? "exited" : "error",
+              );
           },
         );
-        const input = terminal.onData((data) => {
-          void commands.terminalWrite(terminalId, data);
-        });
         let resizeTimer = 0;
         observer = new ResizeObserver(() => {
           window.clearTimeout(resizeTimer);
@@ -83,8 +81,7 @@ export function TerminalInstance({
         });
         observer.observe(host.current);
         cleanup = () => {
-          input.dispose();
-          unsubscribe();
+          session.dispose();
           window.clearTimeout(resizeTimer);
           terminalRegistry.delete(terminalId);
         };

@@ -13,7 +13,10 @@ interface TerminalHistory {
 const MAX_HISTORY_BYTES = 1024 * 1024;
 const subscribers = new Map<string, Subscriber>();
 const histories = new Map<string, TerminalHistory>();
-const decoders = new Map<string, TextDecoder>();
+const decoders = new Map<
+  string,
+  ReturnType<typeof createTerminalOutputDecoder>
+>();
 const encoder = new TextEncoder();
 
 function outputBytes(output: TerminalOutput): number {
@@ -43,17 +46,26 @@ function remember(message: TerminalMessage): void {
   }
 }
 
+export function createTerminalOutputDecoder(): (
+  output: TerminalOutput,
+) => string {
+  const decoder = new TextDecoder();
+  return (output) => {
+    if (typeof output === "string") return output;
+    return decoder.decode(
+      output instanceof Uint8Array ? output : new Uint8Array(output),
+      { stream: true },
+    );
+  };
+}
+
 export function decodeTerminalOutput(
   terminalId: string,
   output: TerminalOutput,
 ): string {
-  if (typeof output === "string") return output;
-  const decoder = decoders.get(terminalId) ?? new TextDecoder();
-  decoders.set(terminalId, decoder);
-  return decoder.decode(
-    output instanceof Uint8Array ? output : new Uint8Array(output),
-    { stream: true },
-  );
+  const decode = decoders.get(terminalId) ?? createTerminalOutputDecoder();
+  decoders.set(terminalId, decode);
+  return decode(output);
 }
 
 export const terminalStream = {
@@ -61,16 +73,20 @@ export const terminalStream = {
     remember(message);
     subscribers.get(message.terminalId)?.(message);
   },
-  subscribe(terminalId: string, subscriber: Subscriber): () => void {
+  subscribe(
+    terminalId: string,
+    subscriber: Subscriber,
+  ): { replay: TerminalMessage[]; unsubscribe: () => void } {
     subscribers.set(terminalId, subscriber);
     const history = histories.get(terminalId);
-    if (history) {
-      for (const message of history.output) subscriber(message);
-      if (history.lifecycle) subscriber(history.lifecycle);
-    }
-    return () => {
-      if (subscribers.get(terminalId) === subscriber)
-        subscribers.delete(terminalId);
+    const replay: TerminalMessage[] = history ? [...history.output] : [];
+    if (history?.lifecycle) replay.push(history.lifecycle);
+    return {
+      replay,
+      unsubscribe: () => {
+        if (subscribers.get(terminalId) === subscriber)
+          subscribers.delete(terminalId);
+      },
     };
   },
   close(terminalId: string): void {
