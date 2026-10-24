@@ -20,6 +20,10 @@ describe("IPC command argument validation", () => {
     expect(validateCommandArgs("task_notifications_mark_all_read", {})).toEqual(
       {},
     );
+    expect(validateCommandArgs("task_dashboard", {})).toEqual({});
+    expect(() => validateCommandArgs("task_dashboard", { limit: 1 })).toThrow(
+      "Unexpected argument: limit",
+    );
     expect(() =>
       validateCommandArgs("task_notifications_mark_all_read", {
         sql: "DELETE",

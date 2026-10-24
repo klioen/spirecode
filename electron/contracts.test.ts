@@ -22,6 +22,7 @@ describe("Electron host allowlists", () => {
         "chat_session_set_thinking_level",
         "chat_session_rename",
         "task_list",
+        "task_dashboard",
         "task_create",
         "task_rewrite_start",
         "settings_memory_read",

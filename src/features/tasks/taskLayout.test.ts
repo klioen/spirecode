@@ -17,5 +17,8 @@ describe("Task layout", () => {
     );
     expect(css).toContain("@container task-surface (max-width: 600px)");
     expect(css).toContain("@container task-surface (max-width: 420px)");
+    expect(css).toMatch(
+      /@container task-surface \(max-width: 420px\)[\s\S]*?\.task-dashboard-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    );
   });
 });

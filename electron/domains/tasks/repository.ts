@@ -12,9 +12,11 @@ import {
   type RunStepState,
   type SagaPhase,
   type Task,
+  type TaskDashboardCounts,
   type TaskEvent,
   type TaskNotification,
   type TaskReviewMetadata,
+  type TaskMetricRun,
   type TaskRun,
   type TaskRunError,
   type TaskRunReport,
@@ -126,6 +128,18 @@ interface VerificationRow {
   finished_at: number | null;
 }
 
+interface MetricRunRow {
+  task_id: string;
+  attempt: number;
+  status: TaskRunStatus;
+  worktree_id: string | null;
+  session_id: string | null;
+  session_path: string | null;
+  started_at: number | null;
+  settled_at: number | null;
+  finished_at: number | null;
+}
+
 interface RunRow {
   id: string;
   task_id: string;
@@ -198,6 +212,20 @@ function mapVerification(row: VerificationRow): TaskVerification {
       : null,
     sessionId: row.session_id,
     createdAt: row.created_at,
+    finishedAt: row.finished_at,
+  };
+}
+
+function mapMetricRun(row: MetricRunRow): TaskMetricRun {
+  return {
+    taskId: row.task_id,
+    attempt: row.attempt,
+    status: row.status,
+    worktreeId: row.worktree_id,
+    sessionId: row.session_id,
+    sessionPath: row.session_path,
+    startedAt: row.started_at,
+    settledAt: row.settled_at,
     finishedAt: row.finished_at,
   };
 }
@@ -796,6 +824,123 @@ export class TaskRepository {
       items,
       nextCursor:
         hasMore && last ? encodeCursor([last.updatedAt, last.id]) : null,
+    };
+  }
+
+  dashboardCounts(since: number, now: number): TaskDashboardCounts {
+    if (
+      !Number.isSafeInteger(since) ||
+      !Number.isSafeInteger(now) ||
+      since > now
+    )
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "dashboard time range is invalid",
+      );
+    const row = this.connection
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN status IN ('queued', 'running') THEN 1 ELSE 0 END) AS active,
+           SUM(CASE WHEN status IN ('backlog', 'needs_review', 'failed')
+             OR (status = 'running' AND EXISTS (
+               SELECT 1 FROM task_runs
+               WHERE task_runs.id = tasks.active_run_id
+                 AND task_runs.status = 'awaiting_report'
+             )) THEN 1 ELSE 0 END) AS attention,
+           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) AS created_recent,
+           SUM(CASE WHEN completed_at IS NOT NULL AND completed_at BETWEEN ? AND ? THEN 1 ELSE 0 END) AS completed_recent,
+           SUM(CASE WHEN status = 'backlog' THEN 1 ELSE 0 END) AS backlog,
+           SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+           SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
+           SUM(CASE WHEN status = 'needs_review' THEN 1 ELSE 0 END) AS needs_review,
+           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS status_completed,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+           SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
+         FROM tasks`,
+      )
+      .get(since, now, since, now) as Record<string, number | null>;
+    const count = (key: string) => row[key] ?? 0;
+    const byStatus = {
+      backlog: count("backlog"),
+      queued: count("queued"),
+      running: count("running"),
+      needs_review: count("needs_review"),
+      completed: count("status_completed"),
+      failed: count("failed"),
+      cancelled: count("cancelled"),
+    } satisfies Record<TaskStatus, number>;
+    const total = count("total");
+    if (
+      Object.values(byStatus).reduce((sum, value) => sum + value, 0) !== total
+    )
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "dashboard contains an unknown task status",
+      );
+    return {
+      total,
+      active: count("active"),
+      attention: count("attention"),
+      completed: count("completed"),
+      createdLast7Days: count("created_recent"),
+      completedLast7Days: count("completed_recent"),
+      byStatus,
+    };
+  }
+
+  listDashboardRuns(options: {
+    limit: number;
+    cursor?: { taskId: string; attempt: number } | null;
+  }): {
+    items: TaskMetricRun[];
+    nextCursor: { taskId: string; attempt: number } | null;
+  } {
+    if (
+      !Number.isInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > 500
+    )
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "dashboard run limit must be an integer from 1 to 500",
+      );
+    const parameters: Array<string | number> = [];
+    let where = "";
+    if (options.cursor) {
+      validateId(options.cursor.taskId, "cursor.taskId");
+      if (
+        !Number.isSafeInteger(options.cursor.attempt) ||
+        options.cursor.attempt < 1
+      )
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "dashboard run cursor is invalid",
+        );
+      where = "WHERE task_id > ? OR (task_id = ? AND attempt < ?)";
+      parameters.push(
+        options.cursor.taskId,
+        options.cursor.taskId,
+        options.cursor.attempt,
+      );
+    }
+    const rows = this.connection
+      .prepare(
+        `SELECT task_id, attempt, status, worktree_id, session_id, session_path,
+                started_at, settled_at, finished_at
+         FROM task_runs ${where}
+         ORDER BY task_id ASC, attempt DESC
+         LIMIT ?`,
+      )
+      .all(...parameters, options.limit + 1) as unknown as MetricRunRow[];
+    const hasMore = rows.length > options.limit;
+    const items = rows.slice(0, options.limit).map(mapMetricRun);
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor:
+        hasMore && last ? { taskId: last.taskId, attempt: last.attempt } : null,
     };
   }
 

@@ -203,6 +203,29 @@ describe("Task workbench read model", () => {
           nextCursor: null,
         })),
       },
+      taskDashboardAggregator: {
+        get: vi.fn(async () => ({
+          total: 1,
+          active: 1,
+          attention: 0,
+          completed: 0,
+          createdLast7Days: 1,
+          completedLast7Days: 0,
+          durationMs: 2_000,
+          tokenCount: 42,
+          measuredAt: 3_000,
+          advancingRunCount: 1,
+          byStatus: {
+            backlog: 0,
+            queued: 1,
+            running: 0,
+            needs_review: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+          },
+        })),
+      },
       taskRepository: {
         listAllRuns: vi.fn(() => [run]),
         listActiveRuns: vi.fn(() => activeRuns),
@@ -231,6 +254,12 @@ describe("Task workbench read model", () => {
     });
     expect(await state().taskList({ limit: 10 })).toMatchObject({
       items: [{ metadata: task.metadata }],
+    });
+    expect(await state().taskDashboard()).toMatchObject({
+      total: 1,
+      durationMs: 2_000,
+      tokenCount: 42,
+      byStatus: { queued: 1, cancelled: 0 },
     });
     expect(
       await state([

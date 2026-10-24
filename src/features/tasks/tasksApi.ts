@@ -128,6 +128,20 @@ export interface TaskListPage {
   activeCount?: number;
 }
 
+export interface TaskDashboardValue {
+  total: number;
+  active: number;
+  attention: number;
+  completed: number;
+  createdLast7Days: number;
+  completedLast7Days: number;
+  durationMs: number;
+  tokenCount: number;
+  measuredAt: number;
+  advancingRunCount: number;
+  byStatus: Record<TaskStatus, number>;
+}
+
 export interface CreateTaskInput {
   title: string;
   description: string;
@@ -192,6 +206,7 @@ export interface TasksApi {
     projectId?: string;
     attentionOnly?: boolean;
   }): Promise<TaskListPage>;
+  dashboard(): Promise<TaskDashboardValue>;
   get(taskId: string): Promise<TaskDetailValue>;
   create(input: CreateTaskInput): Promise<TaskDetailValue>;
   update(
@@ -237,6 +252,7 @@ export interface TasksApi {
 /** Shape expected from the future allowlisted bindings extension. */
 export interface TaskHostBindings {
   taskList: TasksApi["list"];
+  taskDashboard(): Promise<TaskDashboardValue>;
   taskGet(input: { taskId: string }): Promise<TaskDetailValue>;
   taskCreate: TasksApi["create"];
   taskUpdate(input: {
@@ -283,6 +299,7 @@ export interface TaskHostBindings {
 
 export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
   list: (input) => host.taskList(input),
+  dashboard: () => host.taskDashboard(),
   get: (taskId) => host.taskGet({ taskId }),
   create: (input) => host.taskCreate(input),
   update: (taskId, expectedRevision, patch) =>
@@ -309,6 +326,7 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
 
 export const tasksApi: TasksApi = {
   list: (input) => commands.taskList(input) as Promise<TaskListPage>,
+  dashboard: () => commands.taskDashboard() as Promise<TaskDashboardValue>,
   get: (taskId) => commands.taskGet(taskId) as Promise<TaskDetailValue>,
   create: (input) =>
     commands.taskCreate(

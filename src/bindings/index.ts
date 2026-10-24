@@ -109,6 +109,7 @@ export const commands = {
 
   taskList: (input: Record<string, unknown>) =>
     command<unknown>("task_list", input),
+  taskDashboard: () => command<unknown>("task_dashboard"),
   taskGet: (taskId: string) => command<unknown>("task_get", { taskId }),
   taskCreate: (input: Record<string, unknown>) =>
     command<unknown>("task_create", { input }),

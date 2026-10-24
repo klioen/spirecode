@@ -55,6 +55,119 @@ function createRun(expectedRevision = 1) {
 }
 
 describe("TaskRepository", () => {
+  it("aggregates the global dashboard with explicit statuses and rolling boundaries", () => {
+    const statuses = [
+      "backlog",
+      "queued",
+      "running",
+      "needs_review",
+      "completed",
+      "failed",
+      "cancelled",
+    ] as const;
+    for (const [index, status] of statuses.entries()) {
+      const id = `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+      repository.createTask({ ...taskInput, id, title: status });
+      if (status !== "running")
+        database.connection
+          .prepare("UPDATE tasks SET status = ? WHERE id = ?")
+          .run(status, id);
+    }
+    const runningId = "10000000-0000-4000-8000-000000000003";
+    const { run } = repository.createRun(runningId, 1, {
+      id: "40000000-0000-4000-8000-000000000003",
+      projectId: taskInput.projectId,
+      promptMarker: "spire-task-run:dashboard-running",
+      ownsManagedWorktree: false,
+    });
+    database.connection
+      .prepare("UPDATE task_runs SET status = 'awaiting_report' WHERE id = ?")
+      .run(run.id);
+    database.connection
+      .prepare(
+        "UPDATE tasks SET status = 'running', active_run_id = ? WHERE id = ?",
+      )
+      .run(run.id, runningId);
+
+    const boundary = now - 7 * 24 * 60 * 60 * 1_000;
+    database.connection
+      .prepare(
+        "UPDATE tasks SET created_at = ?, completed_at = ? WHERE status = 'completed'",
+      )
+      .run(boundary, boundary);
+    database.connection
+      .prepare("UPDATE tasks SET created_at = ? WHERE status = 'cancelled'")
+      .run(boundary - 1);
+
+    const dashboard = repository.dashboardCounts(boundary, now);
+    expect(dashboard).toMatchObject({
+      total: 7,
+      active: 2,
+      attention: 4,
+      completed: 1,
+      createdLast7Days: 6,
+      completedLast7Days: 1,
+      byStatus: {
+        backlog: 1,
+        queued: 1,
+        running: 1,
+        needs_review: 1,
+        completed: 1,
+        failed: 1,
+        cancelled: 1,
+      },
+    });
+    expect(
+      Object.values(dashboard.byStatus).reduce((sum, count) => sum + count, 0),
+    ).toBe(dashboard.total);
+  });
+
+  it("aggregates every task rather than the currently requested list page", () => {
+    for (let index = 1; index <= 101; index++)
+      repository.createTask({
+        ...taskInput,
+        id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        title: `Task ${index}`,
+      });
+    expect(repository.listTasks({ limit: 1 }).items).toHaveLength(1);
+    expect(repository.dashboardCounts(now - 1, now).total).toBe(101);
+  });
+
+  it("returns empty dashboard aggregates and pages every run independently of task pagination", () => {
+    expect(repository.dashboardCounts(now - 1, now)).toMatchObject({
+      total: 0,
+      active: 0,
+      attention: 0,
+      completed: 0,
+    });
+    createTask();
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      database.connection
+        .prepare(
+          `INSERT INTO task_runs (
+            id, task_id, attempt, status, saga_phase, project_id,
+            owns_managed_worktree, prompt_marker, revision, created_at
+          ) VALUES (?, ?, ?, 'reported', 'terminal', ?, 0, ?, 1, ?)`,
+        )
+        .run(
+          `40000000-0000-4000-8000-${String(attempt).padStart(12, "0")}`,
+          taskInput.id,
+          attempt,
+          taskInput.projectId,
+          `spire-task-run:dashboard-${attempt}`,
+          now,
+        );
+    }
+    const first = repository.listDashboardRuns({ limit: 2 });
+    const second = repository.listDashboardRuns({
+      limit: 2,
+      cursor: first.nextCursor,
+    });
+    expect(first.items.map((run) => run.attempt)).toEqual([3, 2]);
+    expect(second.items.map((run) => run.attempt)).toEqual([1]);
+    expect(second.nextCursor).toBeNull();
+  });
+
   it("searches literal text and scopes attention tasks in the durable list", () => {
     createTask();
     repository.createTask({

@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import type { TaskRun } from "./types.js";
+import type { TaskMetricRun, TaskRun } from "./types.js";
 
 interface CachedTokenCount {
   size: number;
@@ -68,7 +68,13 @@ export function parseSessionTokenCount(
   return Math.round(tokenCount);
 }
 
-export function taskRunDurationMs(run: TaskRun, now = Date.now()): number {
+export function taskRunDurationMs(
+  run: Pick<
+    TaskRun | TaskMetricRun,
+    "startedAt" | "finishedAt" | "status" | "settledAt"
+  >,
+  now = Date.now(),
+): number {
   if (run.startedAt === null) return 0;
   let end: number;
   if (run.finishedAt !== null) end = run.finishedAt;

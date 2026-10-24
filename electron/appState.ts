@@ -41,6 +41,7 @@ import {
   type TaskDatabase,
 } from "./domains/tasks/database.js";
 import { TaskRepository } from "./domains/tasks/repository.js";
+import { TaskDashboardService } from "./domains/tasks/dashboard.js";
 import {
   taskRunDurationMs,
   TaskSessionMetricsReader,
@@ -83,6 +84,7 @@ export class AppState {
   readonly extensionPackages: ExtensionPackageService;
   readonly taskDatabase: TaskDatabase | null;
   readonly taskRepository: TaskRepository | null;
+  readonly taskDashboardAggregator: TaskDashboardService | null;
   readonly tasks: TaskService | null;
   readonly taskIntake: TaskIntakeService;
   readonly taskUnavailableReason: string | null;
@@ -363,6 +365,11 @@ export class AppState {
     this.taskDatabase = taskSubsystem?.database ?? null;
     this.taskRepository = taskSubsystem?.repository ?? null;
     this.tasks = taskSubsystem?.service ?? null;
+    this.taskDashboardAggregator = this.taskRepository
+      ? new TaskDashboardService(this.taskRepository, {
+          tokenCount: (run) => this.taskRunTokenCount(run),
+        })
+      : null;
     this.taskUnavailableReason = taskUnavailableReason;
     this.taskUnavailableCode = taskUnavailableCode;
     if (this.tasks)
@@ -693,6 +700,16 @@ export class AppState {
     return this.taskDetail(await this.requireTasks().get(taskId));
   }
 
+  async taskDashboard() {
+    this.requireTasks();
+    if (!this.taskDashboardAggregator)
+      throw new CommandError(
+        "TASK_DATABASE_UNAVAILABLE",
+        "Task Dashboard is unavailable.",
+      );
+    return this.taskDashboardAggregator.get();
+  }
+
   async taskIntakeCreate(worktreeId: string) {
     this.requireTasks();
     return this.taskIntake.create(worktreeId);
@@ -929,7 +946,7 @@ export class AppState {
   }
 
   private async taskRunTokenCount(
-    run: import("./domains/tasks/types.js").TaskRun,
+    run: import("./domains/tasks/types.js").TaskMetricRun,
   ): Promise<number> {
     let sessionPath = run.sessionPath;
     if (!sessionPath && run.worktreeId && run.sessionId) {
@@ -1061,6 +1078,7 @@ export class AppState {
   }
 
   private send(topic: string, payload: unknown): void {
+    if (topic === "task://event") this.taskDashboardAggregator?.invalidate();
     if (!this.window.isDestroyed())
       this.window.webContents.send(`spire:event:${topic}`, payload);
   }
