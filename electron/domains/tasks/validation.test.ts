@@ -147,3 +147,46 @@ describe("task validation", () => {
     ).toThrow(TaskValidationError);
   });
 });
+
+it("normalizes bounded issue evidence arrays without changing verdict or canonical v8 evidence", async () => {
+  const { validateTaskVerificationReport } = await import("./validation.js");
+  const value = {
+    verdict: "pass",
+    summary: "checked",
+    evidence: {
+      acceptanceCriteria: [],
+      commands: [],
+      issues: [
+        {
+          severity: "minor",
+          summary: "cosmetic",
+          evidence: ["first", "second"],
+        },
+      ],
+    },
+  };
+  const normalize = (evidence: unknown) =>
+    validateTaskVerificationReport({
+      ...value,
+      evidence: {
+        ...value.evidence,
+        issues: [{ ...value.evidence.issues[0], evidence }],
+      },
+    } as unknown as import("./types.js").TaskVerificationReport);
+  expect(normalize(["first", "second"])).toMatchObject({
+    verdict: "pass",
+    evidence: { issues: [{ evidence: "first\nsecond" }] },
+  });
+  expect(normalize("first\nsecond").evidence.issues[0]!.evidence).toBe(
+    "first\nsecond",
+  );
+  for (const invalid of [
+    [42],
+    [null],
+    {},
+    Array(101).fill("x"),
+    ["界".repeat(3000)],
+    ["x".repeat(5000), "y".repeat(5000)],
+  ])
+    expect(() => normalize(invalid)).toThrow(TaskValidationError);
+});

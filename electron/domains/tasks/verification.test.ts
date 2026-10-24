@@ -22,6 +22,9 @@ describe("verification prompt", () => {
     );
     expect(prompt).toContain("a".repeat(40));
     expect(prompt).toContain("task_report_verification");
+    expect(prompt).toContain("at most two corrections");
+    expect(prompt).toContain("no further calls after acceptance");
+    expect(prompt).not.toContain("exactly once");
     expect(prompt).toContain("must not modify the verified implementation");
     expect(prompt).not.toContain("coding agent summary");
     expect(prompt).not.toContain("task_report_result");

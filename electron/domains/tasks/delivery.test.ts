@@ -44,6 +44,38 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 
+describe("read-only current commit verification snapshot", () => {
+  it("reads the clean bound branch without staging, committing, or resetting", async () => {
+    const root = repository();
+    const delivery = new TaskDeliveryService(root);
+    const start = await delivery.inspectStart({
+      mode: "existing",
+      branch: "main",
+      baseRef: null,
+      persistedTarget: null,
+    });
+    writeFileSync(join(root, "README.md"), "new\n");
+    git(root, "add", "-A");
+    git(root, "commit", "--quiet", "-m", "new");
+    const head = git(root, "rev-parse", "HEAD");
+    expect(await delivery.currentPrepared(start)).toEqual({
+      head,
+      changed: true,
+    });
+    expect(git(root, "rev-parse", "HEAD")).toBe(head);
+    writeFileSync(join(root, "untracked.txt"), "dirty");
+    await expect(delivery.currentPrepared(start)).rejects.toMatchObject({
+      code: "TASK_DELIVERY_WORKTREE_NOT_CLEAN",
+    });
+    expect(git(root, "diff", "--cached", "--name-only")).toBe("");
+    expect(git(root, "rev-parse", "HEAD")).toBe(head);
+    git(root, "checkout", "-b", "another");
+    await expect(delivery.currentPrepared(start)).rejects.toMatchObject({
+      code: "TASK_DELIVERY_BRANCH_CONFLICT",
+    });
+  });
+});
+
 describe("origin parsing", () => {
   it.each([
     ["https://github.com/acme/widgets.git", "github", "acme/widgets"],
@@ -139,6 +171,15 @@ describe("TaskDeliveryService", () => {
       });
       expect(push).not.toHaveBeenCalled();
       expect(runner).toHaveBeenCalledTimes(1);
+      await expect(
+        service.deliver({
+          start,
+          prepared: { head, changed: true },
+          title: "Checked",
+          summary: "Verified current SHA",
+        }),
+      ).resolves.toMatchObject({ head, changeRequest: { draft: false } });
+      expect(push).not.toHaveBeenCalled();
     },
   );
 

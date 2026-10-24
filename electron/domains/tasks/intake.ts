@@ -239,6 +239,7 @@ export class TaskIntakeService {
     if (!record) return undefined;
     this.requireRecord(worktreeId, sessionId);
     return {
+      kind: "task-intake",
       readOnly: true,
       restoreEmpty: record.userTurn === 0,
       systemPrompt: `${INTAKE_PROMPT}\nProject: ${record.projectName}\nInitial baseline: ${record.baseRef} at ${record.baseCommit}. Use list_task_files for current baseline.`,

@@ -571,3 +571,24 @@ it.each(["completed", "running"] as const)(
     ).toBeNull();
   },
 );
+
+it("requires confirmation for current-commit re-verification and never reruns coding", async () => {
+  const api = createTasksApiMock();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<TaskDetail api={api} task={timedOutTask} onChange={vi.fn()} />);
+  const action = screen.getByRole("button", {
+    name: "Verify current commit again",
+  });
+  fireEvent.click(action);
+  expect(api.retryVerificationCurrentCommit).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  fireEvent.click(action);
+  await waitFor(() =>
+    expect(api.retryVerificationCurrentCommit).toHaveBeenCalledWith(
+      timedOutTask.id,
+      timedOutTask.revision,
+    ),
+  );
+  expect(api.run).not.toHaveBeenCalled();
+  confirm.mockRestore();
+});

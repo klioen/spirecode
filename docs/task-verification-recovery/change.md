@@ -80,3 +80,31 @@ populated v7 migration, IPC allowlisting, UI actions and restricted tool respons
   <https://github.com/klioen/spirecode/pull/108>. A duplicate recovery request was
   rejected with no Task revision, verification or PR change. Task remains
   `needs_review`; no acceptance, merge or release was performed.
+
+## Report format correction, session routing, and changed-commit retry
+
+- One successfully accepted report is required, not one tool invocation. The
+  verifier may correct schema-rejected calls at most twice before acceptance;
+  terminal/deadline/cancellation fences still reject late or duplicate verdicts.
+- The tool accepts issue evidence as a string or up to 100 string fragments.
+  Main preserves fragments as newline-separated canonical text, enforcing the
+  existing 8 KiB UTF-8 issue limit and 256 KiB report limit without truncation.
+  The stored schema remains v8. Recovery excludes only positively identified SDK
+  schema rejections and still requires one unambiguous valid report.
+- Main assigns `chat`, `task-intake`, and `task-verification` presentation kinds
+  independently of permissions. The narrow `chat_session_kind(worktreeId,
+  sessionId)` query reconciles restored tabs before rendering intake UI, including
+  empty intakes whose pi JSONL is not yet created. Kind is never sent to pi.
+- **Verify current commit again** requires explicit user confirmation. Its
+  `task_retry_verification_current_commit(taskId, expectedRevision)` command reads
+  the current clean HEAD on the persisted Task branch in Main; Renderer cannot
+  provide a SHA, verdict, evidence, or path. Dirty, busy, cancelled, delivered,
+  stale, and wrong-branch requests are rejected before mutation.
+- A transaction retains old verification rows, audits old/new SHA and old Git
+  preparation, replaces the delivery pin, creates a fresh independent attempt,
+  and reactivates the same coding Run. Attempt numbering is monotonic across all
+  commits of that Run. Restart continues the new verification without coding;
+  any insertion failure rolls back the pin, audit event and Run activation.
+- A passed current commit can adopt an already-merged exact hosting receipt after
+  rechecking repository, source branch, target, source project, SHA and cleanliness.
+  Mismatches remain errors. No new PR, push, merge or acceptance occurs on adoption.

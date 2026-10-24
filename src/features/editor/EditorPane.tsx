@@ -698,6 +698,32 @@ export function EditorPane({
     () => view?.tabs.find((tab) => tab.id === view.activeTabId),
     [view],
   );
+  const [kindLookup, setKindLookup] = useState<{
+    id: string;
+    error: string | null;
+  } | null>(null);
+  const unresolvedChat =
+    active?.type === "chat" && !active.kindResolved ? active : null;
+  useEffect(() => {
+    if (!unresolvedChat) return;
+    let current = true;
+    const { id, sessionId } = unresolvedChat;
+    setKindLookup({ id, error: null });
+    void commands.chatSessionKind(worktreeId, sessionId).then(
+      ({ kind }) => {
+        if (!current) return;
+        useEditorStore
+          .getState()
+          .reconcileChatKinds(worktreeId, [{ sessionId, kind }]);
+      },
+      (error) => {
+        if (current) setKindLookup({ id, error: commandError(error).message });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [worktreeId, unresolvedChat?.id]);
   const activateTab = (tabId: string) => {
     useEditorStore.getState().beginNavigation();
     useEditorStore.getState().activate(worktreeId, tabId);
@@ -918,6 +944,19 @@ export function EditorPane({
                 worktreeId={worktreeId}
                 terminalId={active.terminalId}
               />
+            </div>
+          ) : active.type === "chat" && !active.kindResolved ? (
+            <div
+              className="project-session-state"
+              role={
+                kindLookup?.id === active.id && kindLookup.error
+                  ? "alert"
+                  : "status"
+              }
+            >
+              {kindLookup?.id === active.id && kindLookup.error
+                ? kindLookup.error
+                : t("projects.sessions.loading")}
             </div>
           ) : active.type === "chat" && active.kind === "task-intake" ? (
             <TaskIntakeView

@@ -134,6 +134,9 @@ export const zhCN = {
   "tasks.verification.title": "独立交付验证",
   "tasks.verification.openSession": "打开验证会话",
   "tasks.verification.retry": "仅重试验证",
+  "tasks.verification.currentCommitRetry": "重新验证当前提交",
+  "tasks.verification.currentCommitConfirm":
+    "对绑定 Task 分支上当前干净的提交发起新的独立验证？旧报告会保留，但不能证明当前提交。不会重跑编码；通过后继续 PR/MR 交付，不会自动验收或合并。",
   "tasks.verification.recover": "恢复报告并继续交付",
   "tasks.verification.retryHint":
     "复用已完成的编码和原提交；不会重新运行编码智能体。验证通过后继续交付 PR/MR。",

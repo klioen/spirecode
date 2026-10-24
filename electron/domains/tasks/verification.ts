@@ -16,7 +16,7 @@ export const TASK_VERIFICATION_TOOL_DESCRIPTION: TaskVerificationToolDescription
   {
     name: TASK_VERIFICATION_TOOL_NAME,
     description:
-      "Submit the bound independent Task verification exactly once. The host validates the verification identity and structured evidence.",
+      "Submit one successfully accepted report for the bound independent Task verification. Schema-rejected calls may be corrected before acceptance. The host validates the verification identity and structured evidence.",
   };
 
 export function verificationMarker(verificationId: string): string {
@@ -71,10 +71,11 @@ export function buildVerificationPrompt(
     `codingRunId: ${verification.codingRunId}`,
     `worktreeId: ${verification.worktreeId}`,
     `commitSha: ${verification.commitSha}`,
-    "Only a successful report-tool response confirms that the verdict was recorded. If the tool rejects the report, say it was NOT accepted and the Task requires recovery or retry; never claim success from chat text alone.",
+    "Only a successful report-tool response confirms that the verdict was recorded. A schema/format validation rejection does NOT consume your submission: correct only the malformed fields and resubmit, at most two corrections while this attempt remains active. Preserve the verdict and all evidence; never weaken criteria to make validation pass. If still rejected, say it was NOT accepted and needs a new verification retry. Never retry a terminal, expired, cancelled, superseded, or already-accepted attempt, and never claim success from chat text alone.",
+    'Evidence shape: {acceptanceCriteria:[{criterion:"...",status:"pass|fail|inconclusive",evidence:["..."]}],commands:[{command:"...",status:"passed|failed",summary:"..."}],issues:[{severity:"blocker|major|minor",summary:"...",evidence:"..."}]}. Issue evidence prefers a string; a string array is also accepted and preserved as newline-separated text.',
     "The host cancels verification when its bounded deadline expires. A timed-out attempt cannot publish a PR; a user can retry verification without rerunning coding.",
     "The workspace is expected to be clean at exactly commitSha. Report inconclusive if that invariant is not true.",
-    `Call ${TASK_VERIFICATION_TOOL_NAME} exactly once with verificationId, verdict, summary, and structured evidence. agent_settled without the tool is not completion.`,
+    `Call ${TASK_VERIFICATION_TOOL_NAME} until one report is successfully accepted, with verificationId, verdict, summary, and structured evidence (no further calls after acceptance). agent_settled without the tool is not completion.`,
     marker,
   ].join("\n");
 }

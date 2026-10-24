@@ -45,6 +45,7 @@ export function ProjectSessionList({
     void hostChatApi.list(worktreeId).then(
       (next) => {
         if (!active) return;
+        useEditorStore.getState().reconcileChatKinds(worktreeId, next);
         setSessions(
           [...next].sort(
             (left, right) =>

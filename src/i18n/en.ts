@@ -140,6 +140,9 @@ export const en = {
   "tasks.verification.title": "Independent verification",
   "tasks.verification.openSession": "Open verification session",
   "tasks.verification.retry": "Retry verification only",
+  "tasks.verification.currentCommitRetry": "Verify current commit again",
+  "tasks.verification.currentCommitConfirm":
+    "Start a fresh independent verification of the current clean commit on the bound Task branch? Old reports are retained but do not verify this commit. Coding is not rerun; a pass resumes PR/MR delivery, not automatic acceptance or merge.",
   "tasks.verification.recover": "Recover report and continue delivery",
   "tasks.verification.retryHint":
     "Reuse the completed coding run and its commit, without rerunning the coding agent. A passing verification resumes PR/MR delivery.",

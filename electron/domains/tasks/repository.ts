@@ -553,7 +553,16 @@ export class TaskRepository {
   resumeRunVerification(
     runId: string,
     expectedRevision: number,
-    input: { id: string; commitSha: string; deadlineAt: number },
+    input: {
+      id: string;
+      commitSha: string;
+      deadlineAt: number;
+      repin?: {
+        sourceVerificationId: string;
+        sourceHead: string;
+        prepared: { head: string; changed: boolean };
+      };
+    },
   ): TaskVerification {
     return this.#transaction(() => {
       const run = this.#requireRun(validateId(runId, "runId"));
@@ -576,12 +585,64 @@ export class TaskRepository {
           "TASK_INVALID_STATE",
           "Only the latest completed coding run can resume verification",
         );
-      const previous = this.findVerification(runId, input.commitSha);
-      if (!previous?.verdict || previous.verdict === "pass")
+      const previous = this.findVerification(
+        runId,
+        input.repin?.sourceHead ?? input.commitSha,
+      );
+      if (
+        !previous?.verdict ||
+        previous.verdict === "pass" ||
+        this.latestVerification(task.id)?.id !== previous.id ||
+        (input.repin &&
+          (previous.id !== input.repin.sourceVerificationId ||
+            input.repin.prepared.head !== input.commitSha ||
+            typeof input.repin.prepared.changed !== "boolean"))
+      )
         throw new TaskRepositoryError(
           "TASK_INVALID_STATE",
           "Verification is not retryable",
         );
+      if (input.repin) {
+        const preparation = this.listRunSteps(runId).find(
+          (step) => step.step === "git_preparation" && step.state === "done",
+        );
+        if (
+          (preparation?.details as { head?: string } | undefined)?.head !==
+            input.repin.sourceHead ||
+          this.listRunSteps(runId).some(
+            (step) =>
+              step.step === "cancel" ||
+              (step.step === "git_delivery" && step.state === "done"),
+          )
+        )
+          throw new TaskRepositoryError(
+            "TASK_INVALID_STATE",
+            "Prepared commit changed or delivery is terminal",
+          );
+        this.connection
+          .prepare(
+            "UPDATE task_run_steps SET details_json = ?, updated_at = ? WHERE run_id = ? AND step = 'git_preparation' AND state = 'done'",
+          )
+          .run(validateJsonPayload(input.repin.prepared), this.#now(), runId);
+        this.connection
+          .prepare(
+            "INSERT INTO task_events(task_id, run_id, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+          )
+          .run(
+            task.id,
+            runId,
+            "verification.current_commit_retried",
+            validateJsonPayload({
+              verificationId: input.id,
+              sourceVerificationId: previous.id,
+              sourceSessionId: previous.sessionId,
+              sourceHead: input.repin.sourceHead,
+              commitSha: input.commitSha,
+              previousPreparation: preparation!.details,
+            }),
+            this.#now(),
+          );
+      }
       const verification = this.#insertVerification({
         ...input,
         taskId: task.id,
@@ -639,8 +700,15 @@ export class TaskRepository {
         "Verification binding is invalid",
       );
     const attempt =
-      (this.findVerification(input.codingRunId, input.commitSha)?.attempt ??
-        0) + 1;
+      Number(
+        (
+          this.connection
+            .prepare(
+              "SELECT COALESCE(MAX(attempt), 0) AS attempt FROM task_verifications WHERE coding_run_id = ?",
+            )
+            .get(input.codingRunId) as { attempt: number }
+        ).attempt,
+      ) + 1;
     this.connection
       .prepare(
         `INSERT INTO task_verifications

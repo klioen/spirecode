@@ -31,6 +31,7 @@ vi.mock("../../bindings", async (importOriginal) => {
     commands: {
       ...actual.commands,
       taskIntakeCreate: vi.fn(),
+      chatSessionKind: vi.fn().mockResolvedValue({ kind: "chat" }),
       fsReadFile: vi.fn(),
       fsWriteFile: vi.fn(),
       gitDiffFile: vi.fn(),
@@ -121,6 +122,9 @@ beforeEach(() => {
   vi.mocked(commands.gitDiffFile).mockReset();
   vi.mocked(commands.terminalCreate).mockReset();
   vi.mocked(commands.taskIntakeCreate).mockReset();
+  vi.mocked(commands.chatSessionKind)
+    .mockReset()
+    .mockResolvedValue({ kind: "chat" });
   vi.mocked(hostChatApi.create).mockReset();
   vi.mocked(hostChatApi.rename).mockReset();
   vi.mocked(hostChatApi.delete).mockReset().mockResolvedValue(undefined);
@@ -180,6 +184,35 @@ describe("EditorPane resources", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close New task" }));
     expect(screen.queryByText("intake body intake-1")).not.toBeInTheDocument();
     expect(hostChatApi.delete).not.toHaveBeenCalled();
+  });
+
+  it("resolves a restored stale intake tab as a verifier before rendering any clarification UI", async () => {
+    const listing =
+      deferred<Awaited<ReturnType<typeof commands.chatSessionKind>>>();
+    vi.mocked(commands.chatSessionKind).mockReturnValueOnce(listing.promise);
+    useEditorStore.setState({
+      views: {
+        p1: {
+          activeTabId: "chat:p1:verify",
+          tabs: [
+            {
+              id: "chat:p1:verify",
+              type: "chat",
+              worktreeId: "p1",
+              sessionId: "verify",
+              title: "Verifier",
+              kind: "task-intake",
+              preview: false,
+            },
+          ],
+        },
+      },
+    });
+    render(<EditorPane worktreeId="p1" />);
+    expect(screen.queryByText("intake body verify")).toBeNull();
+    await act(async () => listing.resolve({ kind: "task-verification" }));
+    expect(await screen.findByText("chat body verify")).toBeInTheDocument();
+    expect(screen.queryByText("intake body verify")).toBeNull();
   });
 
   it("does not let late intake creation steal focus after navigation", async () => {
@@ -859,7 +892,9 @@ describe("Chat history popover", () => {
     vi.mocked(hostChatApi.list).mockResolvedValueOnce([
       { sessionId: "s1", worktreeId: "p1", title: "Disposable session" },
     ]);
-    useEditorStore.getState().openChat("p1", "s1", "Disposable session");
+    useEditorStore
+      .getState()
+      .openChat("p1", "s1", "Disposable session", "chat");
     const user = userEvent.setup();
     render(<EditorPane worktreeId="p1" />);
 
@@ -893,7 +928,7 @@ describe("Chat history popover", () => {
       createdAt: 1,
       updatedAt: 2,
     });
-    useEditorStore.getState().openChat("p1", "s1", "Before");
+    useEditorStore.getState().openChat("p1", "s1", "Before", "chat");
     const user = userEvent.setup();
     render(<EditorPane worktreeId="p1" />);
 
@@ -922,6 +957,7 @@ describe("Chat history popover", () => {
   it("renders the localized new-chat fallback for an empty external title", async () => {
     vi.mocked(hostChatApi.create).mockResolvedValueOnce({
       sessionId: "untitled",
+      kind: "chat",
       worktreeId: "p1",
       title: "",
     });
@@ -940,7 +976,12 @@ describe("Chat history popover", () => {
 
   it("opens a selected session and closes history", async () => {
     vi.mocked(hostChatApi.list).mockResolvedValueOnce([
-      { sessionId: "s1", worktreeId: "p1", title: "Selected session" },
+      {
+        sessionId: "s1",
+        worktreeId: "p1",
+        title: "Selected session",
+        kind: "chat",
+      },
     ]);
     const user = userEvent.setup();
     render(<EditorPane worktreeId="p1" />);
@@ -953,4 +994,62 @@ describe("Chat history popover", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("chat body s1")).toBeInTheDocument();
   });
+});
+
+it("restores an empty real intake via authoritative kind even before a session JSONL exists", async () => {
+  useEditorStore.setState({
+    views: {
+      p1: {
+        activeTabId: "chat:p1:empty",
+        tabs: [
+          {
+            id: "chat:p1:empty",
+            type: "chat",
+            worktreeId: "p1",
+            sessionId: "empty",
+            title: "",
+            kind: "task-intake",
+            preview: false,
+          },
+        ],
+      },
+    },
+  });
+  vi.mocked(commands.chatSessionKind).mockResolvedValueOnce({
+    kind: "task-intake",
+  });
+  render(<EditorPane worktreeId="p1" />);
+  expect(await screen.findByText("intake body empty")).toBeInTheDocument();
+  expect(commands.chatSessionKind).toHaveBeenCalledWith("p1", "empty");
+});
+
+it("ignores a late kind response after worktree navigation", async () => {
+  const pending =
+    deferred<Awaited<ReturnType<typeof commands.chatSessionKind>>>();
+  vi.mocked(commands.chatSessionKind).mockReturnValueOnce(pending.promise);
+  useEditorStore.setState({
+    views: {
+      p1: {
+        activeTabId: "chat:p1:verify",
+        tabs: [
+          {
+            id: "chat:p1:verify",
+            type: "chat",
+            worktreeId: "p1",
+            sessionId: "verify",
+            title: "",
+            kind: "task-intake",
+            preview: false,
+          },
+        ],
+      },
+    },
+  });
+  const { rerender } = render(<EditorPane worktreeId="p1" />);
+  rerender(<EditorPane worktreeId="p2" />);
+  await act(async () => pending.resolve({ kind: "task-verification" }));
+  expect(useEditorStore.getState().views.p1.tabs[0]).not.toHaveProperty(
+    "kindResolved",
+  );
+  expect(screen.queryByText("chat body verify")).toBeNull();
 });

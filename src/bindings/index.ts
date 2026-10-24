@@ -120,6 +120,14 @@ export const commands = {
   ) => command<unknown>("task_update", { taskId, expectedRevision, patch }),
   taskRetryVerification: (taskId: string, expectedRevision: number) =>
     command<unknown>("task_retry_verification", { taskId, expectedRevision }),
+  taskRetryVerificationCurrentCommit: (
+    taskId: string,
+    expectedRevision: number,
+  ) =>
+    command<unknown>("task_retry_verification_current_commit", {
+      taskId,
+      expectedRevision,
+    }),
   taskRecoverVerification: (taskId: string, expectedRevision: number) =>
     command<unknown>("task_recover_verification", { taskId, expectedRevision }),
   taskRun: (taskId: string, expectedRevision: number) =>
@@ -352,6 +360,11 @@ export const commands = {
 
   chatSessionCreate: (worktreeId: string) =>
     command<ChatSessionSummary>("chat_session_create", { worktreeId }),
+  chatSessionKind: (worktreeId: string, sessionId: string) =>
+    command<{ kind: NonNullable<ChatSessionSummary["kind"]> }>(
+      "chat_session_kind",
+      { worktreeId, sessionId },
+    ),
   chatSessionList: (worktreeId: string) =>
     command<ChatSessionSummary[]>("chat_session_list", { worktreeId }),
   chatSessionAttach: async (

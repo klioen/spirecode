@@ -197,6 +197,7 @@ describe("ChatService", () => {
     const created = await original.create("w1");
     const onSend = vi.fn(async () => undefined);
     const restricted = {
+      kind: "task-intake" as const,
       readOnly: true,
       systemPrompt: "Clarify only",
       customTools: [{ name: "prepare_task" }],
@@ -247,6 +248,43 @@ describe("ChatService", () => {
     ]);
   });
 
+  it("keeps readonly verifier kind distinct on create/list/open/rebind without sending kind to pi", async () => {
+    const { root, adapter } = await fixture();
+    const policy = {
+      kind: "task-verification" as const,
+      readOnly: true,
+      readOnlyTools: ["read", "bash"],
+      customTools: [{ name: "task_report_verification" }],
+    };
+    const create = vi.spyOn(adapter, "create");
+    const service = new ChatService(() => root, {
+      adapter,
+      resolveSessionOptions: (_worktree, id) =>
+        id === "s1" ? policy : undefined,
+    });
+    const created = await service.create("w1", policy);
+    expect(created.kind).toBe("task-verification");
+    expect(create.mock.calls[0]![1]).not.toHaveProperty("kind");
+    expect((await service.list("w1"))[0]!.kind).toBe("task-verification");
+    await service.disposeAll();
+    const reopened = new ChatService(() => root, {
+      adapter,
+      resolveSessionOptions: () => policy,
+    });
+    expect((await reopened.ensureLoaded("w1", "s1")).kind).toBe(
+      "task-verification",
+    );
+    expect(
+      (
+        await reopened.rebindSessionTools("w1", "s1", {
+          customTools: [{ name: "write" }],
+        })
+      ).kind,
+    ).toBe("task-verification");
+    const ordinary = new ChatService(() => root, { adapter });
+    expect((await ordinary.create("w1", { readOnly: true })).kind).toBe("chat");
+  });
+
   it("restores an empty intake at its original identity without widening its tools", async () => {
     const { root, adapter } = await fixture();
     const create = vi.spyOn(adapter, "create");
@@ -272,6 +310,31 @@ describe("ChatService", () => {
     await expect(
       service.attach("w1", "unknown", () => undefined),
     ).rejects.toMatchObject({ code: "CHAT_SESSION_NOT_FOUND" });
+  });
+
+  it("resolves a durable empty intake kind without opening pi or weakening its policy", async () => {
+    const { root, adapter } = await fixture();
+    const open = vi.spyOn(adapter, "open");
+    const create = vi.spyOn(adapter, "create");
+    const service = new ChatService(() => root, {
+      adapter,
+      resolveSessionOptions: (worktree, id) => {
+        if (id !== "empty") return undefined;
+        if (worktree !== "w1") throw new Error("ownership");
+        return { kind: "task-intake", readOnly: true, restoreEmpty: true };
+      },
+    });
+    expect(await service.sessionKind("w1", "empty")).toEqual({
+      kind: "task-intake",
+    });
+    await expect(service.sessionKind("w1", "missing")).rejects.toMatchObject({
+      code: "CHAT_SESSION_NOT_FOUND",
+    });
+    await expect(service.sessionKind("w2", "empty")).rejects.toThrow(
+      "ownership",
+    );
+    expect(open).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("resolves a session file only within the adapter-owned session root", async () => {
