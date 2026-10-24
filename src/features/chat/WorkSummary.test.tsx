@@ -56,7 +56,7 @@ describe("WorkSummary", () => {
     expect(within(details!).getByText("Checking another file")).toBeVisible();
   });
 
-  it("opens while working, ticks once per second, and collapses on completion", () => {
+  it("stays closed while working, ticks once per second, and stays closed on completion", () => {
     vi.useFakeTimers();
     vi.setSystemTime(11_000);
     const { rerender } = render(
@@ -66,7 +66,8 @@ describe("WorkSummary", () => {
     );
 
     const details = screen.getByText("Working for 10s").closest("details");
-    expect(details).toHaveAttribute("open");
+    expect(details).not.toHaveAttribute("open");
+    expect(details?.querySelector(".chat-work-active")).toBeNull();
     void act(() => vi.advanceTimersByTime(2_000));
     expect(screen.getByText("Working for 12s")).toBeVisible();
 
@@ -74,12 +75,81 @@ describe("WorkSummary", () => {
     expect(details).not.toHaveAttribute("open");
   });
 
-  it("preserves a user's disclosure choice during ordinary rerenders", () => {
-    const { rerender } = render(<WorkSummary work={worked} />);
-    const summary = screen.getByText("Worked for 45s");
+  it("shows only the latest semantic active item and updates it in place", () => {
+    const activeWork: ChatWorkDisplayItem = {
+      ...worked,
+      status: "working",
+      completedAt: undefined,
+      items: [
+        {
+          type: "thinking",
+          id: "thinking-active",
+          content: "private streamed reasoning",
+          status: "streaming",
+        },
+        {
+          type: "tool",
+          toolCallId: "read-active",
+          name: "read",
+          arguments: { path: "/private/project/src/very-long-file.tsx" },
+          result: "private partial output",
+          status: "running",
+        },
+      ],
+    };
+    const { rerender } = render(<WorkSummary work={activeWork} />);
+    const details = screen.getByText(/Working for/).closest("details")!;
+    const summary = details.querySelector("summary")!;
+
+    expect(details).not.toHaveAttribute("open");
+    expect(summary.querySelector(".chat-work-active-text")).toHaveTextContent(
+      "Reading file · very-long-file.tsx",
+    );
+    expect(summary.querySelector('[data-process-icon="read"]')).not.toBeNull();
+    expect(
+      within(summary).queryByText("private streamed reasoning"),
+    ).toBeNull();
+    expect(within(summary).queryByText("private partial output")).toBeNull();
+
+    rerender(
+      <WorkSummary
+        work={{
+          ...activeWork,
+          items: [
+            ...activeWork.items,
+            {
+              type: "thinking",
+              id: "thinking-latest",
+              content: "new private reasoning",
+              status: "streaming",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(within(summary).getByText("Thinking")).toBeVisible();
+    expect(
+      summary.querySelector('[data-process-icon="thinking"]'),
+    ).not.toBeNull();
+    expect(within(summary).queryByText("new private reasoning")).toBeNull();
+    expect(summary).not.toHaveTextContent("Reading file");
+  });
+
+  it("preserves a user's disclosure choice across streaming and completion", () => {
+    const active = {
+      ...worked,
+      status: "working" as const,
+      completedAt: undefined,
+    };
+    const { rerender } = render(<WorkSummary work={active} />);
+    const summary = screen.getByText(/Working for/);
     const details = summary.closest("details");
     fireEvent.click(summary);
-    rerender(<WorkSummary work={{ ...worked, completedAt: 47_000 }} />);
+    rerender(<WorkSummary work={{ ...active, items: [...active.items] }} />);
+    expect(details).toHaveAttribute("open");
+
+    rerender(<WorkSummary work={worked} />);
     expect(details).toHaveAttribute("open");
   });
 

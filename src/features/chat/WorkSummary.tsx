@@ -4,6 +4,7 @@ import { useTranslation } from "../../i18n";
 import { ChatMessage } from "./ChatMessage";
 import { TodoListCard } from "./TodoListCard";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { ReasoningIcon, toolPresentation } from "./ProcessIcon";
 import { ToolCard } from "./ToolCard";
 import { useLifecycleDisclosure } from "./useLifecycleDisclosure";
 import type { ChatWorkDisplayItem } from "./chatDisplayItems";
@@ -39,6 +40,24 @@ export function formatWorkDuration(
     : `${unit(hours, "hour", locale)} ${unit(remainingMinutes, "minute", locale)}`;
 }
 
+type ActiveWorkItem = Extract<
+  ChatWorkDisplayItem["items"][number],
+  { type: "thinking" | "tool" }
+>;
+
+export function activeWorkItem(
+  work: ChatWorkDisplayItem,
+): ActiveWorkItem | undefined {
+  if (work.status !== "working") return undefined;
+  return [...work.items]
+    .reverse()
+    .find(
+      (item): item is ActiveWorkItem =>
+        (item.type === "tool" && item.status === "running") ||
+        (item.type === "thinking" && item.status === "streaming"),
+    );
+}
+
 export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
   const { language, t } = useTranslation();
   const locale = language === "zh-CN" ? "zh-CN" : "en-US";
@@ -46,7 +65,10 @@ export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
   const fallbackCompletedAt = useRef(Date.now());
   const [now, setNow] = useState(Date.now);
   const working = work.status === "working";
-  const disclosure = useLifecycleDisclosure(working);
+  const disclosure = useLifecycleDisclosure();
+  const active = activeWorkItem(work);
+  const activeTool = active?.type === "tool" ? toolPresentation(active) : null;
+  const ActiveToolIcon = activeTool?.icon;
 
   useEffect(() => {
     if (!working) return;
@@ -83,8 +105,34 @@ export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
       open={disclosure.open}
       onToggle={disclosure.onToggle}
     >
-      <summary className={working ? "chat-process-shimmer" : undefined}>
-        <span aria-live="off">{label}</span>
+      <summary
+        className={
+          `${working ? "chat-process-shimmer" : ""}${active ? " chat-work-summary-active" : ""}`.trim() ||
+          undefined
+        }
+      >
+        <span className="chat-work-label" aria-live="off">
+          {label}
+        </span>
+        {active?.type === "thinking" && (
+          <span className="chat-work-active">
+            <ReasoningIcon running />
+            <span className="chat-work-active-text">{t("chat.thinking")}</span>
+          </span>
+        )}
+        {active?.type === "tool" && activeTool && ActiveToolIcon && (
+          <span className="chat-work-active">
+            <ActiveToolIcon
+              className="chat-status-icon chat-process-icon-active"
+              data-process-icon={activeTool.iconKind}
+              aria-hidden="true"
+            />
+            <span className="chat-work-active-text">
+              {t(activeTool.activeActionKey, { name: active.name })}
+              {activeTool.summary ? ` · ${activeTool.summary}` : ""}
+            </span>
+          </span>
+        )}
         <RiArrowRightSLine
           className="chat-disclosure-icon"
           aria-hidden="true"
