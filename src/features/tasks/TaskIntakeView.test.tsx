@@ -11,10 +11,11 @@ import { setLanguage } from "../../i18n";
 import { TaskIntakeView } from "./TaskIntakeView";
 import type { ChatViewProps } from "../chat/ChatView";
 
-const { eventListeners } = vi.hoisted(() => ({
+const { eventListeners, chatViews } = vi.hoisted(() => ({
   eventListeners: new Set<
     (event: { kind: string; sessionId?: string }) => void
   >(),
+  chatViews: [] as ChatViewProps[],
 }));
 vi.mock("../../bindings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../bindings")>();
@@ -31,17 +32,20 @@ vi.mock("../../bindings", async (importOriginal) => {
 });
 vi.mock("../chat", () => ({
   hostChatApi: {},
-  ChatView: (props: ChatViewProps) => (
-    <div>
-      {props.intro}
-      {props.afterMessages}
-      <textarea
-        aria-label={props.composerLabel}
-        placeholder={props.composerPlaceholder}
-        disabled={props.inputDisabled}
-      />
-    </div>
-  ),
+  ChatView: (props: ChatViewProps) => {
+    chatViews.push(props);
+    return (
+      <div>
+        {props.intro}
+        {props.afterMessages}
+        <textarea
+          aria-label={props.composerLabel}
+          placeholder={props.composerPlaceholder}
+          disabled={props.inputDisabled}
+        />
+      </div>
+    );
+  },
 }));
 
 const base: TaskIntakeSnapshot = {
@@ -60,9 +64,18 @@ beforeEach(() => {
   setLanguage("en");
   vi.mocked(commands.taskIntakeGet).mockReset().mockResolvedValue(base);
   eventListeners.clear();
+  chatViews.length = 0;
 });
 
 describe("Task intake conversation", () => {
+  it("routes intake through the shared ChatView timeline", async () => {
+    render(<TaskIntakeView worktreeId="w1" sessionId="s1" />);
+    await waitFor(() => expect(commands.taskIntakeGet).toHaveBeenCalled());
+    expect(chatViews[chatViews.length - 1]).toMatchObject({
+      worktreeId: "w1",
+      sessionId: "s1",
+    });
+  });
   it("renders the exact proposal as safe GFM Markdown without a submit button", async () => {
     vi.mocked(commands.taskIntakeGet).mockResolvedValue({
       ...base,

@@ -39,7 +39,7 @@ beforeEach(() => setLanguage("en"));
 afterEach(() => vi.useRealTimers());
 
 describe("WorkSummary", () => {
-  it("shows a closed worked duration and reveals only safe intermediate UI", () => {
+  it("shows a closed worked duration and reveals inspectable intermediate UI", () => {
     render(<WorkSummary work={worked} />);
 
     const summary = screen.getByText("Worked for 45s");
@@ -48,24 +48,39 @@ describe("WorkSummary", () => {
     expect(screen.getByText("read")).not.toBeVisible();
 
     fireEvent.click(summary);
-    expect(within(details!).getByText("Thinking")).toBeVisible();
-    expect(within(details!).queryByText("private raw reasoning")).toBeNull();
+    const thinking = within(details!).getByText("Thinking");
+    expect(thinking).toBeVisible();
+    fireEvent.click(thinking);
+    expect(within(details!).getByText("private raw reasoning")).toBeVisible();
     expect(within(details!).getByText("read")).toBeVisible();
     expect(within(details!).getByText("Checking another file")).toBeVisible();
   });
 
-  it("ticks a working duration once per second", () => {
+  it("opens while working, ticks once per second, and collapses on completion", () => {
     vi.useFakeTimers();
     vi.setSystemTime(11_000);
-    render(
+    const { rerender } = render(
       <WorkSummary
         work={{ ...worked, status: "working", completedAt: undefined }}
       />,
     );
 
-    expect(screen.getByText("Working for 10s")).toBeVisible();
+    const details = screen.getByText("Working for 10s").closest("details");
+    expect(details).toHaveAttribute("open");
     void act(() => vi.advanceTimersByTime(2_000));
     expect(screen.getByText("Working for 12s")).toBeVisible();
+
+    rerender(<WorkSummary work={worked} />);
+    expect(details).not.toHaveAttribute("open");
+  });
+
+  it("preserves a user's disclosure choice during ordinary rerenders", () => {
+    const { rerender } = render(<WorkSummary work={worked} />);
+    const summary = screen.getByText("Worked for 45s");
+    const details = summary.closest("details");
+    fireEvent.click(summary);
+    rerender(<WorkSummary work={{ ...worked, completedAt: 47_000 }} />);
+    expect(details).toHaveAttribute("open");
   });
 
   it("formats compact minute and second units", () => {

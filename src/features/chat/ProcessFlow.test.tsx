@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, it } from "vitest";
 import { setLanguage } from "../../i18n";
 import { ProcessFlow } from "./ProcessFlow";
@@ -15,18 +15,21 @@ const readTool: Extract<ChatTimelineItem, { type: "tool" }> = {
 
 beforeEach(() => setLanguage("en"));
 
-it("renders a single tool as a non-expandable semantic summary", () => {
-  const { container } = render(<ProcessFlow steps={[readTool]} />);
+it("renders a single tool with expandable details", () => {
+  render(<ProcessFlow steps={[readTool]} />);
 
-  expect(screen.getByText("read")).toBeInTheDocument();
-  expect(screen.getByText("chat.tsx")).toBeInTheDocument();
-  expect(container.querySelector('[data-process-icon="read"]')).not.toBeNull();
-  expect(container.querySelector("details")).toBeNull();
-  expect(screen.queryByText("private file contents")).toBeNull();
+  const details = screen.getByText("read").closest("details");
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText("read"));
+  expect(screen.getByRole("tab", { name: "input" })).toBeVisible();
+  fireEvent.click(screen.getByRole("tab", { name: "output" }));
+  expect(screen.getByRole("tabpanel")).toHaveTextContent(
+    "private file contents",
+  );
 });
 
-it("groups multiple tools and exposes only their semantic summaries", () => {
-  const { container } = render(
+it("groups multiple semantic summaries with independently expandable calls", () => {
+  render(
     <ProcessFlow
       steps={[
         readTool,
@@ -47,24 +50,20 @@ it("groups multiple tools and exposes only their semantic summaries", () => {
   );
   const group = groupLabel.closest("details");
   expect(group).not.toHaveAttribute("open");
-  expect(container.querySelector('[data-process-icon="group"]')).not.toBeNull();
-
-  groupLabel.click();
-  expect(within(group!).getByText("read")).toBeVisible();
-  expect(within(group!).getByText("chat.tsx")).toBeVisible();
-  expect(within(group!).getByText("bash")).toBeVisible();
-  expect(within(group!).getByText("pnpm test")).toBeVisible();
-  expect(within(group!).queryByText("private file contents")).toBeNull();
-  expect(within(group!).queryByText("all tests passed")).toBeNull();
-  expect(within(group!).queryByText(/120000/)).toBeNull();
-  expect(within(group!).queryByRole("tablist")).toBeNull();
+  fireEvent.click(groupLabel);
+  const bash = within(group!).getByText("bash");
+  const bashDetails = bash.closest("details")!;
+  fireEvent.click(bash);
+  fireEvent.click(within(bashDetails).getByRole("tab", { name: "output" }));
+  expect(within(bashDetails).getByRole("tabpanel")).toHaveTextContent(
+    "all tests passed",
+  );
 });
 
-it("shows the active semantic action with shimmer while running", () => {
+it("opens the active tool and keeps its semantic shimmer", () => {
   render(
     <ProcessFlow
       steps={[
-        readTool,
         {
           type: "tool",
           toolCallId: "bash-1",
@@ -76,13 +75,13 @@ it("shows the active semantic action with shimmer while running", () => {
     />,
   );
 
-  const activeLabel = screen.getByText("Running command");
-  expect(activeLabel.closest("summary")).toHaveClass("chat-process-shimmer");
-  expect(screen.getAllByText("pnpm test")).toHaveLength(2);
+  const summary = screen.getByText("bash").closest("summary");
+  expect(summary).toHaveClass("chat-process-shimmer");
+  expect(summary?.parentElement).toHaveAttribute("open");
 });
 
-it("uses the error class without exposing raw error details", () => {
-  const { container } = render(
+it("reveals raw error details on the Output tab", () => {
+  render(
     <ProcessFlow
       steps={[
         {
@@ -94,6 +93,9 @@ it("uses the error class without exposing raw error details", () => {
     />,
   );
 
-  expect(container.querySelector(".chat-tool-error")).not.toBeNull();
-  expect(screen.queryByText("sensitive failure output")).toBeNull();
+  fireEvent.click(screen.getByText("read"));
+  fireEvent.click(screen.getByRole("tab", { name: "output" }));
+  expect(screen.getByRole("tabpanel")).toHaveTextContent(
+    "sensitive failure output",
+  );
 });

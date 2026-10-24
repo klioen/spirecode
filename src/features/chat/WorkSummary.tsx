@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { RiArrowRightSLine, RiBrainLine } from "@remixicon/react";
+import { RiArrowRightSLine } from "@remixicon/react";
 import { useTranslation } from "../../i18n";
 import { ChatMessage } from "./ChatMessage";
 import { TodoListCard } from "./TodoListCard";
+import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCard } from "./ToolCard";
-import type { ChatWorkDisplayItem, ChatWorkItem } from "./chatDisplayItems";
+import { useLifecycleDisclosure } from "./useLifecycleDisclosure";
+import type { ChatWorkDisplayItem } from "./chatDisplayItems";
 
 function unit(
   value: number,
@@ -37,13 +39,6 @@ export function formatWorkDuration(
     : `${unit(hours, "hour", locale)} ${unit(remainingMinutes, "minute", locale)}`;
 }
 
-function compactWorkItems(items: ChatWorkItem[]): ChatWorkItem[] {
-  return items.filter(
-    (item, index) =>
-      item.type !== "thinking" || items[index - 1]?.type !== "thinking",
-  );
-}
-
 export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
   const { language, t } = useTranslation();
   const locale = language === "zh-CN" ? "zh-CN" : "en-US";
@@ -51,6 +46,7 @@ export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
   const fallbackCompletedAt = useRef(Date.now());
   const [now, setNow] = useState(Date.now);
   const working = work.status === "working";
+  const disclosure = useLifecycleDisclosure(working);
 
   useEffect(() => {
     if (!working) return;
@@ -82,7 +78,11 @@ export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
     time,
   });
   return (
-    <details className="chat-work-summary">
+    <details
+      className="chat-work-summary"
+      open={disclosure.open}
+      onToggle={disclosure.onToggle}
+    >
       <summary className={working ? "chat-process-shimmer" : undefined}>
         <span aria-live="off">{label}</span>
         <RiArrowRightSLine
@@ -91,18 +91,10 @@ export function WorkSummary({ work }: { work: ChatWorkDisplayItem }) {
         />
       </summary>
       <div className="chat-work-details">
-        {compactWorkItems(work.items).map((item) => {
+        {work.items.map((item) => {
           switch (item.type) {
             case "thinking":
-              return (
-                <div className="chat-work-thinking" key={item.id}>
-                  <RiBrainLine
-                    className="chat-status-icon"
-                    aria-hidden="true"
-                  />
-                  <span>{t("chat.thinking")}</span>
-                </div>
-              );
+              return <ThinkingBlock key={item.id} thinking={item} />;
             case "tool":
               return <ToolCard key={item.toolCallId} tool={item} />;
             case "todo":
