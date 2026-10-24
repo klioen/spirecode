@@ -1310,6 +1310,110 @@ export class TaskRepository {
     });
   }
 
+  restoreMergedDelivery(
+    runId: string,
+    expectedTaskRevision: number,
+    expectedRunRevision: number,
+    receipt: { head: string; changeRequest: TaskReviewMetadata },
+  ): { task: Task; run: TaskRun } {
+    return this.#transaction(() => {
+      const run = this.#requireRun(validateId(runId, "runId"));
+      const task = this.#requireTask(run.task_id);
+      if (
+        task.revision !== expectedTaskRevision ||
+        run.revision !== expectedRunRevision
+      )
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task or run revision does not match",
+        );
+      const latest = this.connection
+        .prepare(
+          "SELECT id FROM task_runs WHERE task_id = ? ORDER BY attempt DESC LIMIT 1",
+        )
+        .get(task.id) as { id: string };
+      const report = run.report_json
+        ? validateTaskRunReport(JSON.parse(run.report_json))
+        : null;
+      if (
+        task.status !== "failed" ||
+        run.status !== "failed" ||
+        task.active_run_id ||
+        latest.id !== run.id ||
+        report?.outcome !== "success"
+      )
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Only the latest failed successful coding report can recover delivery",
+        );
+      if (!/^[0-9a-f]{40,64}$/.test(receipt.head))
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "Merged delivery HEAD is invalid",
+        );
+      const review = validateTaskReviewMetadata(receipt.changeRequest);
+      if (review.draft || review.kind === "other")
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "Merged delivery must be a verified hosting review",
+        );
+      const now = this.#now();
+      this.connection
+        .prepare(
+          `UPDATE task_runs SET status = 'reported', saga_phase = 'terminal',
+        report_json = ?, error_code = NULL, error_message = NULL, error_retryable = NULL,
+        revision = revision + 1, settled_at = COALESCE(settled_at, ?), reported_at = ?, finished_at = ? WHERE id = ?`,
+        )
+        .run(
+          JSON.stringify(
+            validateTaskRunReport({ ...report, changeRequest: review }),
+          ),
+          now,
+          now,
+          now,
+          run.id,
+        );
+      this.connection
+        .prepare(
+          `UPDATE tasks SET status = 'needs_review', metadata_json = ?, revision = revision + 1, updated_at = ? WHERE id = ?`,
+        )
+        .run(JSON.stringify(validateTaskMetadata({ review })), now, task.id);
+      this.connection
+        .prepare(
+          "DELETE FROM task_run_steps WHERE run_id = ? AND step IN ('failure','failure_stop')",
+        )
+        .run(run.id);
+      this.connection
+        .prepare(
+          `INSERT INTO task_run_steps(run_id, step, state, details_json, updated_at) VALUES (?, 'git_delivery', 'done', ?, ?)
+        ON CONFLICT(run_id, step) DO UPDATE SET state = excluded.state, details_json = excluded.details_json, updated_at = excluded.updated_at`,
+        )
+        .run(
+          run.id,
+          JSON.stringify({
+            changed: true,
+            head: receipt.head,
+            changeRequest: review,
+          }),
+          now,
+        );
+      this.connection
+        .prepare(
+          "INSERT INTO task_events(task_id, run_id, type, payload_json, created_at) VALUES (?, ?, 'delivery.reconciled', ?, ?)",
+        )
+        .run(
+          task.id,
+          run.id,
+          JSON.stringify({ merged: true, head: receipt.head }),
+          now,
+        );
+      return {
+        task: mapTask(this.#requireTask(task.id)),
+        run: mapRun(this.#requireRun(run.id)),
+      };
+    });
+  }
+
   retryRunDelivery(
     runId: string,
     expectedTaskRevision: number,

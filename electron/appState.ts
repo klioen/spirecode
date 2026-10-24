@@ -332,6 +332,19 @@ export class AppState {
           const worktree = await projects.worktree(worktreeId);
           await new TaskDeliveryService(worktree.path).assertPrepared(prepared);
         },
+        findMergedGitDelivery: async (worktreeId, start) => {
+          const worktree = await projects.worktree(worktreeId);
+          return new TaskDeliveryService(worktree.path).findMergedDelivery(
+            start,
+          );
+        },
+        onFailure: (event) => {
+          void this.diagnostics.log({
+            level: "error",
+            code: event.code,
+            safeContext: { errorType: event.errorType },
+          });
+        },
         deliverGitChanges: async (worktreeId, input) => {
           const worktree = await projects.worktree(worktreeId);
           return new TaskDeliveryService(worktree.path).deliver(input);

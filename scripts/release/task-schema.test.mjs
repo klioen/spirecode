@@ -36,10 +36,10 @@ for (const script of [
     assert.equal(Number(version), currentVersion);
     assert.ok(source.includes(`"migration-v${currentVersion}"`));
     assert.match(source, /quick_check === "ok"/);
-    assert.match(source, /tables\?\.count === 9/);
+    assert.match(source, /tables\?\.count === 10/);
   });
 
-  test(`${script} checks the current Task columns and reports failures`, () => {
+  test(`${script} checks Task metadata and verification columns and reports failures`, () => {
     assert.match(source, /PRAGMA table_info\(tasks\)/);
     assert.match(source, /column\.name === "metadata_json"/);
     assert.match(source, /metadata\?\.type === "TEXT"/);
@@ -53,14 +53,21 @@ for (const script of [
     assert.match(source, /process\.exit\(valid \? 0 : 2\)/);
   });
 
-  for (const [version, metadataPresent, verificationPresent, expected] of [
-    [6, true, false, 2],
-    [7, true, true, 0],
-    [7, false, true, 2],
-    [7, true, false, 2],
-    [8, true, true, 2],
+  for (const [
+    version,
+    metadataPresent,
+    verificationPresent,
+    tablePresent,
+    expected,
+  ] of [
+    [6, true, false, false, 2],
+    [7, true, true, true, 0],
+    [7, false, true, true, 2],
+    [7, true, false, true, 2],
+    [7, true, true, false, 2],
+    [8, true, true, true, 2],
   ]) {
-    test(`${script} ${expected === 0 ? "accepts" : "rejects"} schema ${version} with metadata=${metadataPresent} and verification=${verificationPresent}`, async () => {
+    test(`${script} ${expected === 0 ? "accepts" : "rejects"} schema ${version} metadata=${metadataPresent} verification=${verificationPresent} table=${tablePresent}`, async () => {
       const directory = await mkdtemp(
         path.join(tmpdir(), "spirecode-smoke-schema-"),
       );
@@ -75,14 +82,14 @@ for (const script of [
             version,
             `migration-v${version}`,
           );
-          const taskColumns = ["id TEXT"];
+          const columns = ["id TEXT"];
           if (metadataPresent)
-            taskColumns.push("metadata_json TEXT NOT NULL DEFAULT '{}'");
+            columns.push("metadata_json TEXT NOT NULL DEFAULT '{}'");
           if (verificationPresent)
-            taskColumns.push(
-              "verification_enabled INTEGER NOT NULL DEFAULT 1",
-            );
-          db.exec(`CREATE TABLE tasks (${taskColumns.join(", ")})`);
+            columns.push("verification_enabled INTEGER NOT NULL DEFAULT 1");
+          db.exec(`CREATE TABLE tasks (${columns.join(",")})`);
+          if (tablePresent)
+            db.exec("CREATE TABLE task_verifications (id TEXT)");
           for (const name of taskTables)
             db.exec(`CREATE TABLE ${name} (id TEXT)`);
         } finally {

@@ -8,6 +8,7 @@ import {
   TaskDeliveryError,
   TaskDeliveryService,
   taskDeliveryBranch,
+  taskDeliveryFailure,
   type ProviderRunner,
 } from "./delivery.js";
 
@@ -66,6 +67,176 @@ describe("origin parsing", () => {
 });
 
 describe("TaskDeliveryService", () => {
+  it("retains safe Git failure phase/code/exit without recording sensitive stderr", () => {
+    const raw = Object.assign(
+      new Error("https://user:password@host/private?secret=hidden"),
+      { code: "GIT_FAILED", details: { exitCode: "128" } },
+    );
+    const error = taskDeliveryFailure(raw, "delivery");
+    expect(error).toMatchObject({
+      code: "TASK_DELIVERY_GIT_FAILED",
+      retryable: true,
+    });
+    expect(error.message).toContain("delivery failed (GIT_FAILED; exit 128)");
+    expect(error.message).not.toContain("password");
+    expect(error.message).not.toContain("hidden");
+    expect(error.cause).toBe(raw);
+  });
+
+  it.each(["github", "gitlab"] as const)(
+    "recovers an exact merged %s receipt without pushing or creating",
+    async (provider) => {
+      const root = repository(
+        provider === "github"
+          ? "git@github.com:acme/widgets.git"
+          : "git@gitlab.com:acme/widgets.git",
+      );
+      const branch = "spire/task-merged";
+      git(root, "switch", "-c", branch);
+      const start = await new TaskDeliveryService(root).inspectStart({
+        mode: "new_managed",
+        branch,
+        baseRef: "origin/main",
+      });
+      const head = git(root, "rev-parse", "HEAD");
+      const item =
+        provider === "github"
+          ? {
+              html_url: "https://github.com/acme/widgets/pull/16",
+              draft: false,
+              state: "closed",
+              merged_at: "2026-10-24T00:00:00Z",
+              head: {
+                ref: branch,
+                sha: head,
+                repo: { full_name: "acme/widgets" },
+              },
+              base: { ref: "main" },
+            }
+          : {
+              web_url: "https://gitlab.com/acme/widgets/-/merge_requests/16",
+              draft: false,
+              state: "merged",
+              source_branch: branch,
+              target_branch: "main",
+              sha: head,
+              source_project_id: 12,
+              target_project_id: 12,
+            };
+      const runner: ProviderRunner = vi.fn(async (_executable, args) => {
+        expect(args).not.toContain("POST");
+        return { stdout: JSON.stringify([item]), exitCode: 0 };
+      });
+      const push = vi.fn(async () => undefined);
+      const service = new TaskDeliveryService(root, {
+        runProvider: runner,
+        push,
+      });
+      await expect(service.findMergedDelivery(start)).resolves.toMatchObject({
+        changed: true,
+        head,
+        changeRequest: { draft: false },
+      });
+      expect(push).not.toHaveBeenCalled();
+      expect(runner).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    "open",
+    "closed",
+    "draft",
+    "wrong-sha",
+    "wrong-project",
+    "wrong-branch",
+    "wrong-base",
+    "ambiguous",
+  ])("rejects a %s receipt without remote effects", async (scenario) => {
+    const root = repository();
+    const branch = "spire/task-merged";
+    git(root, "switch", "-c", branch);
+    const start = await new TaskDeliveryService(root).inspectStart({
+      mode: "new_managed",
+      branch,
+      baseRef: "origin/main",
+    });
+    const item = {
+      html_url: "https://github.com/acme/widgets/pull/16",
+      draft: scenario === "draft",
+      state: scenario === "open" ? "open" : "closed",
+      merged_at: scenario === "closed" ? null : "2026-10-24T00:00:00Z",
+      head: {
+        ref: scenario === "wrong-branch" ? "another" : branch,
+        sha:
+          scenario === "wrong-sha"
+            ? "a".repeat(40)
+            : git(root, "rev-parse", "HEAD"),
+        repo: {
+          full_name:
+            scenario === "wrong-project" ? "evil/widgets" : "acme/widgets",
+        },
+      },
+      base: { ref: scenario === "wrong-base" ? "another" : "main" },
+    };
+    const service = new TaskDeliveryService(root, {
+      runProvider: async () => ({
+        stdout: JSON.stringify(
+          scenario === "ambiguous" ? [item, item] : [item],
+        ),
+        exitCode: 0,
+      }),
+    });
+    await expect(service.findMergedDelivery(start)).resolves.toBeNull();
+  });
+
+  it("refuses a dirty local checkout before querying a merged PR", async () => {
+    const root = repository();
+    const start = await new TaskDeliveryService(root).inspectStart({
+      mode: "new_managed",
+      branch: "main",
+      baseRef: "origin/main",
+    });
+    writeFileSync(join(root, "dirty.txt"), "do not discard");
+    const runProvider = vi.fn();
+    await expect(
+      new TaskDeliveryService(root, { runProvider }).findMergedDelivery(start),
+    ).rejects.toMatchObject({ code: "TASK_DELIVERY_WORKTREE_NOT_CLEAN" });
+    expect(runProvider).not.toHaveBeenCalled();
+  });
+
+  it("does not push to a closed matching PR on an explicit delivery retry", async () => {
+    const root = repository();
+    const start = await new TaskDeliveryService(root).inspectStart({
+      mode: "new_managed",
+      branch: "main",
+      baseRef: "origin/main",
+    });
+    writeFileSync(join(root, "feature.txt"), "implemented");
+    const push = vi.fn(async () => undefined);
+    const remoteBranchExists = vi.fn(async () => true);
+    const service = new TaskDeliveryService(root, {
+      push,
+      remoteBranchExists,
+      runProvider: async () => ({
+        stdout: JSON.stringify([
+          {
+            html_url: "https://github.com/acme/widgets/pull/16",
+            draft: false,
+            state: "closed",
+            head: { ref: "main" },
+            base: { ref: "main" },
+          },
+        ]),
+        exitCode: 0,
+      }),
+    });
+    await expect(
+      service.deliver({ start, title: "Implemented", summary: "Done" }),
+    ).rejects.toMatchObject({ code: "TASK_DELIVERY_CHANGE_REQUEST_CLOSED" });
+    expect(push).not.toHaveBeenCalled();
+    expect(remoteBranchExists).not.toHaveBeenCalled();
+  });
+
   it("selects an existing branch upstream before activating a unique task branch", async () => {
     const root = repository();
     git(root, "branch", "--set-upstream-to=origin/main", "main");
@@ -230,7 +401,7 @@ describe("TaskDeliveryService", () => {
       changed: true,
       changeRequest: { url: "https://github.com/acme/widgets/pull/10" },
     });
-    expect(runner).toHaveBeenCalledTimes(1);
+    expect(runner).toHaveBeenCalledTimes(2);
   });
 
   it("revalidates and carries forward the same Ready change request when a follow-up has no new Git changes", async () => {

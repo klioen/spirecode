@@ -15,6 +15,7 @@ import {
 import {
   taskDeliveryBranch,
   TaskDeliveryError,
+  taskDeliveryFailure,
   type ChangeRequest,
   type GitDeliveryResult,
   type GitDeliveryStart,
@@ -202,6 +203,11 @@ export interface TaskServiceDependencies {
       priorChangeRequest?: ChangeRequest;
     },
   ): Promise<GitDeliveryResult>;
+  findMergedGitDelivery?(
+    worktreeId: string,
+    start: GitDeliveryStart,
+  ): Promise<GitDeliveryResult | null>;
+  onFailure?: (event: { code: string; errorType: string }) => void;
   notify(request: TaskNotificationRequest): void | Promise<void>;
   onChanged?: (taskId: string, revision: number) => void;
 }
@@ -435,6 +441,8 @@ export class TaskService {
           .listRunSteps(latestRun.id)
           .some((step) => step.step === "git_delivery");
       if (deliveryRetry) {
+        if (await this.#restoreMergedDelivery(task, latestRun))
+          return this.get(task.id);
         const resumed = this.repository.retryRunDelivery(
           latestRun.id,
           expectedRevision,
@@ -770,7 +778,81 @@ export class TaskService {
         await this.#recordFailure(active.id, error);
       }
     }
+    if (this.dependencies.findMergedGitDelivery)
+      this.#enqueue(async () => {
+        let cursor: string | undefined;
+        do {
+          if (this.#disposed) return;
+          const page = this.repository.listTasks({
+            statuses: ["failed"],
+            limit: 50,
+            ...(cursor ? { cursor } : {}),
+          });
+          cursor = page.nextCursor ?? undefined;
+          for (const candidate of page.items) {
+            if (this.#disposed) return;
+            await this.#singleFlight(candidate.id, async () => {
+              const task = this.#requireTask(candidate.id);
+              const run = this.repository.listAllRuns(task.id)[0];
+              if (run) await this.#restoreMergedDelivery(task, run);
+              return this.get(task.id);
+            }).catch(() => undefined);
+          }
+        } while (cursor);
+      });
     this.#requestSchedule();
+  }
+
+  async #restoreMergedDelivery(task: Task, run: TaskRun): Promise<boolean> {
+    if (
+      !this.dependencies.findMergedGitDelivery ||
+      task.status !== "failed" ||
+      run.status !== "failed" ||
+      run.report?.outcome !== "success" ||
+      !run.worktreeId
+    )
+      return false;
+    const steps = this.repository.listRunSteps(run.id);
+    const start = parseGitDeliveryStart(
+      steps.find((step) => step.step === "git_start" && step.state === "done")
+        ?.details,
+    );
+    if (
+      !start ||
+      !steps.some((step) => step.step === "git_delivery") ||
+      this.#hasCancelIntent(run.id)
+    )
+      return false;
+    try {
+      const workspace = await this.dependencies.getWorktree(run.worktreeId);
+      if (
+        !workspace ||
+        workspace.projectId !== task.projectId ||
+        workspace.dirty ||
+        workspace.busy
+      )
+        return false;
+      const receipt = await this.dependencies.findMergedGitDelivery(
+        run.worktreeId,
+        start,
+      );
+      if (!receipt?.changeRequest || receipt.changeRequest.draft) return false;
+      this.repository.restoreMergedDelivery(
+        run.id,
+        task.revision,
+        run.revision,
+        { head: receipt.head, changeRequest: receipt.changeRequest },
+      );
+      this.#emitChanged(task.id);
+      await this.#notify(task.id, run.id, "needs_review").catch((error) =>
+        this.#logFailure(this.#serviceError(error), error),
+      );
+      return true;
+    } catch (error) {
+      const safeError = this.#serviceError(error);
+      this.#logFailure(safeError, error);
+      return false;
+    }
   }
 
   async whenIdle(): Promise<void> {
@@ -1349,6 +1431,19 @@ export class TaskService {
   }
 
   async #deliverReport(initialRun: TaskRun): Promise<TaskRun> {
+    try {
+      return await this.#deliverReportUnlocked(initialRun);
+    } catch (error) {
+      if (
+        error instanceof TaskServiceError ||
+        error instanceof TaskRepositoryError
+      )
+        throw error;
+      throw taskDeliveryFailure(error, "delivery");
+    }
+  }
+
+  async #deliverReportUnlocked(initialRun: TaskRun): Promise<TaskRun> {
     let run = initialRun;
     const task = this.#requireTask(run.taskId);
     const project = await this.#requireProject(task.projectId);
@@ -1649,7 +1744,19 @@ export class TaskService {
     }
   }
 
+  #logFailure(error: TaskServiceError, cause: unknown): void {
+    try {
+      this.dependencies.onFailure?.({
+        code: error.code,
+        errorType: cause instanceof Error ? cause.name : typeof cause,
+      });
+    } catch {
+      /* diagnostics cannot prevent failure persistence */
+    }
+  }
+
   async #recordFailure(runId: string, cause: unknown): Promise<void> {
+    this.#logFailure(this.#serviceError(cause), cause);
     const run = this.repository.getRun(runId);
     if (!run || ["reported", "failed", "cancelled"].includes(run.status))
       return;

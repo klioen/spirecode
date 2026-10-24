@@ -699,6 +699,208 @@ describe("TaskService", () => {
     );
   });
 
+  it("preserves a safe host delivery error rather than flattening it to TASK_FAILED", async () => {
+    const detail = await createRunningTask(createInput(true));
+    dependencies.onFailure = vi.fn();
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      Object.assign(new Error("token=do-not-persist /private/user"), {
+        code: "GIT_TIMED_OUT",
+      }),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Code succeeded",
+      tests: [],
+    });
+    await settleAgent();
+    const failed = await service.get(detail.task.id);
+    expect(failed.runs[0]?.error).toMatchObject({
+      code: "TASK_DELIVERY_GIT_TIMED_OUT",
+      retryable: true,
+    });
+    expect(failed.runs[0]?.error?.message).not.toContain("do-not-persist");
+    expect(failed.runs[0]?.report?.summary).toBe("Code succeeded");
+    expect(dependencies.onFailure).toHaveBeenCalledWith({
+      code: "TASK_DELIVERY_GIT_TIMED_OUT",
+      errorType: "TaskDeliveryError",
+    });
+  });
+
+  it("reconciles an exact merged receipt on startup without rerunning code, verification, or publication", async () => {
+    const detail = await createRunningTask(createInput(true));
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      new TaskDeliveryError("TASK_DELIVERY_CLI_MISSING", "CLI missing", true),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleAgent();
+    const failed = await service.get(detail.task.id);
+    const deliveryCalls = vi.mocked(dependencies.deliverGitChanges).mock.calls
+      .length;
+    const promptCalls = vi.mocked(dependencies.sendPrompt).mock.calls.length;
+    const review = {
+      kind: "github_pr" as const,
+      url: "https://github.com/acme/widgets/pull/20",
+      draft: false,
+    };
+    dependencies.findMergedGitDelivery = vi.fn(async () => ({
+      changed: true,
+      head: "a".repeat(40),
+      changeRequest: review,
+    }));
+    await service.recover();
+    await service.whenIdle();
+    const recovered = await service.get(detail.task.id);
+    expect(recovered.task.status).toBe("needs_review");
+    expect(recovered.task.metadata.review).toEqual(review);
+    expect(recovered.runs).toHaveLength(1);
+    expect(recovered.runs[0]?.id).toBe(failed.runs[0]?.id);
+    expect(recovered.runs[0]?.report?.changeRequest).toEqual(review);
+    expect(recovered.runs[0]?.error).toBeNull();
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(deliveryCalls);
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(promptCalls);
+    expect(dependencies.createVerificationSession).not.toHaveBeenCalled();
+    expect(repository.listRunSteps(recovered.runs[0]!.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ step: "git_delivery", state: "done" }),
+      ]),
+    );
+    expect(
+      repository
+        .listEvents(detail.task.id, { limit: 50 })
+        .some((event) => event.type === "delivery.reconciled"),
+    ).toBe(true);
+    await service.recover();
+    await service.whenIdle();
+    expect(dependencies.findMergedGitDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves failed tasks unchanged on startup without an exact receipt or when the CLI is unavailable", async () => {
+    const detail = await createRunningTask(createInput(true));
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      new TaskDeliveryError("TASK_DELIVERY_CLI_MISSING", "CLI missing", true),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleAgent();
+    const failed = await service.get(detail.task.id);
+    dependencies.findMergedGitDelivery = vi.fn(async () => null);
+    await service.recover();
+    await service.whenIdle();
+    expect((await service.get(detail.task.id)).task).toEqual(failed.task);
+    dependencies.findMergedGitDelivery = vi.fn(async () => {
+      throw new Error("network down");
+    });
+    await service.recover();
+    await service.whenIdle();
+    expect((await service.get(detail.task.id)).task).toEqual(failed.task);
+    expect(dependencies.sendPrompt).toHaveBeenCalledTimes(1);
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite a concurrently edited Task during receipt lookup", async () => {
+    const detail = await createRunningTask(createInput(true));
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      new TaskDeliveryError("TASK_DELIVERY_CLI_MISSING", "CLI missing", true),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleAgent();
+    const failed = await service.get(detail.task.id);
+    dependencies.findMergedGitDelivery = vi.fn(async () => {
+      repository.updateTask(failed.task.id, failed.task.revision, {
+        title: "Edited concurrently",
+        description: failed.task.description,
+        workspace: failed.task.workspace,
+        automationEnabled: failed.task.automationEnabled,
+        verificationEnabled: failed.task.verificationEnabled,
+      });
+      return {
+        changed: true,
+        head: "a".repeat(40),
+        changeRequest: {
+          kind: "github_pr" as const,
+          url: "https://github.com/acme/widgets/pull/20",
+          draft: false,
+        },
+      };
+    });
+    await service.recover();
+    await service.whenIdle();
+    const current = await service.get(detail.task.id);
+    expect(current.task.title).toBe("Edited concurrently");
+    expect(current.task.status).toBe("failed");
+    expect(current.task.metadata).toEqual({});
+    expect(current.runs[0]?.error).toEqual(failed.runs[0]?.error);
+  });
+
+  it("skips receipt reconciliation for a dirty or busy workspace", async () => {
+    const detail = await createRunningTask(createInput(true));
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      new TaskDeliveryError("TASK_DELIVERY_CLI_MISSING", "CLI missing", true),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleAgent();
+    dependencies.findMergedGitDelivery = vi.fn(async () => null);
+    vi.mocked(dependencies.getWorktree).mockResolvedValue({
+      id: managedWorktreeId,
+      projectId,
+      dirty: true,
+      busy: false,
+    });
+    await service.recover();
+    await service.whenIdle();
+    expect(dependencies.findMergedGitDelivery).not.toHaveBeenCalled();
+    expect((await service.get(detail.task.id)).task.status).toBe("failed");
+  });
+
+  it("recovers a merged PR from an explicit retry without creating another run", async () => {
+    const detail = await createRunningTask(createInput(true));
+    vi.mocked(dependencies.deliverGitChanges).mockRejectedValueOnce(
+      new TaskDeliveryError("TASK_DELIVERY_CLI_MISSING", "CLI missing", true),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleAgent();
+    const failed = await service.get(detail.task.id);
+    dependencies.findMergedGitDelivery = vi.fn(async () => ({
+      changed: true,
+      head: "a".repeat(40),
+      changeRequest: {
+        kind: "github_pr" as const,
+        url: "https://github.com/acme/widgets/pull/20",
+        draft: false,
+      },
+    }));
+    const recovered = await service.run(failed.task.id, failed.task.revision);
+    expect(recovered.task.status).toBe("needs_review");
+    expect(recovered.runs).toHaveLength(1);
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+    expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+  });
+
   it("fails instead of entering review when required Git delivery fails", async () => {
     const detail = await createRunningTask(createInput(true));
     const run = detail.runs[0]!;
