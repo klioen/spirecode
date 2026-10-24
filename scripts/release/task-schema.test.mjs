@@ -39,23 +39,28 @@ for (const script of [
     assert.match(source, /tables\?\.count === 9/);
   });
 
-  test(`${script} checks the v6 Task metadata column and reports failures`, () => {
+  test(`${script} checks the current Task columns and reports failures`, () => {
     assert.match(source, /PRAGMA table_info\(tasks\)/);
     assert.match(source, /column\.name === "metadata_json"/);
     assert.match(source, /metadata\?\.type === "TEXT"/);
     assert.match(source, /metadata\?\.notnull === 1/);
     assert.match(source, /metadata\?\.dflt_value ===/);
+    assert.match(source, /column\.name === "verification_enabled"/);
+    assert.match(source, /verification\?\.type === "INTEGER"/);
+    assert.match(source, /verification\?\.notnull === 1/);
+    assert.match(source, /verification\?\.dflt_value === "1"/);
     assert.match(source, /console\.error\("Task schema smoke failed"/);
     assert.match(source, /process\.exit\(valid \? 0 : 2\)/);
   });
 
-  for (const [version, metadataPresent, expected] of [
-    [5, false, 2],
-    [6, true, 0],
-    [6, false, 2],
-    [7, true, 2],
+  for (const [version, metadataPresent, verificationPresent, expected] of [
+    [6, true, false, 2],
+    [7, true, true, 0],
+    [7, false, true, 2],
+    [7, true, false, 2],
+    [8, true, true, 2],
   ]) {
-    test(`${script} ${expected === 0 ? "accepts" : "rejects"} schema ${version} with metadata=${metadataPresent}`, async () => {
+    test(`${script} ${expected === 0 ? "accepts" : "rejects"} schema ${version} with metadata=${metadataPresent} and verification=${verificationPresent}`, async () => {
       const directory = await mkdtemp(
         path.join(tmpdir(), "spirecode-smoke-schema-"),
       );
@@ -70,11 +75,14 @@ for (const script of [
             version,
             `migration-v${version}`,
           );
-          db.exec(
-            metadataPresent
-              ? "CREATE TABLE tasks (id TEXT, metadata_json TEXT NOT NULL DEFAULT '{}')"
-              : "CREATE TABLE tasks (id TEXT)",
-          );
+          const taskColumns = ["id TEXT"];
+          if (metadataPresent)
+            taskColumns.push("metadata_json TEXT NOT NULL DEFAULT '{}'");
+          if (verificationPresent)
+            taskColumns.push(
+              "verification_enabled INTEGER NOT NULL DEFAULT 1",
+            );
+          db.exec(`CREATE TABLE tasks (${taskColumns.join(", ")})`);
           for (const name of taskTables)
             db.exec(`CREATE TABLE ${name} (id TEXT)`);
         } finally {
