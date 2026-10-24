@@ -471,7 +471,65 @@ export function TaskDetail({
         <p>{t("tasks.verification.description")}</p>
       </section>
       {task.verification ? (
-        <VerificationReport verification={task.verification} />
+        <>
+          <VerificationReport verification={task.verification} />
+          {task.verification.sessionId &&
+          onOpenSession &&
+          task.workspaceCleanupStatus !== "removed" ? (
+            <button
+              className="task-button task-button-secondary"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void navigate(() =>
+                  onOpenSession(
+                    task.verification!.worktreeId,
+                    task.verification!.sessionId!,
+                  ),
+                )
+              }
+            >
+              {t("tasks.verification.openSession")}
+            </button>
+          ) : null}
+          {["needs_review", "failed"].includes(task.status) &&
+          !task.activeRunId &&
+          latestRun?.report?.outcome === "success" &&
+          task.verificationEnabled &&
+          task.verification.verdict &&
+          task.verification.verdict !== "pass" ? (
+            <section className="task-detail-section task-review-actions">
+              <p>{t("tasks.verification.retryHint")}</p>
+              <button
+                className="task-button task-button-secondary"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void act(() => api.retryVerification(task.id, task.revision))
+                }
+              >
+                <RiRestartLine size={14} aria-hidden="true" />
+                {t("tasks.verification.retry")}
+              </button>
+              {task.verification.verdict === "inconclusive" &&
+              task.verification.summary ===
+                "Verifier session timed out before submitting a verdict." ? (
+                <button
+                  className="task-button task-button-primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(() =>
+                      api.recoverVerification(task.id, task.revision),
+                    )
+                  }
+                >
+                  {t("tasks.verification.recover")}
+                </button>
+              ) : null}
+            </section>
+          ) : null}
+        </>
       ) : null}
       {latestRun?.report ? (
         <section

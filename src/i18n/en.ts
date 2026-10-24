@@ -138,6 +138,11 @@ export const en = {
   "tasks.result": "Task result",
   "tasks.resultLabel": "Result: {result}",
   "tasks.verification.title": "Independent verification",
+  "tasks.verification.openSession": "Open verification session",
+  "tasks.verification.retry": "Retry verification only",
+  "tasks.verification.recover": "Recover report and continue delivery",
+  "tasks.verification.retryHint":
+    "Reuse the completed coding run and its commit, without rerunning the coding agent. A passing verification resumes PR/MR delivery.",
   "tasks.verification.enabled": "Verify before delivery",
   "tasks.verification.description":
     "A separate read-only agent checks the original requirements at the committed revision before a pull or merge request is created.",

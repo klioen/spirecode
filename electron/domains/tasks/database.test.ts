@@ -31,7 +31,7 @@ function removeV7Schema(connection: DatabaseSync): void {
   connection.exec(`
     DROP TABLE task_verifications;
     ALTER TABLE tasks DROP COLUMN verification_enabled;
-    DELETE FROM schema_migrations WHERE version = 7;
+    DELETE FROM schema_migrations WHERE version >= 7;
   `);
 }
 
@@ -70,6 +70,85 @@ function removeV4Schema(connection: DatabaseSync): void {
     ALTER TABLE tasks DROP COLUMN resolved_worktree_id;
   `);
 }
+
+it("migrates populated v7 verification rows without losing verdicts, evidence, sessions, or identities", () => {
+  const path = temporaryDatabasePath();
+  const original = openTaskDatabase(path);
+  const repository = new TaskRepository(original.connection);
+  const task = repository.createTask({
+    id: "10000000-0000-4000-8000-000000000001",
+    title: "Preserve verification",
+    description: "Original acceptance",
+    projectId: "20000000-0000-4000-8000-000000000001",
+    workspace: {
+      mode: "existing",
+      worktreeId: "30000000-0000-4000-8000-000000000001",
+      allowDirty: false,
+    },
+    automationEnabled: false,
+  });
+  const run = repository.createRun(task.id, task.revision, {
+    id: "40000000-0000-4000-8000-000000000001",
+    projectId: task.projectId,
+    worktreeId: "30000000-0000-4000-8000-000000000001",
+    ownsManagedWorktree: false,
+    promptMarker: "run",
+  }).run;
+  const verification = repository.createVerification({
+    id: "50000000-0000-4000-8000-000000000001",
+    taskId: task.id,
+    codingRunId: run.id,
+    worktreeId: run.worktreeId!,
+    commitSha: "a".repeat(40),
+  });
+  repository.bindVerificationSession(verification.id, verification.id);
+  repository.finishVerification(verification.id, {
+    verdict: "inconclusive",
+    summary: "Verifier session timed out before submitting a verdict.",
+    evidence: {
+      acceptanceCriteria: [],
+      commands: [],
+      issues: [
+        { severity: "blocker", summary: "timeout", evidence: "15 minutes" },
+      ],
+    },
+  });
+  const columns =
+    "id, task_id, coding_run_id, worktree_id, commit_sha, verdict, summary, evidence_json, session_id, created_at, finished_at";
+  const before = original.connection
+    .prepare(`SELECT ${columns} FROM task_verifications`)
+    .all();
+  original.connection
+    .exec(`ALTER TABLE task_verifications RENAME TO old_verifications; DROP INDEX task_verifications_task_idx;
+    CREATE TABLE task_verifications AS SELECT ${columns} FROM old_verifications;
+    DROP TABLE old_verifications;
+    CREATE INDEX task_verifications_task_idx ON task_verifications(task_id, created_at DESC, id DESC);
+    DELETE FROM schema_migrations WHERE version = 8;`);
+  original.close();
+  const migrated = openTaskDatabase(path);
+  try {
+    expect(migrated.schemaVersion).toBe(8);
+    expect(
+      migrated.connection
+        .prepare(`SELECT ${columns} FROM task_verifications`)
+        .all(),
+    ).toEqual(before);
+    expect(
+      migrated.connection
+        .prepare("SELECT attempt, deadline_at FROM task_verifications")
+        .get(),
+    ).toEqual({ attempt: 1, deadline_at: null });
+    expect(migrated.connection.prepare("PRAGMA quick_check").get()).toEqual({
+      quick_check: "ok",
+    });
+    expect(
+      migrated.connection.prepare("PRAGMA foreign_key_check").all(),
+    ).toEqual([]);
+    expect(existsSync(`${path}.pre-v8.bak`)).toBe(true);
+  } finally {
+    migrated.close();
+  }
+});
 
 describe("task database", () => {
   it("creates the current schema atomically with the required pragmas and STRICT tables", () => {
@@ -112,6 +191,7 @@ describe("task database", () => {
       { version: 5, name: "migration-v5" },
       { version: 6, name: "migration-v6" },
       { version: 7, name: "migration-v7" },
+      { version: 8, name: "migration-v8" },
     ]);
     expect(
       database.connection
@@ -190,7 +270,7 @@ describe("task database", () => {
     expect(existsSync(`${path}.pre-v4.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v6.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v7.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-v8.bak`)).toBe(true);
     migrated.close();
   });
 
@@ -347,7 +427,7 @@ describe("task database", () => {
     reopened.close();
   });
 
-  it("migrates v4 through the additive v7 schema with a pre-v7 recovery backup", () => {
+  it("migrates v4 through the v8 attempts schema with a pre-v8 recovery backup", () => {
     const path = temporaryDatabasePath();
     const original = openTaskDatabase(path);
     removeV5Schema(original.connection);
@@ -356,13 +436,13 @@ describe("task database", () => {
     expect(migrated.schemaVersion).toBe(CURRENT_TASK_SCHEMA_VERSION);
     expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v6.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v7.bak`)).toBe(true);
-    const backup = new DatabaseSync(`${path}.pre-v7.bak`, { readOnly: true });
+    expect(existsSync(`${path}.pre-v8.bak`)).toBe(true);
+    const backup = new DatabaseSync(`${path}.pre-v8.bak`, { readOnly: true });
     expect(
       backup
         .prepare("SELECT max(version) AS version FROM schema_migrations")
         .get(),
-    ).toEqual({ version: 6 });
+    ).toEqual({ version: 7 });
     backup.close();
     expect(
       migrated.connection
@@ -442,12 +522,12 @@ describe("task database", () => {
     ).toEqual(before);
     expect(existsSync(`${path}.pre-v5.bak`)).toBe(false);
     expect(existsSync(`${path}.pre-v6.bak`)).toBe(false);
-    expect(existsSync(`${path}.pre-v7.bak`)).toBe(true);
+    expect(existsSync(`${path}.pre-v8.bak`)).toBe(true);
     expect(
       reopened.connection
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all(),
-    ).toEqual([1, 2, 3, 4, 5, 6, 7].map((version) => ({ version })));
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((version) => ({ version })));
     expect(
       reopened.connection
         .prepare("SELECT metadata_json FROM tasks WHERE id = 'task'")

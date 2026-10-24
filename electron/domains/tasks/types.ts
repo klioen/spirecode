@@ -73,6 +73,8 @@ export interface TaskVerificationEvidence {
 }
 
 export interface TaskVerification {
+  attempt: number;
+  deadlineAt: number | null;
   id: string;
   taskId: string;
   codingRunId: string;

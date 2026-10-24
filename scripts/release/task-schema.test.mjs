@@ -41,6 +41,12 @@ for (const script of [
 
   test(`${script} checks Task metadata and verification columns and reports failures`, () => {
     assert.match(source, /PRAGMA table_info\(tasks\)/);
+    assert.match(source, /TASK_DATABASE_READY/);
+    assert.match(source, /30_000|seq 1 300/);
+    assert.match(source, /column\.name === "attempt"/);
+    assert.match(source, /attempt\?\.notnull === 1/);
+    assert.match(source, /column\.name === "deadline_at"/);
+    assert.match(source, /PRAGMA foreign_key_check/);
     assert.match(source, /column\.name === "metadata_json"/);
     assert.match(source, /metadata\?\.type === "TEXT"/);
     assert.match(source, /metadata\?\.notnull === 1/);
@@ -61,11 +67,11 @@ for (const script of [
     expected,
   ] of [
     [6, true, false, false, 2],
-    [7, true, true, true, 0],
-    [7, false, true, true, 2],
-    [7, true, false, true, 2],
-    [7, true, true, false, 2],
-    [8, true, true, true, 2],
+    [8, true, true, true, 0],
+    [8, false, true, true, 2],
+    [8, true, false, true, 2],
+    [8, true, true, false, 2],
+    [9, true, true, true, 2],
   ]) {
     test(`${script} ${expected === 0 ? "accepts" : "rejects"} schema ${version} metadata=${metadataPresent} verification=${verificationPresent} table=${tablePresent}`, async () => {
       const directory = await mkdtemp(
@@ -89,7 +95,7 @@ for (const script of [
             columns.push("verification_enabled INTEGER NOT NULL DEFAULT 1");
           db.exec(`CREATE TABLE tasks (${columns.join(",")})`);
           if (tablePresent)
-            db.exec("CREATE TABLE task_verifications (id TEXT)");
+            db.exec("CREATE TABLE task_verifications (id TEXT, attempt INTEGER NOT NULL, deadline_at INTEGER)");
           for (const name of taskTables)
             db.exec(`CREATE TABLE ${name} (id TEXT)`);
         } finally {

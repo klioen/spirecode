@@ -9,4 +9,4 @@
 7. Add TaskDetail controls and evidence presentation with localized copy.
 8. Add migration, repository, prompt, gate/tool, and UI tests; run focused tests and `pnpm check`.
 
-Recovery is based on durable verification rows and coding-run steps. A terminal record at the same run/SHA is reused only to resume the corresponding delivery decision; a different SHA creates a new attempt.
+Recovery is based on durable verification rows and coding-run steps. A terminal record at the same run/SHA is reused only to resume the corresponding delivery decision; a different SHA creates a new attempt. Schema v8 extends this with explicit same-run/SHA attempt retries, durable deadlines, cancellation ownership and audited legacy report recovery; see `../task-verification-recovery/change.md`.

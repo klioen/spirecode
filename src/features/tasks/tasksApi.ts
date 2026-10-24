@@ -210,6 +210,14 @@ export interface TasksApi {
     kind: string,
   ): Promise<void>;
   run(taskId: string, expectedRevision: number): Promise<TaskDetailValue>;
+  retryVerification(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<TaskDetailValue>;
+  recoverVerification(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<TaskDetailValue>;
   cancel(taskId: string, expectedRevision: number): Promise<TaskDetailValue>;
   complete(taskId: string, expectedRevision: number): Promise<TaskDetailValue>;
   cleanupWorkspace(
@@ -246,6 +254,14 @@ export interface TaskHostBindings {
     runId: string | null;
     kind: string;
   }): Promise<void>;
+  taskRetryVerification(input: {
+    taskId: string;
+    expectedRevision: number;
+  }): Promise<TaskDetailValue>;
+  taskRecoverVerification(input: {
+    taskId: string;
+    expectedRevision: number;
+  }): Promise<TaskDetailValue>;
   taskRun(input: {
     taskId: string;
     expectedRevision: number;
@@ -285,6 +301,10 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
   notificationsMarkAllRead: () => host.taskNotificationsMarkAllRead(),
   notificationMarkRead: (taskId, runId, kind) =>
     host.taskNotificationMarkRead({ taskId, runId, kind }),
+  retryVerification: (taskId, expectedRevision) =>
+    host.taskRetryVerification({ taskId, expectedRevision }),
+  recoverVerification: (taskId, expectedRevision) =>
+    host.taskRecoverVerification({ taskId, expectedRevision }),
   run: (taskId, expectedRevision) => host.taskRun({ taskId, expectedRevision }),
   cancel: (taskId, expectedRevision) =>
     host.taskCancel({ taskId, expectedRevision }),
@@ -322,6 +342,16 @@ export const tasksApi: TasksApi = {
   notificationsMarkAllRead: () => commands.taskNotificationsMarkAllRead(),
   notificationMarkRead: (taskId, runId, kind) =>
     commands.taskNotificationMarkRead(taskId, runId, kind),
+  retryVerification: (taskId, expectedRevision) =>
+    commands.taskRetryVerification(
+      taskId,
+      expectedRevision,
+    ) as Promise<TaskDetailValue>,
+  recoverVerification: (taskId, expectedRevision) =>
+    commands.taskRecoverVerification(
+      taskId,
+      expectedRevision,
+    ) as Promise<TaskDetailValue>,
   run: (taskId, expectedRevision) =>
     commands.taskRun(taskId, expectedRevision) as Promise<TaskDetailValue>,
   cancel: (taskId, expectedRevision) =>

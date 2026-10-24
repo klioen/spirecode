@@ -1,8 +1,9 @@
 import { dialog, Notification, shell, type BrowserWindow } from "electron";
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { ChatService } from "./domains/chat/index.js";
+import type { ChatSessionInternalOptions } from "./domains/chat/chatService.js";
 import { FilesystemService } from "./domains/filesystem/service.js";
 import {
   WatcherRegistry,
@@ -54,6 +55,7 @@ import {
 import { TaskIntakeService } from "./domains/tasks/intake.js";
 import { taskSessionName } from "./domains/tasks/prompt.js";
 import { verificationSessionName } from "./domains/tasks/verification.js";
+import { recoverVerificationReport } from "./domains/tasks/verificationRecovery.js";
 import { TaskDeliveryService } from "./domains/tasks/delivery.js";
 
 export interface SubscriptionEvent<T> {
@@ -124,8 +126,19 @@ export class AppState {
     });
     this.chat = new ChatService(root, {
       selectSkills: (cwd) => this.settings.skillSelection(cwd),
-      resolveSessionOptions: (worktreeId, sessionId) =>
-        this.taskIntake.sessionOptions(worktreeId, sessionId),
+      resolveSessionOptions: (worktreeId, sessionId) => {
+        const intake = this.taskIntake?.sessionOptions(worktreeId, sessionId);
+        if (intake) return intake;
+        const verification = this.taskRepository?.verificationForSession(
+          worktreeId,
+          sessionId,
+        );
+        return verification && this.tasks
+          ? taskVerificationSessionOptions(
+              this.tasks.verificationIntegration(verification.id),
+            )
+          : undefined;
+      },
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
@@ -244,6 +257,26 @@ export class AppState {
           createTaskSession(this.chat, worktreeId, integration),
         createVerificationSession: (worktreeId, integration) =>
           createTaskVerificationSession(this.chat, worktreeId, integration),
+        loadVerificationSession: async (worktreeId, sessionId, integration) => {
+          await this.chat.ensureLoaded(
+            worktreeId,
+            sessionId,
+            taskVerificationSessionOptions(integration),
+          );
+        },
+        readVerificationReport: async (verification) => {
+          if (!verification.sessionId) return null;
+          const sessionPath = await this.chat.sessionPath(
+            verification.worktreeId,
+            verification.sessionId,
+          );
+          if ((await stat(sessionPath)).size > 32 * 1024 * 1024)
+            throw new Error("Verifier session exceeds the recovery size limit");
+          const manager = SessionManager.open(sessionPath);
+          if (manager.getHeader()?.id !== verification.sessionId)
+            throw new Error("Verifier session identity does not match");
+          return recoverVerificationReport(manager.getBranch(), verification);
+        },
         findSession: async (worktreeId, name, sessionId) => {
           const matches = (await this.chat.list(worktreeId)).filter(
             (session) =>
@@ -705,6 +738,26 @@ export class AppState {
     return this.taskMutation(await this.requireTasks().create(input));
   }
 
+  async taskRetryVerification(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().resumeVerification(
+        taskId,
+        expectedRevision,
+        false,
+      ),
+    );
+  }
+
+  async taskRecoverVerification(taskId: string, expectedRevision: number) {
+    return this.taskMutation(
+      await this.requireTasks().resumeVerification(
+        taskId,
+        expectedRevision,
+        true,
+      ),
+    );
+  }
+
   async taskUpdate(
     taskId: string,
     expectedRevision: number,
@@ -1055,7 +1108,22 @@ export async function createTaskVerificationSession(
   worktreeId: string,
   integration: TaskVerificationSessionIntegration,
 ): Promise<{ sessionId: string; sessionPath: null }> {
-  const summary = await chat.create(worktreeId, {
+  const summary = await chat.create(
+    worktreeId,
+    taskVerificationSessionOptions(integration),
+  );
+  await chat.nameLoadedSession(
+    worktreeId,
+    summary.sessionId,
+    verificationSessionName(integration.sessionId),
+  );
+  return { sessionId: summary.sessionId, sessionPath: null };
+}
+
+export function taskVerificationSessionOptions(
+  integration: TaskVerificationSessionIntegration,
+): ChatSessionInternalOptions {
+  return {
     customTools: [taskVerificationTool(integration)],
     sessionId: integration.sessionId,
     readOnly: true,
@@ -1066,13 +1134,7 @@ export async function createTaskVerificationSession(
       if (typeof event.type === "string")
         integration.onEvent({ type: event.type });
     },
-  });
-  await chat.nameLoadedSession(
-    worktreeId,
-    summary.sessionId,
-    verificationSessionName(integration.sessionId),
-  );
-  return { sessionId: summary.sessionId, sessionPath: null };
+  };
 }
 
 function taskVerificationTool(integration: TaskVerificationSessionIntegration) {

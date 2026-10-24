@@ -429,6 +429,16 @@ async function invoke(
         safeInteger(args, "expectedRevision", 1),
         taskUpdateInput(args),
       );
+    case "task_retry_verification":
+      return state.taskRetryVerification(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
+    case "task_recover_verification":
+      return state.taskRecoverVerification(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
     case "task_run":
       return state.taskRun(
         text(args, "taskId"),
@@ -624,6 +634,8 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_create: ["input"],
   task_update: ["taskId", "expectedRevision", "patch"],
   task_run: ["taskId", "expectedRevision"],
+  task_retry_verification: ["taskId", "expectedRevision"],
+  task_recover_verification: ["taskId", "expectedRevision"],
   task_cancel: ["taskId", "expectedRevision"],
   task_complete: ["taskId", "expectedRevision"],
   task_cleanup_workspace: ["taskId", "expectedRevision"],

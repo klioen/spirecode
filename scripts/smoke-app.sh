@@ -72,9 +72,21 @@ trap cleanup EXIT
 
 "$app/Contents/MacOS/SpireCode" --user-data-dir="$user_data" >"$log" 2>&1 &
 pid=$!
-sleep 5
-if ! kill -0 "$pid" 2>/dev/null; then
+database_ready=0
+for _ in $(seq 1 300); do
+  if ! kill -0 "$pid" 2>/dev/null; then
+    cat "$log"
+    exit 1
+  fi
+  if [[ -f "$user_data/tasks.sqlite3" ]] && grep -q "TASK_DATABASE_READY" "$user_data/logs/spirecode.log" 2>/dev/null; then
+    database_ready=1
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$database_ready" != 1 ]]; then
   cat "$log"
+  echo "Packaged GUI Task database was not ready within 30 seconds" >&2
   exit 1
 fi
 [[ "$(cat "$user_data/explicit-user-data-marker")" == "must remain" ]]
@@ -89,9 +101,12 @@ ELECTRON_RUN_AS_NODE=1 "$executable" -e '
   const columns = db.prepare("PRAGMA table_info(tasks)").all();
   const metadata = columns.find((column) => column.name === "metadata_json");
   const verification = columns.find((column) => column.name === "verification_enabled");
+  const attempt = db.prepare("PRAGMA table_info(task_verifications)").all().find((column) => column.name === "attempt");
+  const deadline = db.prepare("PRAGMA table_info(task_verifications)").all().find((column) => column.name === "deadline_at");
+  const foreignKeys = db.prepare("PRAGMA foreign_key_check").all();
   db.close();
-  const valid = version?.version === 7 && version?.name === "migration-v7" && check?.quick_check === "ok" && tables?.count === 10 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "\x27{}\x27" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
-  if (!valid) console.error("Task schema smoke failed", { version, check, tables, metadata, verification });
+  const valid = version?.version === 8 && version?.name === "migration-v8" && check?.quick_check === "ok" && tables?.count === 10 && foreignKeys.length === 0 && attempt?.type === "INTEGER" && attempt?.notnull === 1 && deadline?.type === "INTEGER" && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "\x27{}\x27" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
+  if (!valid) console.error("Task schema smoke failed", { version, check, tables, metadata, verification, attempt, deadline, foreignKeys });
   process.exit(valid ? 0 : 2);
 ' "$user_data/tasks.sqlite3"
 

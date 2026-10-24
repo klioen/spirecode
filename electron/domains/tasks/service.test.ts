@@ -564,6 +564,316 @@ describe("TaskService", () => {
     );
   });
 
+  async function startVerification(timeoutMs = 1000) {
+    service = new TaskService(repository, dependencies, {
+      randomUUID: () => ids[uuidIndex++]!,
+      verificationTimeoutMs: timeoutMs,
+    });
+    const detail = await createRunningTask({
+      ...createInput(true),
+      verificationEnabled: true,
+    });
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    eventListener?.({ type: "agent_settled" });
+    for (let i = 0; i < 30 && !verificationReportResult; i++)
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(verificationReportResult).toBeDefined();
+    return detail;
+  }
+
+  const passEvidence = {
+    acceptanceCriteria: [
+      {
+        criterion: "Works",
+        status: "pass" as const,
+        evidence: ["public command passed"],
+      },
+    ],
+    commands: [],
+    issues: [],
+  };
+
+  it("cancels a timed-out verifier, rejects late reports, and retries only verification with preserved history", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const detail = await startVerification();
+      const oldReport = verificationReportResult!;
+      const original = repository.latestVerification(detail.task.id)!;
+      await vi.advanceTimersByTimeAsync(1001);
+      await service.whenIdle();
+      const timedOut = await service.get(detail.task.id);
+      expect(timedOut.task.status).toBe("needs_review");
+      expect(timedOut.verification?.verdict).toBe("inconclusive");
+      expect(timedOut.verification?.summary).toContain("timed out");
+      expect(dependencies.abortSession).toHaveBeenCalledWith(
+        managedWorktreeId,
+        original.sessionId,
+      );
+      await expect(
+        oldReport({
+          verificationId: original.id,
+          verdict: "pass",
+          summary: "Late",
+          evidence: passEvidence,
+        }),
+      ).rejects.toMatchObject({ code: "TASK_RESULT_INVALID" });
+      expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+      verificationReportResult = undefined;
+      await service.resumeVerification(
+        detail.task.id,
+        timedOut.task.revision,
+        false,
+      );
+      for (let i = 0; i < 30 && !verificationReportResult; i++)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      const retry = repository.latestVerification(detail.task.id)!;
+      expect(retry).toMatchObject({
+        codingRunId: original.codingRunId,
+        commitSha: original.commitSha,
+        attempt: 2,
+        verdict: null,
+      });
+      await verificationReportResult!({
+        verificationId: retry.id,
+        verdict: "pass",
+        summary: "Reverified",
+        evidence: passEvidence,
+      });
+      await service.whenIdle();
+      expect((await service.get(detail.task.id)).runs).toHaveLength(1);
+      expect(
+        repository.listVerifications(detail.task.id).map((v) => v.verdict),
+      ).toEqual(["pass", "inconclusive"]);
+      expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+      expect(dependencies.prepareGitChanges).toHaveBeenCalledTimes(1);
+      expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+      await expect(
+        service.resumeVerification(
+          detail.task.id,
+          (await service.get(detail.task.id)).task.revision,
+          false,
+        ),
+      ).rejects.toMatchObject({ code: "TASK_INVALID_STATE" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a valid report claimed before the deadline finish its bounded commit validation", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const detail = await startVerification();
+      let release!: () => void;
+      vi.mocked(dependencies.validatePreparedGitChanges).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      );
+      const verification = repository.latestVerification(detail.task.id)!;
+      const reporting = verificationReportResult!({
+        verificationId: verification.id,
+        verdict: "pass",
+        summary: "Good",
+        evidence: passEvidence,
+      });
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(repository.getVerification(verification.id)?.verdict).toBeNull();
+      expect(dependencies.abortSession).not.toHaveBeenCalled();
+      release();
+      await reporting;
+      await service.whenIdle();
+      expect((await service.get(detail.task.id)).verification?.verdict).toBe(
+        "pass",
+      );
+      expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fences cancellation while a pass is being validated and stops the verification session", async () => {
+    const detail = await startVerification(60000);
+    let release!: () => void;
+    vi.mocked(dependencies.validatePreparedGitChanges).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const verification = repository.latestVerification(detail.task.id)!;
+    const reporting = verificationReportResult!({
+      verificationId: verification.id,
+      verdict: "pass",
+      summary: "Good",
+      evidence: passEvidence,
+    });
+    const assertion = expect(reporting).rejects.toMatchObject({
+      code: "TASK_RESULT_INVALID",
+    });
+    const cancelled = await service.cancel(
+      detail.task.id,
+      (await service.get(detail.task.id)).task.revision,
+    );
+    release();
+    await assertion;
+    await service.whenIdle();
+    expect(cancelled.task.status).toBe("cancelled");
+    expect(dependencies.abortSession).toHaveBeenCalledWith(
+      managedWorktreeId,
+      verification.sessionId,
+    );
+    expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+  });
+
+  it("recovers a legacy late pass into an audited new attempt and delivers once without any new agent", async () => {
+    const detail = await createRunningTask({
+      ...createInput(true),
+      verificationEnabled: true,
+    });
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleWithVerification("inconclusive");
+    const original = repository.latestVerification(detail.task.id)!;
+    database.connection
+      .prepare("UPDATE task_verifications SET summary = ? WHERE id = ?")
+      .run(
+        "Verifier session timed out before submitting a verdict.",
+        original.id,
+      );
+    const legacy = await service.get(detail.task.id);
+    dependencies.readVerificationReport = vi.fn(async () => ({
+      verificationId: original.id,
+      verdict: "pass" as const,
+      summary: "Independent evidence",
+      evidence: passEvidence,
+    }));
+    const recovered = await service.resumeVerification(
+      detail.task.id,
+      legacy.task.revision,
+      true,
+    );
+    expect(recovered.verification?.attempt).toBe(2);
+    await service.whenIdle();
+    expect((await service.get(detail.task.id)).runs).toHaveLength(1);
+    expect(repository.getVerification(original.id)?.verdict).toBe(
+      "inconclusive",
+    );
+    expect(dependencies.createVerificationSession).toHaveBeenCalledTimes(1);
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+    expect(
+      repository.listEvents(detail.task.id, { limit: 100 }),
+    ).toContainEqual(
+      expect.objectContaining({ type: "verification.recovered" }),
+    );
+  });
+
+  it.each(["busy", "changed", "missing_report"])(
+    "does not recover unsafe legacy evidence: %s",
+    async (reason) => {
+      const detail = await createRunningTask({
+        ...createInput(true),
+        verificationEnabled: true,
+      });
+      await reportResult!({
+        runId: detail.runs[0]!.id,
+        outcome: "success",
+        summary: "Implemented",
+        tests: [],
+      });
+      await settleWithVerification("inconclusive");
+      const original = repository.latestVerification(detail.task.id)!;
+      database.connection
+        .prepare("UPDATE task_verifications SET summary = ? WHERE id = ?")
+        .run(
+          "Verifier session timed out before submitting a verdict.",
+          original.id,
+        );
+      dependencies.readVerificationReport = vi.fn(async () => null);
+      if (reason === "busy")
+        vi.mocked(dependencies.isWorktreeBusy).mockResolvedValue(true);
+      if (reason === "changed")
+        vi.mocked(dependencies.validatePreparedGitChanges).mockRejectedValue(
+          new Error("HEAD changed"),
+        );
+      await expect(
+        service.resumeVerification(
+          detail.task.id,
+          (await service.get(detail.task.id)).task.revision,
+          true,
+        ),
+      ).rejects.toBeDefined();
+      expect(repository.listVerifications(detail.task.id)).toHaveLength(1);
+      expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+    },
+  );
+
+  it("replays an unfinished verifier's durable structured report on restart without reopening its coding agent", async () => {
+    const detail = await createRunningTask({
+      ...createInput(true),
+      verificationEnabled: true,
+    });
+    const run = detail.runs[0]!;
+    await reportResult!({
+      runId: run.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    repository.upsertRunStep(run.id, "git_preparation", "done", {
+      changed: false,
+      head: "a".repeat(40),
+    });
+    const verification = repository.createVerification({
+      id: ids[uuidIndex++]!,
+      taskId: detail.task.id,
+      codingRunId: run.id,
+      worktreeId: managedWorktreeId,
+      commitSha: "a".repeat(40),
+      deadlineAt: Date.now() + 60000,
+    });
+    repository.bindVerificationSession(verification.id, verification.id);
+    dependencies.loadVerificationSession = vi.fn(async () => undefined);
+    dependencies.readVerificationReport = vi.fn(async () => ({
+      verificationId: verification.id,
+      verdict: "pass" as const,
+      summary: "Durable evidence",
+      evidence: passEvidence,
+    }));
+    vi.mocked(dependencies.loadSession).mockClear();
+    await service.recover();
+    await service.whenIdle();
+    expect((await service.get(detail.task.id)).verification?.verdict).toBe(
+      "pass",
+    );
+    expect(dependencies.loadSession).not.toHaveBeenCalled();
+    expect(dependencies.createVerificationSession).not.toHaveBeenCalled();
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("shutdown cancels pending verification and drains without waiting for its deadline", async () => {
+    const detail = await startVerification(60000);
+    const verification = repository.latestVerification(detail.task.id)!;
+    await service.dispose();
+    expect(repository.getVerification(verification.id)?.verdict).toBe(
+      "inconclusive",
+    );
+    expect(dependencies.abortSession).toHaveBeenCalledWith(
+      managedWorktreeId,
+      verification.sessionId,
+    );
+    expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+  });
+
   it("runs an independent verifier at the prepared commit before delivery", async () => {
     const input = { ...createInput(true), verificationEnabled: true };
     input.description = "Acceptance: the public command works";
