@@ -18,7 +18,7 @@ export function ProcessFlow({ steps }: ProcessFlowProps) {
   const runningTool = [...steps]
     .reverse()
     .find((step) => step.status === "running");
-  const disclosure = useLifecycleDisclosure(Boolean(runningTool));
+  const disclosure = useLifecycleDisclosure();
   if (steps.length === 1) return <ToolCard tool={steps[0]} />;
 
   const failed = steps.filter((step) => step.status === "error").length;

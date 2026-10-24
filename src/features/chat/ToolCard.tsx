@@ -27,7 +27,7 @@ export function ToolCard({ tool }: ToolCardProps) {
   const presentation = toolPresentation(tool);
   const Icon = presentation.icon;
   const running = tool.status === "running";
-  const disclosure = useLifecycleDisclosure(running);
+  const disclosure = useLifecycleDisclosure();
 
   useEffect(() => {
     if (activeTab === "input" && !hasInput && hasOutput) setActiveTab("output");

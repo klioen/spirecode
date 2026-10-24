@@ -4026,6 +4026,31 @@ details[open] > summary > .chat-disclosure-icon {
   opacity: 1 !important;
   transform: none;
 }
+.chat-work-summary > summary.chat-work-summary-active {
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.chat-work-label {
+  flex: 0 0 auto;
+}
+.chat-work-active {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+.chat-work-active-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-work-summary[open] > summary .chat-work-active {
+  display: none;
+}
 .chat-work-summary[open] > summary > .chat-disclosure-icon {
   transform: rotate(90deg);
 }
@@ -4174,7 +4199,8 @@ details[open] > summary > .chat-disclosure-icon {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-process-shimmer > span {
+.chat-process-shimmer > span:not(.chat-work-active),
+.chat-process-shimmer .chat-work-active-text {
   color: transparent !important;
   background-image: linear-gradient(
     90deg,
@@ -4489,7 +4515,9 @@ details[open] > summary > .chat-disclosure-icon {
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-stream-cursor,
-  .chat-process-shimmer {
+  .chat-process-shimmer,
+  .chat-process-shimmer > span:not(.chat-work-active),
+  .chat-process-shimmer .chat-work-active-text {
     animation: none;
   }
   .chat-process-group,

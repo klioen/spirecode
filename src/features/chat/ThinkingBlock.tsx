@@ -15,7 +15,7 @@ export function ThinkingBlock({ thinking }: ThinkingBlockProps) {
   const { t } = useTranslation();
   const labelId = useId();
   const running = thinking.status === "streaming";
-  const disclosure = useLifecycleDisclosure(running);
+  const disclosure = useLifecycleDisclosure();
   const detail = displayDetail(thinking.content)!;
 
   return (

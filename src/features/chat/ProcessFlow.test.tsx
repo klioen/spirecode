@@ -60,7 +60,7 @@ it("groups multiple semantic summaries with independently expandable calls", () 
   );
 });
 
-it("opens the active tool and keeps its semantic shimmer", () => {
+it("keeps the active tool closed with its semantic shimmer", () => {
   render(
     <ProcessFlow
       steps={[
@@ -77,7 +77,7 @@ it("opens the active tool and keeps its semantic shimmer", () => {
 
   const summary = screen.getByText("bash").closest("summary");
   expect(summary).toHaveClass("chat-process-shimmer");
-  expect(summary?.parentElement).toHaveAttribute("open");
+  expect(summary?.parentElement).not.toHaveAttribute("open");
 });
 
 it("reveals raw error details on the Output tab", () => {

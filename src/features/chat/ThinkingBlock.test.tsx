@@ -16,18 +16,19 @@ beforeEach(() => {
   });
 });
 
-it("shows actual streamed thinking and collapses when it completes", () => {
+it("keeps streamed thinking closed and preserves a manual choice when it completes", () => {
   const { rerender } = render(
     <ThinkingBlock
       thinking={{ id: "thinking-1", content: "Inspect", status: "streaming" }}
     />,
   );
   const details = screen.getByText("Thinking").closest("details");
-  expect(details).toHaveAttribute("open");
+  expect(details).not.toHaveAttribute("open");
   expect(
     screen.getByRole("region", { name: "Thinking details" }),
-  ).toHaveTextContent("Inspect");
+  ).not.toBeVisible();
 
+  fireEvent.click(screen.getByText("Thinking"));
   rerender(
     <ThinkingBlock
       thinking={{
@@ -37,6 +38,7 @@ it("shows actual streamed thinking and collapses when it completes", () => {
       }}
     />,
   );
+  expect(details).toHaveAttribute("open");
   expect(screen.getByText("Inspect then verify")).toBeVisible();
 
   rerender(
@@ -48,8 +50,7 @@ it("shows actual streamed thinking and collapses when it completes", () => {
       }}
     />,
   );
-  expect(details).not.toHaveAttribute("open");
-  fireEvent.click(screen.getByText("Thinking"));
+  expect(details).toHaveAttribute("open");
   expect(screen.getByText("Inspect then verify")).toBeVisible();
 });
 

@@ -47,18 +47,23 @@ it("keeps the semantic summary and exposes Input and Output tabs", () => {
   expect(screen.getByRole("tabpanel")).toHaveTextContent("file body");
 });
 
-it("defaults to Output without input and keeps the selected tab across updates", () => {
+it("keeps a running tool closed and preserves manual disclosure and tab state across updates", () => {
   const { rerender } = render(
     <ToolCard
       tool={{
         toolCallId: "tool-2",
         name: "custom",
+        arguments: { query: "active query" },
         result: "partial",
         status: "running",
       }}
     />,
   );
   const details = screen.getByText("custom").closest("details");
+  expect(details).not.toHaveAttribute("open");
+
+  fireEvent.click(screen.getByText("custom"));
+  fireEvent.click(screen.getByRole("tab", { name: "output" }));
   expect(details).toHaveAttribute("open");
   expect(screen.getByRole("tab", { name: "output" })).toHaveAttribute(
     "aria-selected",
@@ -70,13 +75,17 @@ it("defaults to Output without input and keeps the selected tab across updates",
       tool={{
         toolCallId: "tool-2",
         name: "custom",
+        arguments: { query: "active query" },
         result: "complete output",
         status: "done",
       }}
     />,
   );
-  expect(details).not.toHaveAttribute("open");
-  fireEvent.click(screen.getByText("custom"));
+  expect(details).toHaveAttribute("open");
+  expect(screen.getByRole("tab", { name: "output" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(screen.getByRole("tabpanel")).toHaveTextContent("complete output");
 });
 
