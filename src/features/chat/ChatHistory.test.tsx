@@ -203,6 +203,7 @@ describe("ChatHistory", () => {
     const renameAction = screen.getByRole("menuitem", {
       name: "Rename Fix tests",
     });
+    expect(screen.queryByRole("menuitem", { name: "Copy" })).toBeNull();
     expect(renameAction).toHaveFocus();
     fireEvent.click(renameAction);
     fireEvent.change(screen.getByRole("textbox", { name: "Session name" }), {

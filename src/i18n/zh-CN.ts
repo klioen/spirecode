@@ -3,6 +3,7 @@ import type { TranslationKey } from "./en";
 export const zhCN = {
   "app.error.title": "SpireCode 无法启动",
   "app.error.reload": "重新加载",
+  "contextMenu.copy": "复制",
   "tasks.overview": "概览",
   "tasks.currentExecution": "当前执行",
   "tasks.requirements": "任务需求",

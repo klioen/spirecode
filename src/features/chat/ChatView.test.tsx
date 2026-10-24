@@ -166,6 +166,35 @@ describe("ChatView", () => {
     expect(screen.queryByText("Start a conversation with pi")).toBeNull();
   });
 
+  it("copies a complete selection from rendered conversation content", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container } = render(
+      <ChatView
+        worktreeId="worktree-1"
+        sessionId="session-1"
+        api={api()}
+        runtime={new ChatRuntime({ batchMs: 0 })}
+      />,
+    );
+    const heading = await screen.findByRole("heading", {
+      name: "Markdown result",
+    });
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    const range = document.createRange();
+    range.selectNodeContents(heading);
+    selection.addRange(range);
+
+    fireEvent.contextMenu(container.querySelector(".chat-transcript")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+
+    expect(writeText).toHaveBeenCalledWith("Markdown result");
+  });
+
   it("renders only the final answer until the work summary is expanded", async () => {
     render(
       <ChatView

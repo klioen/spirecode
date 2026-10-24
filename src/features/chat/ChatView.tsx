@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { SelectionCopyRegion } from "../../components/SelectionCopyRegion";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import type { ChatApi } from "./chatApi";
 import { chatRuntime, type ChatRuntime, useChatSession } from "./chatRuntime";
@@ -121,7 +122,11 @@ function ChatViewContent({
   return (
     <section className="chat-view" aria-label={t("chat.session")}>
       <div className="chat-transcript-shell">
-        <div ref={transcriptRef} className="chat-transcript" aria-live="polite">
+        <SelectionCopyRegion
+          elementRef={transcriptRef}
+          className="chat-transcript"
+          aria-live="polite"
+        >
           {intro}
           {state.status === "loading" && (
             <div>{t("chat.loadingConversation")}</div>
@@ -174,7 +179,7 @@ function ChatViewContent({
             }
           })}
           {afterMessages}
-        </div>
+        </SelectionCopyRegion>
         {showScrollToBottom && (
           <button
             type="button"

@@ -1,6 +1,7 @@
 export const en = {
   "app.error.title": "SpireCode could not start",
   "app.error.reload": "Reload",
+  "contextMenu.copy": "Copy",
   "tasks.overview": "Overview",
   "tasks.currentExecution": "Current execution",
   "tasks.requirements": "Requirements",

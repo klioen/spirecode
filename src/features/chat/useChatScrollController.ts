@@ -46,7 +46,7 @@ export function useChatScrollController(
   }, []);
 
   const transcriptRef = useCallback(
-    (element: HTMLDivElement | null) => {
+    (element: HTMLElement | null) => {
       cleanupRef.current();
       elementRef.current = element;
       if (!element) return;
