@@ -164,6 +164,13 @@ describe("TaskDetail", () => {
     expect(screen.getByText("1h 1m 1s")).toBeInTheDocument();
     expect(screen.getByText("Tokens")).toBeInTheDocument();
     expect(screen.getByText("98.8K")).toBeInTheDocument();
+    const metadata = screen.getByRole("region", { name: "Overview" });
+    expect(metadata).toHaveClass("task-resource-summary");
+    expect(metadata.querySelectorAll(".task-resource-item")).toHaveLength(4);
+    const requirements = screen
+      .getAllByText("Requirements")[0]
+      ?.closest("details");
+    expect(requirements).toHaveAttribute("open");
   });
 
   it("treats awaiting_report as running and never as completed", async () => {
@@ -411,6 +418,10 @@ it("shows verification evidence and updates the delivery gate switch", async () 
   });
   render(<TaskDetail api={api} task={verified} onChange={onChange} />);
 
+  const verificationDetails = screen
+    .getByText("Independent verification")
+    .closest("details");
+  expect(verificationDetails).toHaveAttribute("open");
   expect(
     screen.getByText("The invalid-input path is broken"),
   ).toBeInTheDocument();
@@ -426,6 +437,38 @@ it("shows verification evidence and updates the delivery gate switch", async () 
     }),
   );
   expect(onChange).toHaveBeenCalled();
+});
+
+it("keeps successful verification details collapsed by default", () => {
+  const verified = taskDetail({
+    ...reviewTask,
+    verificationEnabled: true,
+    verification: {
+      id: "verification-1",
+      codingRunId: "run-1",
+      worktreeId: "worktree-1",
+      commitSha: "abcdef1234567890",
+      verdict: "pass",
+      summary: "All criteria passed",
+      evidence: { acceptanceCriteria: [], commands: [], issues: [] },
+      sessionId: null,
+      createdAt: 2,
+      finishedAt: 3,
+    },
+  });
+  render(
+    <TaskDetail
+      api={createTasksApiMock()}
+      task={verified}
+      onChange={vi.fn()}
+    />,
+  );
+
+  const verificationDetails = screen
+    .getByText("Independent verification")
+    .closest("details");
+  expect(verificationDetails).not.toHaveAttribute("open");
+  expect(verificationDetails).toHaveClass("task-verification-details");
 });
 
 it("shows session navigation errors inline", async () => {

@@ -15,10 +15,8 @@ import type {
   TaskDashboardValue,
   TaskDetailValue,
   TaskNotificationValue,
-  TaskStatus,
   TasksApi,
 } from "./tasksApi";
-import { formatTaskDuration, formatTaskTokens } from "./taskMetrics";
 import {
   boundedTaskQuery,
   taskErrorMessage,
@@ -50,13 +48,6 @@ export function TaskPage({
 }: TaskPageProps) {
   const { language, t } = useTranslation();
   const store = useTasksStore();
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (!document.hidden) setClock(Date.now());
-    }, 60_000);
-    return () => clearInterval(timer);
-  }, []);
   const mainRef = useRef<HTMLElement>(null);
   const [creating, setCreating] = useState(
     () => !store.selectedTaskId && Boolean(readTaskDraft(newTaskDraftKey)),
@@ -559,16 +550,10 @@ export function TaskPage({
               value={dashboard}
               loading={loadingDashboard}
               error={dashboardError}
-              language={language}
-              now={clock}
               t={t}
               onRetry={() => void refreshDashboard()}
               onSelectView={(view) => {
                 store.setView(view);
-                void useTasksStore.getState().load(api);
-              }}
-              onSelectStatus={(status: TaskStatus) => {
-                store.setStatuses([status]);
                 void useTasksStore.getState().load(api);
               }}
             />
@@ -747,11 +732,6 @@ export function TaskPage({
             <ul className="task-list">
               {store.items.map((task) => {
                 const status = taskDisplayStatus(task);
-                const workspace =
-                  task.workspaceName ??
-                  (task.workspace.mode === "new_managed"
-                    ? t("tasks.fromBranch", { branch: task.workspace.baseRef })
-                    : t("tasks.workspaceUnavailable"));
                 return (
                   <li key={task.id}>
                     <button
@@ -759,32 +739,15 @@ export function TaskPage({
                       type="button"
                       onClick={() => open(task.id)}
                     >
-                      <span
-                        className={`task-status-dot task-status-${status}`}
-                        aria-hidden="true"
-                      />
                       <span className="task-list-content">
-                        <strong title={task.title}>{task.title}</strong>{" "}
-                        <span className="task-list-meta">
-                          <span>
-                            {task.projectName ?? t("tasks.projectUnavailable")}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span
-                            className="task-list-workspace"
-                            title={workspace}
-                          >
-                            {workspace}
-                          </span>
-                        </span>
-                        <span className="task-list-metrics">
-                          {t("tasks.metrics.summary", {
-                            duration: formatTaskDuration(
-                              task.durationMs,
-                              language,
-                            ),
-                            tokens: formatTaskTokens(task.tokenCount),
-                          })}
+                        <strong title={task.title}>{task.title}</strong>
+                        <span
+                          className="task-list-project"
+                          title={
+                            task.projectName ?? t("tasks.projectUnavailable")
+                          }
+                        >
+                          {task.projectName ?? t("tasks.projectUnavailable")}
                         </span>
                       </span>
                       <span

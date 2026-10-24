@@ -92,8 +92,10 @@ it("loads the global list and opens a task detail without an active project", as
 
   const taskButton = await screen.findByRole("button", { name: /Global task/ });
   expect(taskButton).toHaveTextContent("SpireCode");
-  expect(taskButton).toHaveTextContent("2m 5s");
-  expect(taskButton).toHaveTextContent("12.3K tokens");
+  expect(taskButton).toHaveTextContent("Backlog");
+  expect(taskButton).not.toHaveTextContent("2m 5s");
+  expect(taskButton).not.toHaveTextContent("12.3K tokens");
+  expect(taskButton.querySelector(".task-list-workspace")).toBeNull();
   fireEvent.click(taskButton);
   await waitFor(() => expect(api.get).toHaveBeenCalledWith("task-1"));
   expect(
@@ -148,9 +150,12 @@ it("renders a global dashboard above filters and applies dashboard filters witho
     heading.closest(".task-dashboard")!.compareDocumentPosition(toolbar) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(screen.getByText("12.3K")).toBeInTheDocument();
-  expect(screen.getByText("3m 5s")).toBeInTheDocument();
-  expect(screen.getByText("May overlap with Active")).toBeInTheDocument();
+  const overview = heading.closest(".task-dashboard") as HTMLElement;
+  expect(overview.querySelectorAll(".task-dashboard-metric")).toHaveLength(4);
+  expect(within(overview).queryByText("Created in the last 7 days")).toBeNull();
+  expect(within(overview).queryByText("Duration")).toBeNull();
+  expect(within(overview).queryByText("Tokens")).toBeNull();
+  expect(within(overview).queryByText("Status distribution")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /Active: 3/ }));
   await waitFor(() =>
@@ -172,11 +177,12 @@ it("renders a global dashboard above filters and applies dashboard filters witho
       projectId: "project-1",
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: /Cancelled: 1/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Needs attention: 4/ }));
   await waitFor(() =>
     expect(api.list).toHaveBeenLastCalledWith({
       limit: 50,
-      statuses: ["cancelled"],
+      statuses: ["backlog", "running", "needs_review", "failed"],
+      attentionOnly: true,
       query: "keep scope",
       projectId: "project-1",
     }),
@@ -224,12 +230,12 @@ it("keeps dashboard failure independent from the list and recovers to an explici
       name: "Retry overview",
     }),
   );
-  expect(
-    await screen.findByText(
-      "No tasks yet. Every status currently has 0 tasks.",
-    ),
-  ).toBeInTheDocument();
-  expect(screen.getAllByText("0").length).toBeGreaterThan(7);
+  const overview = (await screen.findByText("Total tasks")).closest(
+    ".task-dashboard",
+  ) as HTMLElement;
+  expect(overview.querySelectorAll(".task-dashboard-metric")).toHaveLength(4);
+  expect(within(overview).getAllByText("0")).toHaveLength(4);
+  expect(within(overview).queryByText("Status distribution")).toBeNull();
 });
 
 it("coalesces dashboard event storms and ignores the invalidated response", async () => {
@@ -422,7 +428,7 @@ it("paginates task notifications without replacing the loaded page", async () =>
   );
 });
 
-it("uses readable workspace names and recognizable notifications with a global unread count", async () => {
+it("hides workspace identifiers while keeping recognizable notifications and the unread count", async () => {
   const api = createTasksApiMock();
   vi.mocked(api.list).mockResolvedValue({
     items: [
@@ -455,8 +461,9 @@ it("uses readable workspace names and recognizable notifications with a global u
     unreadCount: 12,
   });
   render(<TaskPage api={api} projects={[]} />);
-  expect(await screen.findByText("feature-login")).toBeInTheDocument();
-  expect(screen.queryByText("hidden-id")).not.toBeInTheDocument();
+  const taskButton = await screen.findByRole("button", { name: /Fix login/ });
+  expect(taskButton).not.toHaveTextContent("feature-login");
+  expect(taskButton).not.toHaveTextContent("hidden-id");
   fireEvent.click(
     await screen.findByRole("button", { name: "Notifications (12)" }),
   );

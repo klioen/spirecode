@@ -144,71 +144,71 @@ function VerificationReport({
   verification: TaskVerificationValue;
 }) {
   const { t } = useTranslation();
+  const verdict = verification.verdict ?? "running";
+  const needsAttention = ["running", "fail", "inconclusive"].includes(verdict);
   return (
-    <section
-      className="task-detail-section task-result-card task-verification-card"
-      aria-label={t("tasks.verification.title")}
+    <details
+      className="task-detail-section task-verification-details"
+      open={needsAttention}
     >
-      <div className="task-delivery-heading">
-        <h3>{t("tasks.verification.title")}</h3>
-        <span
-          className={`task-delivery-status verification-${verification.verdict ?? "running"}`}
-        >
-          {t(
-            `tasks.verification.${verification.verdict ?? "running"}` as TranslationKey,
-          )}
+      <summary className="task-verification-summary">
+        <span>{t("tasks.verification.title")}</span>
+        <span className={`task-delivery-status verification-${verdict}`}>
+          {t(`tasks.verification.${verdict}` as TranslationKey)}
         </span>
+      </summary>
+      <div className="task-verification-content">
+        <code>{verification.commitSha.slice(0, 12)}</code>
+        {verification.summary ? <p>{verification.summary}</p> : null}
+        {verification.evidence?.acceptanceCriteria.length ? (
+          <details open>
+            <summary>{t("tasks.verification.criteria")}</summary>
+            <ul>
+              {verification.evidence.acceptanceCriteria.map((check, index) => (
+                <li key={index}>
+                  <strong>
+                    {t(`tasks.verification.${check.status}` as TranslationKey)}
+                  </strong>{" "}
+                  {check.criterion}
+                  {check.evidence.length ? (
+                    <ul>
+                      {check.evidence.map((item, evidenceIndex) => (
+                        <li key={evidenceIndex}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        {verification.evidence?.commands.length ? (
+          <details>
+            <summary>{t("tasks.verification.commands")}</summary>
+            <ul>
+              {verification.evidence.commands.map((command, index) => (
+                <li key={index}>
+                  <code>{command.command}</code>: {command.summary}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        {verification.evidence?.issues.length ? (
+          <details open>
+            <summary>{t("tasks.verification.issues")}</summary>
+            <ul>
+              {verification.evidence.issues.map((issue, index) => (
+                <li key={index}>
+                  <strong>{issue.severity}</strong>: {issue.summary}
+                  {issue.evidence ? ` — ${issue.evidence}` : ""}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </div>
-      <code>{verification.commitSha.slice(0, 12)}</code>
-      {verification.summary ? <p>{verification.summary}</p> : null}
-      {verification.evidence?.acceptanceCriteria.length ? (
-        <details open>
-          <summary>{t("tasks.verification.criteria")}</summary>
-          <ul>
-            {verification.evidence.acceptanceCriteria.map((check, index) => (
-              <li key={index}>
-                <strong>
-                  {t(`tasks.verification.${check.status}` as TranslationKey)}
-                </strong>{" "}
-                {check.criterion}
-                {check.evidence.length ? (
-                  <ul>
-                    {check.evidence.map((item, evidenceIndex) => (
-                      <li key={evidenceIndex}>{item}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-      {verification.evidence?.commands.length ? (
-        <details>
-          <summary>{t("tasks.verification.commands")}</summary>
-          <ul>
-            {verification.evidence.commands.map((command, index) => (
-              <li key={index}>
-                <code>{command.command}</code>: {command.summary}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-      {verification.evidence?.issues.length ? (
-        <details open>
-          <summary>{t("tasks.verification.issues")}</summary>
-          <ul>
-            {verification.evidence.issues.map((issue, index) => (
-              <li key={index}>
-                <strong>{issue.severity}</strong>: {issue.summary}
-                {issue.evidence ? ` — ${issue.evidence}` : ""}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-    </section>
+    </details>
   );
 }
 
@@ -278,14 +278,14 @@ export function TaskDetail({
   return (
     <article className="task-detail" aria-labelledby="task-detail-title">
       <header className="task-detail-header">
-        {onBack ? (
-          <button className="task-icon-button" type="button" onClick={onBack}>
-            <RiArrowLeftLine size={17} aria-hidden="true" />
-            {t("tasks.back")}
-          </button>
-        ) : null}
         <div className="task-detail-title-row">
-          <div>
+          {onBack ? (
+            <button className="task-icon-button" type="button" onClick={onBack}>
+              <RiArrowLeftLine size={17} aria-hidden="true" />
+              {t("tasks.back")}
+            </button>
+          ) : null}
+          <div className="task-detail-title">
             <h2 id="task-detail-title">{task.title}</h2>
             <span className={`task-status-badge task-status-${status}`}>
               {t("tasks.statusLabel", { status: t(taskStatusKeys[status]) })}
@@ -447,6 +447,47 @@ export function TaskDetail({
           ) : null}
         </div>
       </section>
+      {latestRun?.report ? (
+        <section
+          className="task-detail-section task-result-card"
+          aria-label={t("tasks.result")}
+        >
+          <TaskReport report={latestRun.report} />
+          {task.status === "needs_review" ? (
+            <div className="task-review-actions">
+              <button
+                className="task-button task-button-primary"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void act(() => api.complete(task.id, task.revision))
+                }
+              >
+                {t("tasks.acceptCompletion")}
+              </button>
+              <label className="task-change-note">
+                <span>{t("tasks.changeNote")}</span>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+              </label>
+              <button
+                className="task-button task-button-secondary"
+                type="button"
+                disabled={busy || !note.trim()}
+                onClick={() =>
+                  void act(() =>
+                    api.requestChanges(task.id, task.revision, note.trim()),
+                  )
+                }
+              >
+                {t("tasks.requestChanges")}
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       <section
         className="task-detail-section task-verification-setting"
         aria-label={t("tasks.verification.title")}
@@ -531,57 +572,16 @@ export function TaskDetail({
           ) : null}
         </>
       ) : null}
-      {latestRun?.report ? (
-        <section
-          className="task-detail-section task-result-card"
-          aria-label={t("tasks.result")}
-        >
-          <TaskReport report={latestRun.report} />
-          {task.status === "needs_review" ? (
-            <div className="task-review-actions">
-              <button
-                className="task-button task-button-primary"
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void act(() => api.complete(task.id, task.revision))
-                }
-              >
-                {t("tasks.acceptCompletion")}
-              </button>
-              <label className="task-change-note">
-                <span>{t("tasks.changeNote")}</span>
-                <textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                />
-              </label>
-              <button
-                className="task-button task-button-secondary"
-                type="button"
-                disabled={busy || !note.trim()}
-                onClick={() =>
-                  void act(() =>
-                    api.requestChanges(task.id, task.revision, note.trim()),
-                  )
-                }
-              >
-                {t("tasks.requestChanges")}
-              </button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
       <section
         className="task-detail-section task-resource-summary"
         aria-label={t("tasks.overview")}
       >
         <dl className="task-metrics-grid">
-          <div>
+          <div className="task-resource-item">
             <dt>{t("tasks.form.project")}</dt>
             <dd>{task.projectName ?? t("tasks.projectUnavailable")}</dd>
           </div>
-          <div>
+          <div className="task-resource-item">
             <dt>{t("tasks.workspace")}</dt>
             <dd title={task.workspaceName ?? latestRun?.worktreeName ?? ""}>
               {task.workspaceCleanupStatus === "removed"
@@ -591,11 +591,11 @@ export function TaskDetail({
                   t("tasks.workspacePending"))}
             </dd>
           </div>
-          <div>
+          <div className="task-resource-item">
             <dt>{t("tasks.metrics.duration")}</dt>
             <dd>{formatTaskDuration(task.durationMs, language)}</dd>
           </div>
-          <div>
+          <div className="task-resource-item">
             <dt>{t("tasks.metrics.tokens")}</dt>
             <dd>{formatTaskTokens(task.tokenCount)}</dd>
           </div>
