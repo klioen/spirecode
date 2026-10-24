@@ -6,6 +6,7 @@ import {
 } from "../../bindings";
 import { useTranslation } from "../../i18n";
 import { ChatView, hostChatApi } from "../chat";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import { taskErrorMessage, taskStatusKeys } from "./taskPresentation";
 import type { TaskStatus } from "./tasksApi";
 
@@ -113,7 +114,10 @@ export function TaskIntakeView({
                   commit: review.baseCommit.slice(0, 12),
                 })}
               </p>
-              <pre>{review.description}</pre>
+              <MarkdownContent
+                className="task-markdown"
+                content={review.description}
+              />
               <p className="task-intake-confirmation">
                 {t("tasks.intake.confirmHint")}
               </p>

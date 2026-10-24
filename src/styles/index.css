@@ -2763,10 +2763,9 @@ body.panel-resizing-vertical * {
   font-size: 12px;
   line-height: 1.55;
 }
-.task-detail-overview > p {
+.task-detail-overview > .task-markdown {
   margin: 0 0 20px;
   color: var(--text-default);
-  white-space: pre-wrap;
 }
 .task-metrics-grid {
   margin: 0;
@@ -3038,9 +3037,8 @@ body.panel-resizing-vertical * {
 .task-history > summary {
   padding: 2px 0;
 }
-.task-detail-overview > p {
+.task-detail-overview > .task-markdown {
   margin: 14px 0 0;
-  white-space: pre-wrap;
 }
 .task-report-summary {
   white-space: pre-wrap;
@@ -3139,14 +3137,91 @@ body.panel-resizing-vertical * {
   gap: 16px;
   margin-bottom: 14px;
 }
+.task-rewrite-comparison > section {
+  min-width: 0;
+}
 .task-rewrite-comparison h3 {
   font-size: 12px;
   color: var(--text-subtle);
 }
-.task-rewrite-comparison p {
-  white-space: pre-wrap;
+.task-rewrite-comparison .task-markdown {
+  margin-top: 8px;
+}
+.task-markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
   overflow-wrap: anywhere;
-  margin-top: 8px !important;
+}
+.chat-markdown.task-markdown p {
+  white-space: pre-wrap;
+}
+.chat-markdown.task-markdown h1,
+.chat-markdown.task-markdown h2,
+.chat-markdown.task-markdown h3,
+.chat-markdown.task-markdown h4 {
+  margin: 20px 0 8px;
+  line-height: 1.35;
+}
+.chat-markdown.task-markdown h1 {
+  font-size: 18px;
+}
+.chat-markdown.task-markdown h2 {
+  font-size: 16px;
+}
+.chat-markdown.task-markdown h3 {
+  font-size: 14px;
+}
+.chat-markdown.task-markdown h4 {
+  font-size: 13px;
+}
+.chat-markdown.task-markdown ul,
+.chat-markdown.task-markdown ol {
+  padding-left: 22px;
+}
+.chat-markdown.task-markdown li + li {
+  margin-top: 4px;
+}
+.chat-markdown.task-markdown .contains-task-list {
+  padding-left: 4px;
+  list-style: none;
+}
+.chat-markdown.task-markdown .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+.chat-markdown.task-markdown .task-list-item input {
+  margin: 0.35em 0 0;
+  accent-color: var(--accent);
+}
+.chat-markdown.task-markdown blockquote {
+  margin-left: 0;
+  margin-right: 0;
+}
+.chat-markdown.task-markdown table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.chat-markdown.task-markdown th,
+.chat-markdown.task-markdown td {
+  min-width: 90px;
+}
+.chat-markdown.task-markdown code {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.chat-markdown.task-markdown .chat-markdown-code {
+  max-width: 100%;
+}
+.chat-markdown.task-markdown .chat-markdown-code pre {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
 }
 @media (max-width: 680px) {
   .task-page-actions {
@@ -5244,10 +5319,7 @@ details[open] > summary > .chat-disclosure-icon {
   overflow-wrap: anywhere;
 }
 
-.task-intake-review pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: inherit;
+.task-intake-review > .task-markdown {
   margin: 12px 0;
 }
 

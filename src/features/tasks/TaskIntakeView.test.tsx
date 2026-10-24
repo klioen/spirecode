@@ -63,28 +63,52 @@ beforeEach(() => {
 });
 
 describe("Task intake conversation", () => {
-  it("prompts for a task description and renders the exact proposal without a submit button", async () => {
+  it("renders the exact proposal as safe GFM Markdown without a submit button", async () => {
     vi.mocked(commands.taskIntakeGet).mockResolvedValue({
       ...base,
       phase: "review",
       proposal: {
         reviewId: "review-1",
         title: "Improve code",
-        description:
-          "Scope: app.ts\nAcceptance: pass pnpm check\nDo not change APIs",
+        description: [
+          "## Scope",
+          "",
+          "- Update `app.ts`",
+          "",
+          "| check | result |",
+          "| --- | --- |",
+          "| `pnpm check` | pass |",
+          "",
+          "```sh",
+          "pnpm check",
+          "```",
+          "",
+          "<script>window.__intakeUnsafe = true</script>",
+          "[unsafe](javascript:alert(1))",
+        ].join("\n"),
         baseRef: base.baseRef,
         baseCommit: base.baseCommit,
       },
     });
-    render(<TaskIntakeView worktreeId="w1" sessionId="s1" />);
+    const { container } = render(
+      <TaskIntakeView worktreeId="w1" sessionId="s1" />,
+    );
     expect(screen.getByRole("textbox")).toBeDisabled();
     await waitFor(() => expect(screen.getByRole("textbox")).toBeEnabled());
     expect(
       screen.getByPlaceholderText("Describe the task you want to accomplish…"),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "Final task proposal" }),
-    ).toHaveTextContent("Scope: app.ts");
+    const proposal = screen.getByRole("region", {
+      name: "Final task proposal",
+    });
+    expect(proposal).toContainElement(
+      screen.getByRole("heading", { name: "Scope" }),
+    );
+    expect(proposal).toContainElement(screen.getByRole("table"));
+    expect(screen.getAllByText("pnpm check")).toHaveLength(2);
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.queryByRole("link", { name: "unsafe" })).toBeNull();
+    expect(screen.getByText(/<script>/)).toBeInTheDocument();
     expect(
       screen.getByText(/Reply “confirm”, “start” or “submit”/),
     ).toBeInTheDocument();

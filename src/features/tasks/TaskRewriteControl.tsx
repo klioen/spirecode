@@ -1,6 +1,7 @@
 import { RiSparkling2Line } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../i18n";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import type { TaskRewriteInput, TasksApi } from "./tasksApi";
 interface TaskRewriteControlProps {
   api: TasksApi;
@@ -118,12 +119,18 @@ export function TaskRewriteControl({
             <section>
               <h3>{t("tasks.rewrite.original")}</h3>
               <strong>{source.title}</strong>
-              <p>{source.description}</p>
+              <MarkdownContent
+                className="task-markdown"
+                content={source.description}
+              />
             </section>
             <section>
               <h3>{t("tasks.rewrite.suggested")}</h3>
               <strong>{result.title}</strong>
-              <p>{result.description}</p>
+              <MarkdownContent
+                className="task-markdown"
+                content={result.description}
+              />
             </section>
           </div>
           {stale ? <p role="status">{t("tasks.rewrite.stale")}</p> : null}

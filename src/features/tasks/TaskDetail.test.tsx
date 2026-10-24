@@ -124,16 +124,42 @@ describe("TaskDetail", () => {
     );
   });
 
-  it("renders the task description", () => {
-    render(
+  it("renders the task description as safe GFM Markdown", () => {
+    const { container } = render(
       <TaskDetail
         api={createTasksApiMock()}
-        task={taskDetail({ durationMs: 3_661_000, tokenCount: 98_765 })}
+        task={taskDetail({
+          durationMs: 3_661_000,
+          tokenCount: 98_765,
+          description: [
+            "## Requirements",
+            "",
+            "- Keep the layout",
+            "",
+            "| file | state |",
+            "| --- | --- |",
+            "| `TaskDetail.tsx` | ready |",
+            "",
+            "```ts",
+            "const safe = true;",
+            "```",
+            "",
+            "<script>window.__taskUnsafe = true</script>",
+            "[unsafe](javascript:alert(1))",
+          ].join("\n"),
+        })}
         onChange={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Build the renderer feature")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Requirements" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByText("const safe = true;")).toBeInTheDocument();
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.queryByRole("link", { name: "unsafe" })).toBeNull();
+    expect(screen.getByText(/<script>/)).toBeInTheDocument();
     expect(screen.getByText("Duration")).toBeInTheDocument();
     expect(screen.getByText("1h 1m 1s")).toBeInTheDocument();
     expect(screen.getByText("Tokens")).toBeInTheDocument();
