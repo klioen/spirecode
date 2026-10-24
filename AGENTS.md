@@ -28,3 +28,5 @@
 - Packaged GUI PATH may omit Homebrew hosting CLIs. Resolve gh/glab from Main-owned trusted installation locations without sourcing shell startup files; reconcile a merged Task PR only against its exact source repository, branch, target, and clean local HEAD before persisting review metadata.
 - Verification wait deadlines are not successful reports. Cancel timed-out verifier sessions, preserve attempt history, and fence reports by latest Run/attempt/session/commit. Retry verification or delivery without rerunning coding; never use final chat prose as an accepted verdict.
 - Add repeated pitfalls here, not in source comments.
+
+- Chat presentation kind is explicit Main-owned metadata, never inferred from `readOnly`: intake and verification are both restricted. Reconcile persisted tab kinds before rendering intake UI. A verifier is allowed one accepted report, not one tool invocation; schema rejections may be corrected within the live attempt. Re-verifying a changed HEAD requires an explicit clean-branch re-pin with atomic old/new provenance and a fresh verifier, never reusing an old verdict.

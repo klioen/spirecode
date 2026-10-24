@@ -660,21 +660,38 @@ it("allowlists intake create/get with worktree ownership IDs only", () => {
   ).toThrow();
 });
 
-it.each(["task_retry_verification", "task_recover_verification"] as const)(
-  "validates the narrow %s identity/revision contract",
-  (command) => {
-    expect(() =>
-      validateCommandArgs(command, { taskId: "task", expectedRevision: 1 }),
-    ).not.toThrow();
-    expect(() =>
-      validateCommandArgs(command, { taskId: "task", expectedRevision: 0 }),
-    ).toThrow();
-    expect(() =>
-      validateCommandArgs(command, {
-        taskId: "task",
-        expectedRevision: 1,
-        verdict: "pass",
-      }),
-    ).toThrow();
-  },
-);
+it.each([
+  "task_retry_verification",
+  "task_recover_verification",
+  "task_retry_verification_current_commit",
+] as const)("validates the narrow %s identity/revision contract", (command) => {
+  expect(() =>
+    validateCommandArgs(command, { taskId: "task", expectedRevision: 1 }),
+  ).not.toThrow();
+  expect(() =>
+    validateCommandArgs(command, { taskId: "task", expectedRevision: 0 }),
+  ).toThrow();
+  expect(() =>
+    validateCommandArgs(command, {
+      taskId: "task",
+      expectedRevision: 1,
+      verdict: "pass",
+    }),
+  ).toThrow();
+});
+
+it("resolves chat kind from Main identity only", () => {
+  expect(
+    validateCommandArgs("chat_session_kind", {
+      worktreeId: "w1",
+      sessionId: "s1",
+    }),
+  ).toEqual({ worktreeId: "w1", sessionId: "s1" });
+  expect(() =>
+    validateCommandArgs("chat_session_kind", {
+      worktreeId: "w1",
+      sessionId: "s1",
+      kind: "task-intake",
+    }),
+  ).toThrow();
+});

@@ -552,6 +552,24 @@ export function TaskDetail({
                 <RiRestartLine size={14} aria-hidden="true" />
                 {t("tasks.verification.retry")}
               </button>
+              <button
+                className="task-button task-button-secondary"
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    window.confirm(t("tasks.verification.currentCommitConfirm"))
+                  )
+                    void act(() =>
+                      api.retryVerificationCurrentCommit(
+                        task.id,
+                        task.revision,
+                      ),
+                    );
+                }}
+              >
+                {t("tasks.verification.currentCommitRetry")}
+              </button>
               {task.verification.verdict === "inconclusive" &&
               task.verification.summary ===
                 "Verifier session timed out before submitting a verdict." ? (

@@ -335,6 +335,11 @@ async function invoke(
       );
     case "chat_session_create":
       return state.chat.create(text(args, "worktreeId"));
+    case "chat_session_kind":
+      return state.chat.sessionKind(
+        text(args, "worktreeId"),
+        text(args, "sessionId"),
+      );
     case "chat_session_list":
       return state.chat.list(text(args, "worktreeId"));
     case "chat_session_attach": {
@@ -431,6 +436,11 @@ async function invoke(
       );
     case "task_retry_verification":
       return state.taskRetryVerification(
+        text(args, "taskId"),
+        safeInteger(args, "expectedRevision", 1),
+      );
+    case "task_retry_verification_current_commit":
+      return state.taskRetryVerificationCurrentCommit(
         text(args, "taskId"),
         safeInteger(args, "expectedRevision", 1),
       );
@@ -612,6 +622,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_intake_get: ["worktreeId", "sessionId"],
   chat_session_create: ["worktreeId"],
   chat_session_list: ["worktreeId"],
+  chat_session_kind: ["worktreeId", "sessionId"],
   chat_session_attach: ["worktreeId", "sessionId", "subscriptionId"],
   chat_session_detach: ["worktreeId", "sessionId", "subscriptionId"],
   chat_session_config: ["worktreeId", "sessionId"],
@@ -635,6 +646,7 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_update: ["taskId", "expectedRevision", "patch"],
   task_run: ["taskId", "expectedRevision"],
   task_retry_verification: ["taskId", "expectedRevision"],
+  task_retry_verification_current_commit: ["taskId", "expectedRevision"],
   task_recover_verification: ["taskId", "expectedRevision"],
   task_cancel: ["taskId", "expectedRevision"],
   task_complete: ["taskId", "expectedRevision"],

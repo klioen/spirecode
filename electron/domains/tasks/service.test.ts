@@ -598,6 +598,269 @@ describe("TaskService", () => {
     issues: [],
   };
 
+  it("allows malformed report correction, then accepts only one durable report", async () => {
+    const detail = await startVerification(60000);
+    const verification = repository.latestVerification(detail.task.id)!;
+    const bad = {
+      verificationId: verification.id,
+      verdict: "pass",
+      summary: "checked",
+      evidence: {
+        ...passEvidence,
+        issues: [{ severity: "minor", summary: "cosmetic", evidence: [42] }],
+      },
+    };
+    await expect(
+      verificationReportResult!(
+        bad as unknown as Parameters<
+          NonNullable<typeof verificationReportResult>
+        >[0],
+      ),
+    ).rejects.toThrow();
+    expect(repository.getVerification(verification.id)?.verdict).toBeNull();
+    const corrected = {
+      ...bad,
+      evidence: {
+        ...passEvidence,
+        issues: [
+          {
+            severity: "minor",
+            summary: "cosmetic",
+            evidence: ["first", "second"],
+          },
+        ],
+      },
+    };
+    await verificationReportResult!(
+      corrected as unknown as Parameters<
+        NonNullable<typeof verificationReportResult>
+      >[0],
+    );
+    await service.whenIdle();
+    expect(repository.getVerification(verification.id)).toMatchObject({
+      verdict: "pass",
+      evidence: { issues: [{ evidence: "first\nsecond" }] },
+    });
+    await expect(
+      verificationReportResult!(
+        corrected as unknown as Parameters<
+          NonNullable<typeof verificationReportResult>
+        >[0],
+      ),
+    ).rejects.toThrow();
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+  });
+
+  async function failedVerification() {
+    const detail = await createRunningTask({
+      ...createInput(true),
+      verificationEnabled: true,
+    });
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+    await settleWithVerification("inconclusive");
+    return service.get(detail.task.id);
+  }
+
+  it("repins only through explicit current-commit retry, retaining old records and monotonic attempt ordering", async () => {
+    const detail = await failedVerification();
+    const original = repository.latestVerification(detail.task.id)!;
+    const newHead = "b".repeat(40);
+    dependencies.currentPreparedGitChanges = vi.fn(async () => ({
+      changed: true,
+      head: newHead,
+    }));
+    vi.mocked(dependencies.validatePreparedGitChanges).mockImplementation(
+      async (_id, prepared) => {
+        if (prepared.head !== newHead) throw new Error("HEAD changed");
+      },
+    );
+    await expect(
+      service.resumeVerification(detail.task.id, detail.task.revision, false),
+    ).rejects.toThrow("HEAD changed");
+    expect(repository.listVerifications(detail.task.id)).toHaveLength(1);
+    // Simulate a previous same-SHA retry to prove per-run attempt ordering across commits.
+    database.connection
+      .prepare("UPDATE task_verifications SET attempt = 3 WHERE id = ?")
+      .run(original.id);
+    verificationReportResult = undefined;
+    const retry = await service.resumeVerification(
+      detail.task.id,
+      detail.task.revision,
+      false,
+      true,
+    );
+    expect(retry.verification).toMatchObject({
+      commitSha: newHead,
+      attempt: 4,
+      verdict: null,
+    });
+    expect(repository.getVerification(original.id)).toMatchObject({
+      commitSha: original.commitSha,
+      verdict: "inconclusive",
+      attempt: 3,
+    });
+    expect(
+      repository
+        .listRunSteps(original.codingRunId)
+        .find((s) => s.step === "git_preparation")?.details,
+    ).toEqual({ changed: true, head: newHead });
+    expect(
+      repository.listEvents(detail.task.id, { limit: 100 }),
+    ).toContainEqual(
+      expect.objectContaining({
+        type: "verification.current_commit_retried",
+        payload: expect.objectContaining({
+          sourceVerificationId: original.id,
+          sourceHead: original.commitSha,
+          commitSha: newHead,
+        }),
+      }),
+    );
+    await expect(
+      service.resumeVerification(
+        detail.task.id,
+        detail.task.revision,
+        false,
+        true,
+      ),
+    ).rejects.toThrow();
+    for (let i = 0; i < 30 && !verificationReportResult; i++)
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    const fresh = repository.latestVerification(detail.task.id)!;
+    await verificationReportResult!({
+      verificationId: fresh.id,
+      verdict: "pass",
+      summary: "Current commit checked",
+      evidence: passEvidence,
+    });
+    await service.whenIdle();
+    expect(dependencies.prepareGitChanges).toHaveBeenCalledTimes(1);
+    expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+    expect(dependencies.createVerificationSession).toHaveBeenCalledTimes(2);
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+    expect((await service.get(detail.task.id)).runs).toHaveLength(1);
+  });
+
+  it.each(["dirty", "busy", "branch", "cancelled", "delivered", "stale"])(
+    "rejects unsafe current-commit retry: %s",
+    async (reason) => {
+      const detail = await failedVerification();
+      dependencies.currentPreparedGitChanges = vi.fn(async () => ({
+        changed: true,
+        head: "b".repeat(40),
+      }));
+      if (reason === "dirty")
+        vi.mocked(dependencies.getWorktree).mockResolvedValue({
+          id: managedWorktreeId,
+          projectId,
+          dirty: true,
+          busy: false,
+        });
+      if (reason === "busy")
+        vi.mocked(dependencies.isWorktreeBusy).mockResolvedValue(true);
+      if (reason === "branch")
+        vi.mocked(dependencies.currentPreparedGitChanges).mockRejectedValue(
+          new Error("wrong branch"),
+        );
+      if (reason === "cancelled")
+        repository.upsertRunStep(detail.runs[0]!.id, "cancel", "intent");
+      if (reason === "delivered")
+        repository.upsertRunStep(
+          detail.runs[0]!.id,
+          "git_delivery",
+          "done",
+          {},
+        );
+      await expect(
+        service.resumeVerification(
+          detail.task.id,
+          detail.task.revision + (reason === "stale" ? 1 : 0),
+          false,
+          true,
+        ),
+      ).rejects.toThrow();
+      expect(repository.listVerifications(detail.task.id)).toHaveLength(1);
+      expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+    },
+  );
+
+  it("restarts an atomically repinned verification without reopening or rerunning coding", async () => {
+    const detail = await failedVerification();
+    const original = repository.latestVerification(detail.task.id)!;
+    const head = "b".repeat(40);
+    repository.resumeRunVerification(
+      original.codingRunId,
+      detail.task.revision,
+      {
+        id: ids[uuidIndex++]!,
+        commitSha: head,
+        deadlineAt: Date.now() + 60000,
+        repin: {
+          sourceVerificationId: original.id,
+          sourceHead: original.commitSha,
+          prepared: { head, changed: true },
+        },
+      },
+    );
+    vi.mocked(dependencies.loadSession).mockClear();
+    verificationReportResult = undefined;
+    await service.recover();
+    for (let i = 0; i < 30 && !verificationReportResult; i++)
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    const fresh = repository.latestVerification(detail.task.id)!;
+    expect(fresh.commitSha).toBe(head);
+    await verificationReportResult!({
+      verificationId: fresh.id,
+      verdict: "pass",
+      summary: "fresh restart check",
+      evidence: passEvidence,
+    });
+    await service.whenIdle();
+    expect(dependencies.loadSession).not.toHaveBeenCalled();
+    expect(dependencies.createSession).toHaveBeenCalledTimes(1);
+    expect(dependencies.createVerificationSession).toHaveBeenCalledTimes(2);
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledWith(
+      managedWorktreeId,
+      expect.objectContaining({ prepared: { head, changed: true } }),
+    );
+    expect(repository.getVerification(original.id)?.verdict).toBe(
+      "inconclusive",
+    );
+  });
+
+  it("rolls back repinning and its audit event if attempt creation fails", async () => {
+    const detail = await failedVerification();
+    const original = repository.latestVerification(detail.task.id)!;
+    const steps = repository.listRunSteps(original.codingRunId);
+    const events = repository.listEvents(detail.task.id, { limit: 100 });
+    expect(() =>
+      repository.resumeRunVerification(
+        original.codingRunId,
+        detail.task.revision,
+        {
+          id: original.id,
+          commitSha: "b".repeat(40),
+          deadlineAt: Date.now() + 60000,
+          repin: {
+            sourceVerificationId: original.id,
+            sourceHead: original.commitSha,
+            prepared: { head: "b".repeat(40), changed: true },
+          },
+        },
+      ),
+    ).toThrow();
+    expect(repository.listRunSteps(original.codingRunId)).toEqual(steps);
+    expect(repository.listEvents(detail.task.id, { limit: 100 })).toEqual(
+      events,
+    );
+    expect((await service.get(detail.task.id)).task).toEqual(detail.task);
+  });
+
   it("cancels a timed-out verifier, rejects late reports, and retries only verification with preserved history", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     try {

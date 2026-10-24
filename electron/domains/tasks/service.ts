@@ -198,6 +198,10 @@ export interface TaskServiceDependencies {
     worktreeId: string,
     input: { start: GitDeliveryStart; title: string },
   ): Promise<GitPreparationResult>;
+  currentPreparedGitChanges?(
+    worktreeId: string,
+    start: GitDeliveryStart,
+  ): Promise<GitPreparationResult>;
   validatePreparedGitChanges(
     worktreeId: string,
     prepared: GitPreparationResult,
@@ -1760,8 +1764,7 @@ export class TaskService {
       !run.report ||
       (requireBoundSession && verification.sessionId !== id) ||
       this.#hasCancelIntent(run.id) ||
-      this.repository.findVerification(run.id, verification.commitSha)?.id !==
-        id ||
+      this.repository.latestVerification(task.id)?.id !== id ||
       this.#disposed
     )
       throw new TaskServiceError(
@@ -1800,6 +1803,7 @@ export class TaskService {
     taskId: string,
     expectedRevision: number,
     recoverReport: boolean,
+    currentCommit = false,
   ): Promise<TaskDetail> {
     this.#assertAvailable();
     return this.#singleFlight(taskId, async () => {
@@ -1810,7 +1814,7 @@ export class TaskService {
           "Task revision does not match",
         );
       const run = this.repository.listAllRuns(taskId)[0];
-      const prepared =
+      let prepared =
         run &&
         parseGitPreparationResult(
           this.repository
@@ -1861,6 +1865,28 @@ export class TaskService {
           "TASK_WORKSPACE_BUSY",
           "Verification requires an idle, clean, bound workspace",
         );
+      const sourceHead = prepared.head;
+      if (currentCommit) {
+        const start = parseGitDeliveryStart(
+          this.repository
+            .listRunSteps(run.id)
+            .find((step) => step.step === "git_start" && step.state === "done")
+            ?.details,
+        );
+        if (
+          recoverReport ||
+          !start ||
+          !this.dependencies.currentPreparedGitChanges
+        )
+          throw new TaskServiceError(
+            "TASK_INVALID_STATE",
+            "Current-commit verification requires a persisted Task Git binding",
+          );
+        prepared = await this.dependencies.currentPreparedGitChanges(
+          run.worktreeId,
+          start,
+        );
+      }
       await this.dependencies.validatePreparedGitChanges(
         run.worktreeId,
         prepared,
@@ -1905,19 +1931,29 @@ export class TaskService {
           id: this.#uuid(),
           commitSha: prepared.head,
           deadlineAt: Date.now() + this.#verificationTimeoutMs,
+          ...(currentCommit
+            ? {
+                repin: {
+                  sourceVerificationId: previous.id,
+                  sourceHead,
+                  prepared,
+                },
+              }
+            : {}),
         },
       );
-      this.repository.appendEvent(
-        taskId,
-        run.id,
-        recoverReport ? "verification.recovered" : "verification.retried",
-        {
-          verificationId: verification.id,
-          sourceVerificationId: previous.id,
-          sourceSessionId: previous.sessionId,
-          commitSha: prepared.head,
-        },
-      );
+      if (!currentCommit)
+        this.repository.appendEvent(
+          taskId,
+          run.id,
+          recoverReport ? "verification.recovered" : "verification.retried",
+          {
+            verificationId: verification.id,
+            sourceVerificationId: previous.id,
+            sourceSessionId: previous.sessionId,
+            commitSha: prepared.head,
+          },
+        );
       if (report)
         this.#finishVerification(verification.id, {
           verdict: report.verdict,

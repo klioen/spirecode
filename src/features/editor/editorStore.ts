@@ -31,7 +31,8 @@ export type ResourceTab =
       id: string;
       worktreeId: string;
       type: "chat";
-      kind?: "task-intake";
+      kind?: "chat" | "task-intake" | "task-verification";
+      kindResolved?: boolean;
       sessionId: string;
       title: string;
       preview: false;
@@ -107,8 +108,13 @@ function restoreTab(value: unknown, worktreeId: string): ResourceTab | null {
       id: chatResourceId(worktreeId, candidate.sessionId),
       worktreeId,
       type: "chat",
-      ...(candidate.kind === "task-intake"
-        ? { kind: "task-intake" as const }
+      ...(["chat", "task-intake", "task-verification"].includes(
+        candidate.kind as string,
+      )
+        ? {
+            kind: candidate.kind as
+              "chat" | "task-intake" | "task-verification",
+          }
         : {}),
       sessionId: candidate.sessionId,
       title:
@@ -215,8 +221,15 @@ interface EditorState {
     worktreeId: string,
     sessionId: string,
     title: string,
-    kind?: "task-intake",
+    kind?: "chat" | "task-intake" | "task-verification",
   ) => ResourceTab;
+  reconcileChatKinds: (
+    worktreeId: string,
+    sessions: Array<{
+      sessionId: string;
+      kind?: "chat" | "task-intake" | "task-verification";
+    }>,
+  ) => void;
   renameChat: (worktreeId: string, sessionId: string, title: string) => void;
   setTerminalStatus: (
     worktreeId: string,
@@ -269,7 +282,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         tabs = view.tabs.map((tab) => {
           if (tab.id !== incoming.id) return tab;
           if (tab.type === "chat" && incoming.type === "chat" && incoming.kind)
-            return { ...tab, kind: incoming.kind, preview: false };
+            return {
+              ...tab,
+              kind: incoming.kind,
+              kindResolved: incoming.kindResolved,
+              preview: false,
+            };
           return keep ? { ...tab, preview: false } : tab;
         });
       } else if (incoming.type === "terminal" || incoming.type === "chat") {
@@ -323,7 +341,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       id: chatResourceId(worktreeId, sessionId),
       worktreeId,
       type: "chat",
-      ...(kind ? { kind } : {}),
+      ...(kind ? { kind, kindResolved: true } : {}),
       sessionId,
       title,
       preview: false,
@@ -331,6 +349,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().open(chat, true);
     return chat;
   },
+  reconcileChatKinds: (worktreeId, sessions) =>
+    set((state) => {
+      const view = state.views[worktreeId];
+      if (!view) return state;
+      const byId = new Map(
+        sessions.map((session) => [session.sessionId, session.kind ?? "chat"]),
+      );
+      const tabs = view.tabs.map((tab) =>
+        tab.type === "chat" && byId.has(tab.sessionId)
+          ? { ...tab, kind: byId.get(tab.sessionId)!, kindResolved: true }
+          : tab,
+      );
+      const views = { ...state.views, [worktreeId]: { ...view, tabs } };
+      persistEditorViews(views);
+      return { views };
+    }),
   renameChat: (worktreeId, sessionId, title) =>
     set((state) => {
       const view = state.views[worktreeId];

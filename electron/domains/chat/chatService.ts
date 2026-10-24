@@ -26,12 +26,14 @@ const MAX_BUFFERED_EVENTS = 512;
 const MAX_PROMPT_BYTES = 64 * 1024;
 
 export interface ChatSessionInternalOptions extends PiSessionLoadOptions {
+  kind?: ChatSessionSummary["kind"];
   onSend?: (text: string) => Promise<void>;
   restoreEmpty?: boolean;
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
 interface SessionState extends PiSessionRecord {
+  kind: NonNullable<ChatSessionSummary["kind"]>;
   worktreeId: string;
   sequence: number;
   status: ChatRunStatus;
@@ -266,6 +268,23 @@ export class ChatService {
     });
   }
 
+  async sessionKind(
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<{ kind: NonNullable<ChatSessionSummary["kind"]> }> {
+    await this.root(worktreeId);
+    const options = this.resolveSessionOptions?.(worktreeId, sessionId);
+    if (options?.kind) {
+      this.establishOwnership(sessionId, worktreeId);
+      return { kind: options.kind };
+    }
+    const summary = (await this.list(worktreeId)).find(
+      (session) => session.sessionId === sessionId,
+    );
+    if (!summary) throw notFound();
+    return { kind: summary.kind ?? "chat" };
+  }
+
   async list(worktreeId: string): Promise<ChatSessionSummary[]> {
     const cwd = await this.root(worktreeId);
     try {
@@ -280,10 +299,10 @@ export class ChatService {
         return {
           ...summary,
           worktreeId,
-          ...(this.resolveSessionOptions?.(worktreeId, summary.sessionId)
-            ?.readOnly
-            ? { kind: "task-intake" as const }
-            : {}),
+          kind:
+            this.resolveSessionOptions?.(worktreeId, summary.sessionId)?.kind ??
+            this.sessions.get(summary.sessionId)?.kind ??
+            "chat",
         };
       });
     } catch (error) {
@@ -807,6 +826,7 @@ export class ChatService {
 
     const record = {
       ...created,
+      kind: options.kind ?? "chat",
       worktreeId,
       sequence: 0,
       status: created.session.isStreaming ? "streaming" : "idle",
@@ -891,10 +911,9 @@ export class ChatService {
     return {
       ...normalizeSummary(record as unknown as Record<string, unknown>),
       worktreeId: record.worktreeId,
-      ...(this.resolveSessionOptions?.(record.worktreeId, record.sessionId)
-        ?.readOnly
-        ? { kind: "task-intake" as const }
-        : {}),
+      kind:
+        this.resolveSessionOptions?.(record.worktreeId, record.sessionId)
+          ?.kind ?? record.kind,
     };
   }
 

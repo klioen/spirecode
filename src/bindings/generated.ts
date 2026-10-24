@@ -166,7 +166,7 @@ export type TerminalMessage =
   | { type: "error"; terminalId: string; error: string };
 
 export interface ChatSessionSummary {
-  kind?: "task-intake";
+  kind?: "chat" | "task-intake" | "task-verification";
   sessionId: string;
   worktreeId: string;
   title: string;

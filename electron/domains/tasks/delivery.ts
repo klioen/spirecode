@@ -529,6 +529,31 @@ export class TaskDeliveryService {
     return { changed, head };
   }
 
+  async currentPrepared(
+    start: GitDeliveryStart,
+  ): Promise<GitPreparationResult> {
+    const branch = requireBranch(start.branch);
+    const assertBranch = async () => {
+      if (
+        (await gitText(this.root, ["branch", "--show-current"])).trim() !==
+        branch
+      )
+        throw new TaskDeliveryError(
+          "TASK_DELIVERY_BRANCH_CONFLICT",
+          "The workspace is no longer on the persisted task branch",
+          false,
+        );
+    };
+    await assertBranch();
+    await assertNoRepositoryGitCommands(this.root);
+    await assertNoSelectedFilters(this.root);
+    const head = (await gitText(this.root, ["rev-parse", "HEAD"])).trim();
+    const prepared = { changed: head !== start.baselineHead, head };
+    await this.assertPrepared(prepared);
+    await assertBranch();
+    return prepared;
+  }
+
   async assertPrepared(prepared: GitPreparationResult): Promise<void> {
     const head = (await gitText(this.root, ["rev-parse", "HEAD"])).trim();
     if (head !== prepared.head)
@@ -610,6 +635,10 @@ export class TaskDeliveryService {
           "The matching change request has an unexpected branch or target; no branch was pushed.",
           false,
         );
+      if (candidate.merged && !candidate.draft) {
+        const receipt = await this.findMergedDelivery(input.start);
+        if (receipt?.head === prepared.head) return receipt;
+      }
       if (candidate.state !== "open" || candidate.draft)
         throw new TaskDeliveryError(
           candidate.draft

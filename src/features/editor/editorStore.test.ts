@@ -370,3 +370,21 @@ it("restores an authoritative intake kind onto an existing untyped placement wit
     kind: "task-intake",
   });
 });
+
+it("reconciles stale intake kinds without activating tabs or changing session identity", () => {
+  useEditorStore.getState().openChat("w1", "verifier", "verify", "task-intake");
+  useEditorStore.getState().openChat("w1", "ordinary", "chat", "chat");
+  const before = useEditorStore.getState().views.w1;
+  useEditorStore.getState().reconcileChatKinds("w1", [
+    { sessionId: "verifier", kind: "task-verification" },
+    { sessionId: "ordinary", kind: "chat" },
+  ]);
+  expect(useEditorStore.getState().views.w1.activeTabId).toBe(
+    before.activeTabId,
+  );
+  expect(useEditorStore.getState().views.w1.tabs[0]).toMatchObject({
+    sessionId: "verifier",
+    kind: "task-verification",
+    kindResolved: true,
+  });
+});

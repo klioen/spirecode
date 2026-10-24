@@ -214,6 +214,10 @@ export interface TasksApi {
     taskId: string,
     expectedRevision: number,
   ): Promise<TaskDetailValue>;
+  retryVerificationCurrentCommit(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<TaskDetailValue>;
   recoverVerification(
     taskId: string,
     expectedRevision: number,
@@ -255,6 +259,10 @@ export interface TaskHostBindings {
     kind: string;
   }): Promise<void>;
   taskRetryVerification(input: {
+    taskId: string;
+    expectedRevision: number;
+  }): Promise<TaskDetailValue>;
+  taskRetryVerificationCurrentCommit(input: {
     taskId: string;
     expectedRevision: number;
   }): Promise<TaskDetailValue>;
@@ -303,6 +311,8 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
     host.taskNotificationMarkRead({ taskId, runId, kind }),
   retryVerification: (taskId, expectedRevision) =>
     host.taskRetryVerification({ taskId, expectedRevision }),
+  retryVerificationCurrentCommit: (taskId, expectedRevision) =>
+    host.taskRetryVerificationCurrentCommit({ taskId, expectedRevision }),
   recoverVerification: (taskId, expectedRevision) =>
     host.taskRecoverVerification({ taskId, expectedRevision }),
   run: (taskId, expectedRevision) => host.taskRun({ taskId, expectedRevision }),
@@ -344,6 +354,11 @@ export const tasksApi: TasksApi = {
     commands.taskNotificationMarkRead(taskId, runId, kind),
   retryVerification: (taskId, expectedRevision) =>
     commands.taskRetryVerification(
+      taskId,
+      expectedRevision,
+    ) as Promise<TaskDetailValue>,
+  retryVerificationCurrentCommit: (taskId, expectedRevision) =>
+    commands.taskRetryVerificationCurrentCommit(
       taskId,
       expectedRevision,
     ) as Promise<TaskDetailValue>,

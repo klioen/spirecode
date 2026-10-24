@@ -10,6 +10,7 @@ it("adapts future host bindings without importing unavailable generated commands
     taskGet: vi.fn(),
     taskCreate: vi.fn(),
     taskRetryVerification: vi.fn(),
+    taskRetryVerificationCurrentCommit: vi.fn(),
     taskRecoverVerification: vi.fn(),
     taskRun: vi.fn().mockResolvedValue(undefined),
     taskCancel: vi.fn(),
@@ -46,4 +47,15 @@ it("adapts future host bindings without importing unavailable generated commands
   });
   expect(host.subscribeTaskEvents).toHaveBeenCalledWith(listener);
   expect(stop).toBe(unsubscribe);
+});
+
+it("sends current-commit retry with only Task identity and revision", async () => {
+  const host = {
+    taskRetryVerificationCurrentCommit: vi.fn(),
+  } as unknown as Parameters<typeof createHostTasksApi>[0];
+  await createHostTasksApi(host).retryVerificationCurrentCommit("task-1", 7);
+  expect(host.taskRetryVerificationCurrentCommit).toHaveBeenCalledWith({
+    taskId: "task-1",
+    expectedRevision: 7,
+  });
 });

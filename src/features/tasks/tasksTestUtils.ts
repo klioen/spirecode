@@ -63,6 +63,7 @@ export const createTasksApiMock = (): TasksApi => ({
   }),
   notificationsMarkAllRead: vi.fn().mockResolvedValue(undefined),
   notificationMarkRead: vi.fn().mockResolvedValue(undefined),
+  retryVerificationCurrentCommit: vi.fn(),
   retryVerification: vi
     .fn()
     .mockResolvedValue(taskDetail({ status: "running", revision: 2 })),

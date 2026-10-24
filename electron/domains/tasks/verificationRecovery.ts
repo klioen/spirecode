@@ -15,7 +15,7 @@ export function recoverVerificationReport(
   verification: TaskVerification,
 ): VerificationReportInput | null {
   let bound = false;
-  const calls: Array<{ id: string; input: VerificationReportInput }> = [];
+  const calls: Array<{ id: string; input: Record<string, unknown> }> = [];
   const results = new Map<string, { error: boolean; text: string }>();
   for (const value of entries) {
     if (!value || typeof value !== "object") continue;
@@ -83,7 +83,7 @@ export function recoverVerificationReport(
           );
         calls.push({
           id: item.id,
-          input: { verificationId, ...validateTaskVerificationReport(report) },
+          input: { verificationId, ...report },
         });
       }
     }
@@ -103,11 +103,24 @@ export function recoverVerificationReport(
     }
   }
   if (!calls.length) return null;
-  if (calls.length !== 1)
+  const eligible = calls.filter((call) => {
+    const result = results.get(call.id);
+    return !(
+      result?.error &&
+      result.text.startsWith(
+        'Validation failed for tool "task_report_verification":',
+      )
+    );
+  });
+  if (
+    calls.length > 3 ||
+    eligible.length !== 1 ||
+    new Set(calls.map((call) => call.id)).size !== calls.length
+  )
     throw new TaskValidationError(
       "Multiple verification reports require a fresh verification attempt",
     );
-  const call = calls[0]!;
+  const call = eligible[0]!;
   const result = results.get(call.id);
   if (
     result?.error &&
@@ -116,5 +129,11 @@ export function recoverVerificationReport(
     throw new TaskValidationError(
       "Rejected verification evidence requires a fresh verification attempt",
     );
-  return call.input;
+  const { verificationId, ...report } = call.input;
+  return {
+    verificationId: verificationId as string,
+    ...validateTaskVerificationReport(
+      report as unknown as import("./types.js").TaskVerificationReport,
+    ),
+  };
 }

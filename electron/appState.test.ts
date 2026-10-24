@@ -336,6 +336,7 @@ describe("verification session policy", () => {
       onEvent,
     });
     expect(options).toMatchObject({
+      kind: "task-verification",
       readOnly: true,
       readOnlyTools: ["read", "bash"],
       sessionId: "verification-1",
@@ -358,4 +359,45 @@ describe("verification session policy", () => {
       ],
     });
   });
+});
+
+it("allows string-array issue evidence through the real SDK wire schema but rejects non-string entries", async () => {
+  const { Value } = await import("typebox/value");
+  const options = taskVerificationSessionOptions({
+    sessionId: "v1",
+    reportTool: { name: "task_report_verification", description: "report" },
+    reportVerification: vi.fn(),
+    onEvent: vi.fn(),
+  });
+  const parameters = (
+    options.customTools![0]! as {
+      parameters: import("typebox").TSchema;
+    }
+  ).parameters;
+  const args = {
+    verificationId: "v1",
+    verdict: "pass",
+    summary: "checked",
+    evidence: {
+      acceptanceCriteria: [],
+      commands: [],
+      issues: [
+        {
+          severity: "minor",
+          summary: "cosmetic",
+          evidence: ["first", "second"],
+        },
+      ],
+    },
+  };
+  expect(Value.Check(parameters, args)).toBe(true);
+  expect(
+    Value.Check(parameters, {
+      ...args,
+      evidence: {
+        ...args.evidence,
+        issues: [{ severity: "minor", summary: "cosmetic", evidence: [42] }],
+      },
+    }),
+  ).toBe(false);
 });

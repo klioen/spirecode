@@ -181,6 +181,7 @@ Rust must launch processes with executable plus argument arrays, never shell com
 ```text
 chat_session_create(worktreeId, channel) -> ChatSessionSummary
 chat_session_list(worktreeId) -> ChatSessionSummary[]
+chat_session_kind(worktreeId, sessionId) -> { kind: chat | task-intake | task-verification }
 chat_session_attach(worktreeId, sessionId, channel) -> ChatSnapshot
 chat_session_send(worktreeId, sessionId, text) -> Accepted
 chat_session_abort(worktreeId, sessionId) -> Accepted

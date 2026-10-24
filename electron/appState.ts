@@ -352,6 +352,10 @@ export class AppState {
           const worktree = await projects.worktree(worktreeId);
           return new TaskDeliveryService(worktree.path).prepare(input);
         },
+        currentPreparedGitChanges: async (worktreeId, start) => {
+          const worktree = await projects.worktree(worktreeId);
+          return new TaskDeliveryService(worktree.path).currentPrepared(start);
+        },
         validatePreparedGitChanges: async (worktreeId, prepared) => {
           const worktree = await projects.worktree(worktreeId);
           await new TaskDeliveryService(worktree.path).assertPrepared(prepared);
@@ -748,6 +752,20 @@ export class AppState {
     );
   }
 
+  async taskRetryVerificationCurrentCommit(
+    taskId: string,
+    expectedRevision: number,
+  ) {
+    return this.taskMutation(
+      await this.requireTasks().resumeVerification(
+        taskId,
+        expectedRevision,
+        false,
+        true,
+      ),
+    );
+  }
+
   async taskRecoverVerification(taskId: string, expectedRevision: number) {
     return this.taskMutation(
       await this.requireTasks().resumeVerification(
@@ -1124,6 +1142,7 @@ export function taskVerificationSessionOptions(
   integration: TaskVerificationSessionIntegration,
 ): ChatSessionInternalOptions {
   return {
+    kind: "task-verification",
     customTools: [taskVerificationTool(integration)],
     sessionId: integration.sessionId,
     readOnly: true,
@@ -1186,7 +1205,12 @@ function taskVerificationTool(integration: TaskVerificationSessionIntegration) {
                     Type.Literal("minor"),
                   ]),
                   summary: Type.String(),
-                  evidence: Type.String(),
+                  evidence: Type.Union([
+                    Type.String({ maxLength: 8192 }),
+                    Type.Array(Type.String({ maxLength: 8192 }), {
+                      maxItems: 100,
+                    }),
+                  ]),
                 },
                 { additionalProperties: false },
               ),

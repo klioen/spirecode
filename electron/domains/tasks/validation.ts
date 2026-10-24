@@ -353,7 +353,18 @@ export function validateTaskVerificationReport(
         8 * 1024,
       ),
       evidence: requireString(
-        value.evidence,
+        Array.isArray(value.evidence)
+          ? boundedArray(value.evidence, `issues[${index}].evidence`, 100)
+              .map((item, itemIndex) =>
+                requireString(
+                  item,
+                  `issues[${index}].evidence[${itemIndex}]`,
+                  8 * 1024,
+                  true,
+                ),
+              )
+              .join("\n")
+          : value.evidence,
         `issues[${index}].evidence`,
         8 * 1024,
         true,

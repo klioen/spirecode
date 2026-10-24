@@ -23,7 +23,7 @@ export type ChatRunStatus =
   | "auth-required";
 
 export interface ChatSessionSummary {
-  kind?: "task-intake";
+  kind?: "chat" | "task-intake" | "task-verification";
   sessionId: string;
   worktreeId: string;
   title: string;

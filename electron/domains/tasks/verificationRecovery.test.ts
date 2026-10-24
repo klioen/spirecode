@@ -132,3 +132,19 @@ it("never replays a new-attempt report that missed its durable deadline", () => 
     ),
   ).toEqual(report);
 });
+
+it("recovers one corrected report after a positively rejected schema call", () => {
+  const invalid = structuredClone(call);
+  invalid.message.content[0]!.id = "malformed";
+  invalid.message.content[0]!.arguments.evidence = {} as typeof report.evidence;
+  const rejection = errorResult(
+    'Validation failed for tool "task_report_verification": evidence.issues.0.evidence: must be string',
+  );
+  rejection.message.toolCallId = "malformed";
+  expect(
+    recoverVerificationReport([prompt, invalid, rejection, call], verification),
+  ).toEqual(report);
+  expect(() =>
+    recoverVerificationReport([prompt, invalid, call], verification),
+  ).toThrow();
+});
