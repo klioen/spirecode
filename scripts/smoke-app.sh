@@ -82,12 +82,15 @@ fi
 ELECTRON_RUN_AS_NODE=1 "$executable" -e '
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync(process.argv[1], { readOnly: true });
-  const version = db.prepare("SELECT max(version) AS version FROM schema_migrations").get();
+  const version = db.prepare("SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
   const check = db.prepare("PRAGMA quick_check").get();
   const names = ["tasks", "task_runs", "task_run_steps", "task_events", "task_notifications", "task_session_archives", "task_run_retention", "task_artifact_archives", "task_archive_states"];
   const tables = db.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type=? AND name IN (" + names.map(() => "?").join(",") + ")").get("table", ...names);
+  const metadata = db.prepare("PRAGMA table_info(tasks)").all().find((column) => column.name === "metadata_json");
   db.close();
-  process.exit(version?.version === 5 && check?.quick_check === "ok" && tables?.count === 9 ? 0 : 2);
+  const valid = version?.version === 6 && version?.name === "migration-v6" && check?.quick_check === "ok" && tables?.count === 9 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "\x27{}\x27";
+  if (!valid) console.error("Task schema smoke failed", { version, check, tables, metadata });
+  process.exit(valid ? 0 : 2);
 ' "$user_data/tasks.sqlite3"
 
 echo "Electron app smoke passed: $app"

@@ -258,8 +258,11 @@ const db = new DatabaseSync(${JSON.stringify(taskDatabase)}, { readOnly: true })
 const migration = db.prepare("SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
 const integrity = db.prepare("PRAGMA quick_check").get();
 const tables = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('tasks','task_runs','task_run_steps','task_events','task_notifications','task_session_archives','task_run_retention','task_artifact_archives','task_archive_states')").get();
+const metadata = db.prepare("PRAGMA table_info(tasks)").all().find((column) => column.name === "metadata_json");
 db.close();
-process.exit(migration?.version === 5 && migration?.name === "migration-v5" && integrity?.quick_check === "ok" && tables?.count === 9 ? 0 : 2);`,
+const valid = migration?.version === 6 && migration?.name === "migration-v6" && integrity?.quick_check === "ok" && tables?.count === 9 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "'{}'";
+if (!valid) console.error("Task schema smoke failed", { migration, integrity, tables, metadata });
+process.exit(valid ? 0 : 2);`,
     ],
     { ELECTRON_RUN_AS_NODE: "1" },
   );
