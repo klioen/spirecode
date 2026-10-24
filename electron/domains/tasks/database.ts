@@ -13,7 +13,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: new (path: string) => DatabaseConnection;
 };
 
-export const CURRENT_TASK_SCHEMA_VERSION = 7;
+export const CURRENT_TASK_SCHEMA_VERSION = 8;
 
 export type TaskDatabaseErrorCode =
   | "TASK_DATABASE_UNAVAILABLE"
@@ -214,6 +214,34 @@ CREATE TABLE task_verifications (
 CREATE INDEX task_verifications_task_idx ON task_verifications(task_id, created_at DESC, id DESC);
 `;
 
+const MIGRATION_8 = `
+ALTER TABLE task_verifications RENAME TO task_verifications_v7;
+DROP INDEX task_verifications_task_idx;
+CREATE TABLE task_verifications (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+  coding_run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE RESTRICT,
+  worktree_id TEXT NOT NULL,
+  commit_sha TEXT NOT NULL CHECK (length(commit_sha) BETWEEN 7 AND 128),
+  attempt INTEGER NOT NULL CHECK (attempt > 0),
+  deadline_at INTEGER,
+  verdict TEXT CHECK (verdict IS NULL OR verdict IN ('pass','fail','inconclusive')),
+  summary TEXT,
+  evidence_json TEXT CHECK (evidence_json IS NULL OR json_valid(evidence_json)),
+  session_id TEXT,
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  CHECK ((verdict IS NULL AND summary IS NULL AND evidence_json IS NULL AND finished_at IS NULL)
+      OR (verdict IS NOT NULL AND summary IS NOT NULL AND evidence_json IS NOT NULL AND finished_at IS NOT NULL)),
+  UNIQUE(coding_run_id, commit_sha, attempt)
+) STRICT;
+CREATE INDEX task_verifications_task_idx ON task_verifications(task_id, coding_run_id, attempt DESC);
+
+INSERT INTO task_verifications (id, task_id, coding_run_id, worktree_id, commit_sha, attempt, deadline_at, verdict, summary, evidence_json, session_id, created_at, finished_at)
+SELECT id, task_id, coding_run_id, worktree_id, commit_sha, 1, NULL, verdict, summary, evidence_json, session_id, created_at, finished_at FROM task_verifications_v7;
+DROP TABLE task_verifications_v7;
+`;
+
 function migrateReviewMetadata(connection: DatabaseConnection): void {
   connection.exec(
     "ALTER TABLE tasks ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata_json) AND length(CAST(metadata_json AS BLOB)) <= 16384)",
@@ -328,6 +356,12 @@ function migrate(
           "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
         )
         .run(7, "migration-v7", now());
+      connection.exec(MIGRATION_8);
+      connection
+        .prepare(
+          "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+        )
+        .run(8, "migration-v8", now());
       connection.exec("COMMIT");
       return CURRENT_TASK_SCHEMA_VERSION;
     } catch (error) {
@@ -381,6 +415,7 @@ function migrate(
       else if (targetVersion === 5) connection.exec(MIGRATION_5);
       else if (targetVersion === 6) migrateReviewMetadata(connection);
       else if (targetVersion === 7) connection.exec(MIGRATION_7);
+      else if (targetVersion === 8) connection.exec(MIGRATION_8);
       else throw new Error(`No Task migration for schema ${targetVersion}`);
       connection
         .prepare(

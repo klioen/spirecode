@@ -28,6 +28,7 @@ import {
   type TaskVerificationToolDescription,
   type VerificationReportInput,
 } from "./verification.js";
+import { validateTaskVerificationReport } from "./validation.js";
 import type {
   CreateRunInput,
   Page,
@@ -135,6 +136,14 @@ export interface TaskServiceDependencies {
     worktreeId: string,
     integration: TaskVerificationSessionIntegration,
   ): Promise<TaskSessionBinding>;
+  loadVerificationSession?(
+    worktreeId: string,
+    sessionId: string,
+    integration: TaskVerificationSessionIntegration,
+  ): Promise<void>;
+  readVerificationReport?(
+    verification: TaskVerification,
+  ): Promise<VerificationReportInput | null>;
   findSession(
     worktreeId: string,
     name: string,
@@ -252,6 +261,12 @@ export class TaskService {
   readonly #inFlight = new Map<string, Promise<TaskDetail>>();
   readonly #background = new Set<Promise<void>>();
   readonly #integrations = new Map<string, TaskSessionIntegration>();
+  readonly #verificationWaiters = new Map<
+    string,
+    (value: TaskVerification) => void
+  >();
+  readonly #verificationReporting = new Set<string>();
+  readonly #verificationStopping = new Set<string>();
   readonly #settling = new Map<string, Promise<TaskDetail>>();
   #startTail: Promise<void> = Promise.resolve();
   #scheduling = false;
@@ -264,7 +279,7 @@ export class TaskService {
     options: TaskServiceOptions = {},
   ) {
     this.#uuid = options.randomUUID ?? nodeRandomUUID;
-    this.#verificationTimeoutMs = options.verificationTimeoutMs ?? 15 * 60_000;
+    this.#verificationTimeoutMs = options.verificationTimeoutMs ?? 60 * 60_000;
   }
 
   list(options: ListTasksOptions): Promise<Page<Task>> {
@@ -485,6 +500,29 @@ export class TaskService {
     }
     const runId = task.activeRunId;
     this.repository.upsertRunStep(runId, "cancel", "intent");
+    const verification = this.repository.latestVerification(taskId);
+    if (
+      verification &&
+      !verification.verdict &&
+      verification.codingRunId === runId
+    ) {
+      this.#verificationStopping.add(verification.id);
+      try {
+        if (verification.sessionId)
+          await this.dependencies.abortSession(
+            verification.worktreeId,
+            verification.sessionId,
+          );
+      } finally {
+        if (!this.repository.getVerification(verification.id)?.verdict)
+          this.#finishVerification(verification.id, {
+            verdict: "inconclusive",
+            summary: "Verification was cancelled; no report was accepted.",
+            evidence: emptyVerificationEvidence("Task cancelled"),
+          });
+        this.#verificationStopping.delete(verification.id);
+      }
+    }
     const executing = this.#inFlight.get(taskId);
     if (executing) await executing.catch(() => undefined);
     return this.#singleFlight(taskId, async () => {
@@ -769,6 +807,24 @@ export class TaskService {
     }
     for (const active of this.repository.listActiveRuns()) {
       if (active.status === "queued") continue;
+      const verification = this.repository.latestVerification(active.taskId);
+      if (
+        active.report &&
+        verification &&
+        !verification.verdict &&
+        verification.codingRunId === active.id
+      ) {
+        this.#enqueue(async () => {
+          try {
+            await this.#singleFlight(active.taskId, () =>
+              this.#orchestrate(active.id),
+            );
+          } catch (error) {
+            await this.#recordFailure(active.id, error);
+          }
+        });
+        continue;
+      }
       try {
         await this.#singleFlight(active.taskId, () =>
           this.#orchestrate(active.id),
@@ -861,6 +917,29 @@ export class TaskService {
 
   async dispose(): Promise<void> {
     this.#disposed = true;
+    for (const id of this.#verificationWaiters.keys()) {
+      const verification = this.repository.getVerification(id);
+      if (!verification || verification.verdict) continue;
+      this.#verificationStopping.add(id);
+      try {
+        if (verification.sessionId)
+          await this.dependencies.abortSession(
+            verification.worktreeId,
+            verification.sessionId,
+          );
+      } catch {
+        /* An interrupted verifier cannot publish. */
+      } finally {
+        if (!this.repository.getVerification(id)?.verdict)
+          this.#finishVerification(id, {
+            verdict: "inconclusive",
+            summary:
+              "Verification was interrupted during application shutdown. Retry verification without rerunning coding.",
+            evidence: emptyVerificationEvidence("Verifier interrupted"),
+          });
+        this.#verificationStopping.delete(id);
+      }
+    }
     await this.whenIdle();
   }
 
@@ -999,6 +1078,15 @@ export class TaskService {
     const task = this.#requireTask(run.taskId);
     const project = await this.#requireProject(task.projectId);
     const steps = this.repository.listRunSteps(run.id);
+    if (
+      run.report &&
+      run.status === "running" &&
+      steps.some(
+        (step) => step.step === "git_preparation" && step.state === "done",
+      ) &&
+      !this.#hasCancelIntent(run.id)
+    )
+      return this.#settleRun(run.id);
     const cancelStep = steps.find((step) => step.step === "cancel");
     if (cancelStep?.state === "intent") return this.#cancelActiveRun(run);
     const failureStop = steps.find((step) => step.step === "failure_stop");
@@ -1408,6 +1496,13 @@ export class TaskService {
       return this.get(run.taskId);
     if (run.report) {
       run = await this.#deliverReport(run);
+      if (
+        this.#hasCancelIntent(run.id) ||
+        !["running", "awaiting_report"].includes(
+          this.#requireRun(run.id).status,
+        )
+      )
+        return this.get(run.taskId);
       const result = this.repository.finalizeRunReport(
         run.id,
         run.revision,
@@ -1496,7 +1591,12 @@ export class TaskService {
         run,
         prepared,
       );
-      if (verification.verdict !== "pass") return run;
+      if (
+        verification.verdict !== "pass" ||
+        this.#disposed ||
+        this.#hasCancelIntent(run.id)
+      )
+        return run;
     }
     const previous = this.#previousDelivery(run);
     this.repository.upsertRunStep(run.id, "git_delivery", "intent", {
@@ -1533,6 +1633,312 @@ export class TaskService {
     return run;
   }
 
+  verificationIntegration(
+    verificationId: string,
+  ): TaskVerificationSessionIntegration {
+    return {
+      sessionId: verificationId,
+      reportTool: TASK_VERIFICATION_TOOL_DESCRIPTION,
+      reportVerification: (input) =>
+        this.#reportVerification(verificationId, input),
+      onEvent: (event) => {
+        if (
+          event.type !== "agent_settled" ||
+          this.#disposed ||
+          this.#verificationStopping.has(verificationId) ||
+          this.#verificationReporting.has(verificationId)
+        )
+          return;
+        const verification = this.repository.getVerification(verificationId);
+        if (!verification || verification.verdict) return;
+        try {
+          this.#assertVerificationCurrent(verificationId);
+          this.#finishVerification(verificationId, {
+            verdict: "inconclusive",
+            summary:
+              "Verifier session settled without submitting a verification report.",
+            evidence: emptyVerificationEvidence(
+              "Verifier did not submit its required report",
+            ),
+          });
+        } catch {
+          /* Cancelled and superseded sessions cannot change a Task. */
+        }
+      },
+    };
+  }
+
+  async #reportVerification(
+    verificationId: string,
+    input: VerificationReportInput,
+    replayed = false,
+  ): Promise<TaskVerification> {
+    const verification = this.#assertVerificationCurrent(
+      verificationId,
+      replayed,
+    );
+    if (
+      this.#verificationReporting.has(verificationId) ||
+      this.#verificationStopping.has(verificationId)
+    )
+      throw new TaskServiceError(
+        "TASK_RESULT_INVALID",
+        "Verification is already reporting or stopping; this report was not accepted",
+      );
+    if (
+      !input ||
+      input.verificationId !== verificationId ||
+      Object.keys(input).some(
+        (key) =>
+          !["verificationId", "verdict", "summary", "evidence"].includes(key),
+      )
+    )
+      throw new TaskServiceError(
+        "TASK_RESULT_INVALID",
+        "Verification report does not match the bound verification",
+      );
+    let report = validateTaskVerificationReport({
+      verdict: input.verdict,
+      summary: input.summary,
+      evidence: input.evidence,
+    });
+    this.#verificationReporting.add(verificationId);
+    try {
+      if (report.verdict === "pass") {
+        try {
+          await this.dependencies.validatePreparedGitChanges(
+            verification.worktreeId,
+            { changed: true, head: verification.commitSha },
+          );
+        } catch (error) {
+          report = {
+            verdict: "inconclusive",
+            summary:
+              "The verified commit or clean-worktree invariant changed during verification.",
+            evidence: emptyVerificationEvidence(
+              error instanceof Error
+                ? error.message
+                : "Workspace integrity check failed",
+            ),
+          };
+        }
+      }
+      this.#assertVerificationCurrent(verificationId);
+      return this.#finishVerification(verificationId, report);
+    } finally {
+      this.#verificationReporting.delete(verificationId);
+    }
+  }
+
+  #assertVerificationCurrent(
+    id: string,
+    allowExpired = false,
+    requireBoundSession = true,
+  ): TaskVerification {
+    this.#assertAvailable();
+    const verification = this.repository.getVerification(id);
+    if (!verification || verification.verdict)
+      throw new TaskServiceError(
+        "TASK_RESULT_INVALID",
+        "Verification result was already reported",
+      );
+    if (
+      !allowExpired &&
+      !this.#verificationReporting.has(id) &&
+      verification.deadlineAt !== null &&
+      Date.now() >= verification.deadlineAt
+    )
+      throw new TaskServiceError(
+        "TASK_RESULT_INVALID",
+        "Verification deadline expired; this report was not accepted. Retry verification without rerunning coding.",
+      );
+    const task = this.#requireTask(verification.taskId);
+    const run = this.#requireRun(verification.codingRunId);
+    if (
+      task.activeRunId !== run.id ||
+      !["running", "awaiting_report"].includes(run.status) ||
+      !run.report ||
+      (requireBoundSession && verification.sessionId !== id) ||
+      this.#hasCancelIntent(run.id) ||
+      this.repository.findVerification(run.id, verification.commitSha)?.id !==
+        id ||
+      this.#disposed
+    )
+      throw new TaskServiceError(
+        "TASK_RESULT_INVALID",
+        "Verification is cancelled, superseded, or no longer active; this report was not accepted",
+      );
+    return verification;
+  }
+
+  #finishVerification(
+    id: string,
+    report: TaskVerificationReport,
+  ): TaskVerification {
+    const result = this.repository.finishVerification(id, report);
+    this.repository.appendEvent(
+      result.taskId,
+      result.codingRunId,
+      `verification.${result.verdict}`,
+      {
+        verificationId: result.id,
+        commitSha: result.commitSha,
+        attempt: result.attempt,
+      },
+    );
+    this.repository.createNotification(
+      result.taskId,
+      result.codingRunId,
+      `verification_${result.verdict}`,
+    );
+    this.#emitChanged(result.taskId);
+    this.#verificationWaiters.get(id)?.(result);
+    return result;
+  }
+
+  async resumeVerification(
+    taskId: string,
+    expectedRevision: number,
+    recoverReport: boolean,
+  ): Promise<TaskDetail> {
+    this.#assertAvailable();
+    return this.#singleFlight(taskId, async () => {
+      const task = this.#requireTask(taskId);
+      if (task.revision !== expectedRevision)
+        throw new TaskServiceError(
+          "TASK_CONFLICT",
+          "Task revision does not match",
+        );
+      const run = this.repository.listAllRuns(taskId)[0];
+      const prepared =
+        run &&
+        parseGitPreparationResult(
+          this.repository
+            .listRunSteps(run.id)
+            .find(
+              (step) =>
+                step.step === "git_preparation" && step.state === "done",
+            )?.details,
+        );
+      const previous =
+        run &&
+        prepared &&
+        this.repository.findVerification(run.id, prepared.head);
+      if (
+        !run ||
+        run.report?.outcome !== "success" ||
+        !run.worktreeId ||
+        !prepared ||
+        !previous?.verdict ||
+        previous.verdict === "pass" ||
+        !task.verificationEnabled ||
+        !["needs_review", "failed"].includes(task.status) ||
+        this.#hasCancelIntent(run.id)
+      )
+        throw new TaskServiceError(
+          "TASK_INVALID_STATE",
+          "The Task has no retryable verification of its prepared commit",
+        );
+      if (
+        this.repository
+          .listRunSteps(run.id)
+          .some((step) => step.step === "git_delivery" && step.state === "done")
+      )
+        throw new TaskServiceError(
+          "TASK_INVALID_STATE",
+          "Task delivery already completed",
+        );
+      const workspace = await this.dependencies.getWorktree(run.worktreeId);
+      if (
+        !workspace ||
+        workspace.projectId !== task.projectId ||
+        workspace.dirty ||
+        workspace.busy ||
+        (await this.dependencies.isWorktreeBusy(run.worktreeId)) ||
+        this.#worktreeHasActiveRun(run.worktreeId, taskId)
+      )
+        throw new TaskServiceError(
+          "TASK_WORKSPACE_BUSY",
+          "Verification requires an idle, clean, bound workspace",
+        );
+      await this.dependencies.validatePreparedGitChanges(
+        run.worktreeId,
+        prepared,
+      );
+      let report: VerificationReportInput | null = null;
+      if (recoverReport) {
+        if (
+          previous.verdict !== "inconclusive" ||
+          previous.summary !==
+            "Verifier session timed out before submitting a verdict." ||
+          !previous.sessionId ||
+          !this.dependencies.readVerificationReport
+        )
+          throw new TaskServiceError(
+            "TASK_INVALID_STATE",
+            "Only a legacy timed-out verifier report can be recovered; retry verification instead",
+          );
+        report = await this.dependencies.readVerificationReport(previous);
+        if (
+          !report ||
+          report.verificationId !== previous.id ||
+          report.verdict !== "pass"
+        )
+          throw new TaskServiceError(
+            "TASK_RESULT_INVALID",
+            "No unambiguous structured pass report was found; retry verification instead",
+          );
+        validateTaskVerificationReport({
+          verdict: report.verdict,
+          summary: report.summary,
+          evidence: report.evidence,
+        });
+        await this.dependencies.validatePreparedGitChanges(
+          run.worktreeId,
+          prepared,
+        );
+      }
+      const verification = this.repository.resumeRunVerification(
+        run.id,
+        expectedRevision,
+        {
+          id: this.#uuid(),
+          commitSha: prepared.head,
+          deadlineAt: Date.now() + this.#verificationTimeoutMs,
+        },
+      );
+      this.repository.appendEvent(
+        taskId,
+        run.id,
+        recoverReport ? "verification.recovered" : "verification.retried",
+        {
+          verificationId: verification.id,
+          sourceVerificationId: previous.id,
+          sourceSessionId: previous.sessionId,
+          commitSha: prepared.head,
+        },
+      );
+      if (report)
+        this.#finishVerification(verification.id, {
+          verdict: report.verdict,
+          summary: report.summary,
+          evidence: report.evidence,
+        });
+      this.#enqueue(async () => {
+        try {
+          await this.#settleRun(run.id);
+        } catch (error) {
+          await this.#recordFailure(run.id, error);
+        } finally {
+          this.#emitChanged(taskId);
+          this.#requestSchedule();
+        }
+      });
+      this.#emitChanged(taskId);
+      return this.get(taskId);
+    });
+  }
+
   async #verifyPreparedCommit(
     task: Task,
     run: TaskRun,
@@ -1548,6 +1954,7 @@ export class TaskService {
         codingRunId: run.id,
         worktreeId: run.worktreeId!,
         commitSha: prepared.head,
+        deadlineAt: Date.now() + this.#verificationTimeoutMs,
       });
     if (!existing) {
       this.repository.appendEvent(task.id, run.id, "verification.started", {
@@ -1559,154 +1966,206 @@ export class TaskService {
         run.id,
         "verification_started",
       );
-    }
-
-    let resolveReport!: (value: TaskVerification) => void;
-    const reported = new Promise<TaskVerification>((resolve) => {
-      resolveReport = resolve;
-    });
-    let terminal = false;
-    const finish = (report: TaskVerificationReport): TaskVerification => {
-      if (terminal)
-        throw new TaskServiceError(
-          "TASK_RESULT_INVALID",
-          "Verification result was already reported",
-        );
-      const result = this.repository.finishVerification(
-        verification.id,
-        report,
-      );
-      terminal = true;
-      this.repository.appendEvent(
-        task.id,
-        run.id,
-        `verification.${result.verdict}`,
-        {
-          verificationId: result.id,
-          commitSha: result.commitSha,
-        },
-      );
-      this.repository.createNotification(
-        task.id,
-        run.id,
-        `verification_${result.verdict}`,
-      );
       this.#emitChanged(task.id);
-      resolveReport(result);
-      return result;
-    };
-    const integration: TaskVerificationSessionIntegration = {
-      sessionId: verification.id,
-      reportTool: TASK_VERIFICATION_TOOL_DESCRIPTION,
-      reportVerification: async (input) => {
-        if (input.verificationId !== verification.id)
-          throw new TaskServiceError(
-            "TASK_RESULT_INVALID",
-            "verificationId does not match the bound verification",
+    }
+    const reported = new Promise<TaskVerification>((resolve) =>
+      this.#verificationWaiters.set(verification.id, resolve),
+    );
+    const integration = this.verificationIntegration(verification.id);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<TaskVerification>((resolve) => {
+      timer = setTimeout(
+        () => {
+          if (
+            this.#verificationReporting.has(verification.id) ||
+            this.repository.getVerification(verification.id)?.verdict
+          )
+            return;
+          this.#verificationStopping.add(verification.id);
+          void (async () => {
+            let reason = "Verifier session timed out";
+            const bound = this.repository.getVerification(verification.id);
+            if (bound?.sessionId) {
+              try {
+                await this.dependencies.abortSession(
+                  bound.worktreeId,
+                  bound.sessionId,
+                );
+              } catch {
+                reason =
+                  "Verifier session timed out; cancellation failed. Stop the session before retrying verification.";
+              }
+            }
+            if (!this.repository.getVerification(verification.id)?.verdict)
+              resolve(
+                this.#finishVerification(verification.id, {
+                  verdict: "inconclusive",
+                  summary:
+                    "Verifier session timed out and its report was not accepted. Retry verification without rerunning coding.",
+                  evidence: emptyVerificationEvidence(reason),
+                }),
+              );
+          })().finally(() =>
+            this.#verificationStopping.delete(verification.id),
           );
-        const allowed = new Set([
-          "verificationId",
-          "verdict",
-          "summary",
-          "evidence",
-        ]);
-        if (Object.keys(input).some((key) => !allowed.has(key)))
-          throw new TaskServiceError(
-            "TASK_RESULT_INVALID",
-            "Verification report contains unsupported fields",
+        },
+        Math.max(
+          0,
+          (verification.deadlineAt ??
+            Date.now() + this.#verificationTimeoutMs) - Date.now(),
+        ),
+      );
+    });
+    const setup = async (): Promise<TaskVerification> => {
+      try {
+        let sessionId = verification.sessionId;
+        if (!sessionId) {
+          const recovered = await this.dependencies.findSession(
+            run.worktreeId!,
+            `SpireCode Task Verification ${verification.id}`,
+            verification.id,
           );
-        if (input.verdict === "pass") {
-          try {
-            await this.dependencies.validatePreparedGitChanges(
-              run.worktreeId!,
-              prepared,
+          if (recovered) {
+            if (recovered.sessionId !== verification.id)
+              throw new Error("Verifier session identity is invalid");
+            this.repository.bindVerificationSession(
+              verification.id,
+              recovered.sessionId,
             );
-          } catch (error) {
-            return finish({
-              verdict: "inconclusive",
-              summary:
-                "The verified commit or clean-worktree invariant changed during verification.",
-              evidence: emptyVerificationEvidence(
-                error instanceof Error
-                  ? error.message
-                  : "Workspace integrity check failed",
-              ),
-            });
+            sessionId = recovered.sessionId;
           }
         }
-        return finish({
-          verdict: input.verdict,
-          summary: input.summary,
-          evidence: input.evidence,
-        });
-      },
-      onEvent: (event) => {
-        if (event.type === "agent_settled" && !terminal)
-          finish({
-            verdict: "inconclusive",
-            summary:
-              "Verifier session settled without submitting a verification report.",
-            evidence: emptyVerificationEvidence(
-              "Verifier did not submit its required report",
-            ),
+        if (sessionId) {
+          if (!this.dependencies.loadVerificationSession)
+            throw new Error("Verifier session restoration is unavailable");
+          await this.dependencies.loadVerificationSession(
+            run.worktreeId!,
+            sessionId,
+            integration,
+          );
+          const report = await this.dependencies.readVerificationReport?.({
+            ...verification,
+            sessionId,
           });
-      },
-    };
-    try {
-      const session = await this.dependencies.createVerificationSession(
-        run.worktreeId!,
-        integration,
-      );
-      if (session.sessionId === run.sessionId)
-        throw new TaskServiceError(
-          "TASK_FAILED",
-          "Verifier session must be independent from the coding session",
-        );
-      this.repository.bindVerificationSession(
-        verification.id,
-        session.sessionId,
-      );
-      const accepted = await this.dependencies.sendPrompt(
-        run.worktreeId!,
-        session.sessionId,
-        buildVerificationPrompt(task, verification),
-      );
-      if (!accepted.accepted)
-        throw new TaskServiceError(
-          "TASK_PROMPT_FAILED",
-          "Verification prompt was not accepted",
-          true,
-        );
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<TaskVerification>((resolve) => {
-        timer = setTimeout(() => {
-          if (terminal) return;
-          resolve(
-            finish({
+          if (report) {
+            const result = await this.#reportVerification(
+              verification.id,
+              report,
+              true,
+            );
+            this.repository.appendEvent(
+              task.id,
+              run.id,
+              "verification.report_replayed",
+              {
+                verificationId: verification.id,
+                commitSha: verification.commitSha,
+              },
+            );
+            return result;
+          }
+          if (
+            !(await this.dependencies.sessionHasPrompt(
+              run.worktreeId!,
+              sessionId,
+              `spire-task-verification:${verification.id}`,
+            ))
+          ) {
+            const accepted = await this.dependencies.sendPrompt(
+              run.worktreeId!,
+              sessionId,
+              buildVerificationPrompt(task, verification),
+            );
+            if (!accepted.accepted)
+              throw new Error("Restored verification prompt was not accepted");
+            return await reported;
+          }
+          if (
+            (await this.dependencies.sessionStatus(
+              run.worktreeId!,
+              sessionId,
+            )) !== "streaming"
+          )
+            return this.#finishVerification(verification.id, {
               verdict: "inconclusive",
               summary:
-                "Verifier session timed out before submitting a verdict.",
-              evidence: emptyVerificationEvidence("Verifier session timed out"),
-            }),
+                "Verifier was interrupted before recording a report. Retry verification without rerunning coding.",
+              evidence: emptyVerificationEvidence("Verifier interrupted"),
+            });
+        } else {
+          const session = await this.dependencies.createVerificationSession(
+            run.worktreeId!,
+            integration,
           );
-        }, this.#verificationTimeoutMs);
-      });
-      try {
-        return await Promise.race([reported, timeout]);
-      } finally {
-        if (timer) clearTimeout(timer);
+          if (
+            session.sessionId !== verification.id ||
+            session.sessionId === run.sessionId
+          )
+            throw new Error("Verifier session identity is invalid");
+          if (
+            this.repository.getVerification(verification.id)?.verdict ||
+            this.#verificationStopping.has(verification.id)
+          ) {
+            await this.dependencies.abortSession(
+              run.worktreeId!,
+              session.sessionId,
+            );
+            return await reported;
+          }
+          this.#assertVerificationCurrent(verification.id, false, false);
+          this.repository.bindVerificationSession(
+            verification.id,
+            session.sessionId,
+          );
+          const accepted = await this.dependencies.sendPrompt(
+            run.worktreeId!,
+            session.sessionId,
+            buildVerificationPrompt(task, verification),
+          );
+          if (!accepted.accepted)
+            throw new TaskServiceError(
+              "TASK_PROMPT_FAILED",
+              "Verification prompt was not accepted",
+              true,
+            );
+        }
+        return await reported;
+      } catch (error) {
+        if (
+          this.repository.getVerification(verification.id)?.verdict ||
+          this.#verificationStopping.has(verification.id)
+        )
+          return await reported;
+        const bound = this.repository.getVerification(verification.id);
+        this.#verificationStopping.add(verification.id);
+        try {
+          if (bound?.sessionId)
+            await this.dependencies.abortSession(
+              bound.worktreeId,
+              bound.sessionId,
+            );
+        } catch {
+          /* The infrastructure evidence remains authoritative. */
+        } finally {
+          this.#verificationStopping.delete(verification.id);
+        }
+        return this.#finishVerification(verification.id, {
+          verdict: "inconclusive",
+          summary:
+            "Verifier infrastructure failed before a conclusive verdict.",
+          evidence: emptyVerificationEvidence(
+            error instanceof Error
+              ? error.message.slice(0, 8000)
+              : "Verifier infrastructure failed",
+          ),
+        });
       }
-    } catch (error) {
-      if (terminal) return await reported;
-      return finish({
-        verdict: "inconclusive",
-        summary: "Verifier infrastructure failed before a conclusive verdict.",
-        evidence: emptyVerificationEvidence(
-          error instanceof Error
-            ? error.message.slice(0, 8_000)
-            : "Verifier infrastructure failed",
-        ),
-      });
+    };
+    try {
+      return await Promise.race([setup(), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      this.#verificationWaiters.delete(verification.id);
     }
   }
 

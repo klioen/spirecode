@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, lstat, readdir } from "node:fs/promises";
+import { access, lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { listPackage } from "@electron/asar";
@@ -222,18 +222,24 @@ async function launchGui(command) {
       resolve();
     });
   });
-  const earlyExit = await Promise.race([
-    exited.then(() => true),
-    delay(5_000).then(() => false),
-  ]);
-  if (earlyExit) throw new Error(`GUI exited during smoke with ${exitCode}`);
-
   const taskDatabase = path.join(userData, "tasks.sqlite3");
-  let databaseCreated = true;
-  try {
-    await access(taskDatabase);
-  } catch {
-    databaseCreated = false;
+  const readyDeadline = Date.now() + 30_000;
+  let databaseCreated = false;
+  while (Date.now() < readyDeadline && exitCode === undefined) {
+    try {
+      await access(taskDatabase);
+      const diagnostics = await readFile(
+        path.join(userData, "logs", "spirecode.log"),
+        "utf8",
+      );
+      if (diagnostics.includes("TASK_DATABASE_READY")) {
+        databaseCreated = true;
+        break;
+      }
+    } catch {
+      /* Startup may still be discovering historical session projects. */
+    }
+    await delay(100);
   }
 
   child.kill();
@@ -248,7 +254,9 @@ async function launchGui(command) {
     }
   }
   if (!databaseCreated)
-    throw new Error("Packaged GUI did not create the Task database");
+    throw new Error(
+      `Packaged GUI Task database was not ready within 30 seconds (exit ${exitCode ?? "running"})`,
+    );
   await run(
     command,
     [
@@ -261,9 +269,12 @@ const tables = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE typ
 const columns = db.prepare("PRAGMA table_info(tasks)").all();
 const metadata = columns.find((column) => column.name === "metadata_json");
 const verification = columns.find((column) => column.name === "verification_enabled");
+const attempt = db.prepare("PRAGMA table_info(task_verifications)").all().find((column) => column.name === "attempt");
+const deadline = db.prepare("PRAGMA table_info(task_verifications)").all().find((column) => column.name === "deadline_at");
+const foreignKeys = db.prepare("PRAGMA foreign_key_check").all();
 db.close();
-const valid = migration?.version === 7 && migration?.name === "migration-v7" && integrity?.quick_check === "ok" && tables?.count === 10 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "'{}'" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
-if (!valid) console.error("Task schema smoke failed", { migration, integrity, tables, metadata, verification });
+const valid = migration?.version === 8 && migration?.name === "migration-v8" && integrity?.quick_check === "ok" && tables?.count === 10 && foreignKeys.length === 0 && attempt?.type === "INTEGER" && attempt?.notnull === 1 && deadline?.type === "INTEGER" && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "'{}'" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
+if (!valid) console.error("Task schema smoke failed", { migration, integrity, tables, metadata, verification, attempt, deadline, foreignKeys });
 process.exit(valid ? 0 : 2);`,
     ],
     { ELECTRON_RUN_AS_NODE: "1" },

@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppState, applyMemoryConfig, createTaskSession } from "./appState.js";
+import {
+  AppState,
+  applyMemoryConfig,
+  createTaskSession,
+  taskVerificationSessionOptions,
+} from "./appState.js";
 
 const originalModel = process.env.PI_MEMORY_EXTRACT_MODEL;
 const originalPhase2Model = process.env.PI_MEMORY_PHASE2_MODEL;
@@ -307,6 +312,50 @@ describe("Task database diagnostics", () => {
       code: "TASK_DATABASE_UNAVAILABLE",
       message:
         "Tasks are unavailable because the task database could not be opened.",
+    });
+  });
+});
+
+describe("verification session policy", () => {
+  it("uses the same restricted policy on create, open and rebind, and never acknowledges a rejected report", async () => {
+    const reportVerification = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Verification deadline expired; this report was not accepted.",
+        ),
+      );
+    const onEvent = vi.fn();
+    const options = taskVerificationSessionOptions({
+      sessionId: "verification-1",
+      reportTool: {
+        name: "task_report_verification",
+        description: "Report verification",
+      },
+      reportVerification,
+      onEvent,
+    });
+    expect(options).toMatchObject({
+      readOnly: true,
+      readOnlyTools: ["read", "bash"],
+      sessionId: "verification-1",
+    });
+    expect(options.systemPrompt).toContain("Never modify");
+    const tool = options.customTools![0]! as {
+      execute(callId: string, params: unknown): Promise<unknown>;
+    };
+    const result = await tool.execute("call-1", {
+      verificationId: "verification-1",
+      verdict: "pass",
+    });
+    expect(result).toMatchObject({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "Verification deadline expired; this report was not accepted.",
+        },
+      ],
     });
   });
 });

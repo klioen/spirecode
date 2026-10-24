@@ -71,6 +71,8 @@ export function buildVerificationPrompt(
     `codingRunId: ${verification.codingRunId}`,
     `worktreeId: ${verification.worktreeId}`,
     `commitSha: ${verification.commitSha}`,
+    "Only a successful report-tool response confirms that the verdict was recorded. If the tool rejects the report, say it was NOT accepted and the Task requires recovery or retry; never claim success from chat text alone.",
+    "The host cancels verification when its bounded deadline expires. A timed-out attempt cannot publish a PR; a user can retry verification without rerunning coding.",
     "The workspace is expected to be clean at exactly commitSha. Report inconclusive if that invariant is not true.",
     `Call ${TASK_VERIFICATION_TOOL_NAME} exactly once with verificationId, verdict, summary, and structured evidence. agent_settled without the tool is not completion.`,
     marker,

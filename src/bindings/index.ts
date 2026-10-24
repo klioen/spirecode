@@ -118,6 +118,10 @@ export const commands = {
     expectedRevision: number,
     patch: Record<string, unknown>,
   ) => command<unknown>("task_update", { taskId, expectedRevision, patch }),
+  taskRetryVerification: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_retry_verification", { taskId, expectedRevision }),
+  taskRecoverVerification: (taskId: string, expectedRevision: number) =>
+    command<unknown>("task_recover_verification", { taskId, expectedRevision }),
   taskRun: (taskId: string, expectedRevision: number) =>
     command<unknown>("task_run", { taskId, expectedRevision }),
   taskCancel: (taskId: string, expectedRevision: number) =>

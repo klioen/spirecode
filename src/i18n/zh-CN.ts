@@ -132,6 +132,11 @@ export const zhCN = {
   "tasks.result": "任务结果",
   "tasks.resultLabel": "结果：{result}",
   "tasks.verification.title": "独立交付验证",
+  "tasks.verification.openSession": "打开验证会话",
+  "tasks.verification.retry": "仅重试验证",
+  "tasks.verification.recover": "恢复报告并继续交付",
+  "tasks.verification.retryHint":
+    "复用已完成的编码和原提交；不会重新运行编码智能体。验证通过后继续交付 PR/MR。",
   "tasks.verification.enabled": "交付前运行验证",
   "tasks.verification.description":
     "在创建 PR/MR 前，由独立只读 Agent 基于原始需求检查已提交版本。",

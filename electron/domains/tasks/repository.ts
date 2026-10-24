@@ -115,6 +115,8 @@ interface TaskRow {
 }
 
 interface VerificationRow {
+  attempt: number;
+  deadline_at: number | null;
   id: string;
   task_id: string;
   coding_run_id: string;
@@ -200,6 +202,8 @@ function mapTask(row: TaskRow): Task {
 
 function mapVerification(row: VerificationRow): TaskVerification {
   return {
+    attempt: row.attempt,
+    deadlineAt: row.deadline_at,
     id: row.id,
     taskId: row.task_id,
     codingRunId: row.coding_run_id,
@@ -488,7 +492,7 @@ export class TaskRepository {
     validateId(codingRunId, "codingRunId");
     const row = this.connection
       .prepare(
-        "SELECT * FROM task_verifications WHERE coding_run_id = ? AND commit_sha = ?",
+        "SELECT * FROM task_verifications WHERE coding_run_id = ? AND commit_sha = ? ORDER BY attempt DESC LIMIT 1",
       )
       .get(codingRunId, commitSha) as unknown as VerificationRow | undefined;
     return row ? mapVerification(row) : null;
@@ -498,7 +502,7 @@ export class TaskRepository {
     validateId(taskId, "taskId");
     const row = this.connection
       .prepare(
-        "SELECT * FROM task_verifications WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        "SELECT v.* FROM task_verifications v JOIN task_runs r ON r.id = v.coding_run_id WHERE v.task_id = ? ORDER BY r.attempt DESC, v.attempt DESC, v.created_at DESC, v.id DESC LIMIT 1",
       )
       .get(taskId) as unknown as VerificationRow | undefined;
     return row ? mapVerification(row) : null;
@@ -509,7 +513,7 @@ export class TaskRepository {
     return (
       this.connection
         .prepare(
-          "SELECT * FROM task_verifications WHERE task_id = ? ORDER BY created_at DESC, id DESC",
+          "SELECT v.* FROM task_verifications v JOIN task_runs r ON r.id = v.coding_run_id WHERE v.task_id = ? ORDER BY r.attempt DESC, v.attempt DESC, v.created_at DESC, v.id DESC",
         )
         .all(taskId) as unknown as VerificationRow[]
     ).map(mapVerification);
@@ -521,40 +525,139 @@ export class TaskRepository {
     codingRunId: string;
     worktreeId: string;
     commitSha: string;
+    deadlineAt?: number;
   }): TaskVerification {
     return this.#transaction(() => {
-      validateId(input.id, "verificationId");
-      validateId(input.taskId, "taskId");
-      validateId(input.codingRunId, "codingRunId");
-      validateId(input.worktreeId, "worktreeId");
-      if (!/^[0-9a-f]{7,128}$/iu.test(input.commitSha))
+      if (this.findVerification(input.codingRunId, input.commitSha))
         throw new TaskRepositoryError(
-          "TASK_RESULT_INVALID",
-          "commitSha is invalid",
+          "TASK_VERIFICATION_ALREADY_REPORTED",
+          "Verification already exists; use an explicit retry",
         );
-      const task = this.#requireTask(input.taskId);
-      const run = this.#requireRun(input.codingRunId);
-      if (run.task_id !== task.id || run.worktree_id !== input.worktreeId)
+      return this.#insertVerification(input);
+    });
+  }
+
+  verificationForSession(
+    worktreeId: string,
+    sessionId: string,
+  ): TaskVerification | null {
+    const row = this.connection
+      .prepare(
+        "SELECT * FROM task_verifications WHERE worktree_id = ? AND (session_id = ? OR id = ?) ORDER BY attempt DESC LIMIT 1",
+      )
+      .get(worktreeId, sessionId, sessionId) as unknown as
+      VerificationRow | undefined;
+    return row ? mapVerification(row) : null;
+  }
+
+  resumeRunVerification(
+    runId: string,
+    expectedRevision: number,
+    input: { id: string; commitSha: string; deadlineAt: number },
+  ): TaskVerification {
+    return this.#transaction(() => {
+      const run = this.#requireRun(validateId(runId, "runId"));
+      const task = this.#requireTask(run.task_id);
+      if (task.revision !== expectedRevision)
         throw new TaskRepositoryError(
-          "TASK_RESULT_INVALID",
-          "Verification binding is invalid",
+          "TASK_CONFLICT",
+          "Task revision does not match",
         );
+      if (
+        !["needs_review", "failed"].includes(task.status) ||
+        task.active_run_id ||
+        !["reported", "failed"].includes(run.status) ||
+        !run.report_json ||
+        !task.verification_enabled ||
+        !run.worktree_id ||
+        this.listAllRuns(task.id)[0]?.id !== runId
+      )
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Only the latest completed coding run can resume verification",
+        );
+      const previous = this.findVerification(runId, input.commitSha);
+      if (!previous?.verdict || previous.verdict === "pass")
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Verification is not retryable",
+        );
+      const verification = this.#insertVerification({
+        ...input,
+        taskId: task.id,
+        codingRunId: runId,
+        worktreeId: run.worktree_id,
+      });
       this.connection
         .prepare(
-          `INSERT INTO task_verifications
-         (id, task_id, coding_run_id, worktree_id, commit_sha, verdict, summary, evidence_json, session_id, created_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL)`,
+          "UPDATE task_runs SET status = 'running', saga_phase = 'active', error_code = NULL, error_message = NULL, error_retryable = NULL, finished_at = NULL, revision = revision + 1 WHERE id = ?",
         )
-        .run(
-          input.id,
-          input.taskId,
-          input.codingRunId,
-          input.worktreeId,
-          input.commitSha,
-          this.#now(),
-        );
-      return this.getVerification(input.id)!;
+        .run(runId);
+      this.connection
+        .prepare(
+          "DELETE FROM task_run_steps WHERE run_id = ? AND step IN ('failure','failure_stop')",
+        )
+        .run(runId);
+      this.connection
+        .prepare(
+          "UPDATE tasks SET status = 'running', active_run_id = ?, revision = revision + 1, updated_at = ? WHERE id = ?",
+        )
+        .run(runId, this.#now(), task.id);
+      return verification;
     });
+  }
+  #insertVerification(input: {
+    id: string;
+    taskId: string;
+    codingRunId: string;
+    worktreeId: string;
+    commitSha: string;
+    deadlineAt?: number;
+  }): TaskVerification {
+    validateId(input.id, "verificationId");
+    validateId(input.taskId, "taskId");
+    validateId(input.codingRunId, "codingRunId");
+    validateId(input.worktreeId, "worktreeId");
+    if (!/^[0-9a-f]{7,128}$/iu.test(input.commitSha))
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "commitSha is invalid",
+      );
+    if (
+      input.deadlineAt !== undefined &&
+      (!Number.isSafeInteger(input.deadlineAt) || input.deadlineAt <= 0)
+    )
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "Verification deadline is invalid",
+      );
+    const task = this.#requireTask(input.taskId);
+    const run = this.#requireRun(input.codingRunId);
+    if (run.task_id !== task.id || run.worktree_id !== input.worktreeId)
+      throw new TaskRepositoryError(
+        "TASK_RESULT_INVALID",
+        "Verification binding is invalid",
+      );
+    const attempt =
+      (this.findVerification(input.codingRunId, input.commitSha)?.attempt ??
+        0) + 1;
+    this.connection
+      .prepare(
+        `INSERT INTO task_verifications
+         (id, task_id, coding_run_id, worktree_id, commit_sha, attempt, deadline_at, verdict, summary, evidence_json, session_id, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL)`,
+      )
+      .run(
+        input.id,
+        input.taskId,
+        input.codingRunId,
+        input.worktreeId,
+        input.commitSha,
+        attempt,
+        input.deadlineAt ?? null,
+        this.#now(),
+      );
+    return this.getVerification(input.id)!;
   }
 
   bindVerificationSession(id: string, sessionId: string): TaskVerification {

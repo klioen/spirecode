@@ -26,4 +26,5 @@
 - Test Git configuration isolation with a real empty file. Node's `os.devNull` Windows device path is not a valid Git config file path.
 - Update both packaged Task smoke checks when the Task schema advances; keep version, migration name, new columns, and integrity assertions in sync with Main.
 - Packaged GUI PATH may omit Homebrew hosting CLIs. Resolve gh/glab from Main-owned trusted installation locations without sourcing shell startup files; reconcile a merged Task PR only against its exact source repository, branch, target, and clean local HEAD before persisting review metadata.
+- Verification wait deadlines are not successful reports. Cancel timed-out verifier sessions, preserve attempt history, and fence reports by latest Run/attempt/session/commit. Retry verification or delivery without rerunning coding; never use final chat prose as an accepted verdict.
 - Add repeated pitfalls here, not in source comments.

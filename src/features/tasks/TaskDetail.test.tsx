@@ -444,3 +444,87 @@ it("shows session navigation errors inline", async () => {
     "Session unavailable",
   );
 });
+
+const timedOutTask = {
+  ...reviewTask,
+  metadata: {},
+  runs: [
+    {
+      ...reviewTask.runs[0]!,
+      report: { ...reviewTask.runs[0]!.report!, changeRequest: undefined },
+    },
+  ],
+  verification: {
+    id: "verification-1",
+    codingRunId: "run-1",
+    worktreeId: "worktree-1",
+    commitSha: "a".repeat(40),
+    verdict: "inconclusive" as const,
+    summary: "Verifier session timed out before submitting a verdict.",
+    evidence: { acceptanceCriteria: [], commands: [], issues: [] },
+    sessionId: "verifier-1",
+    createdAt: 1,
+    finishedAt: 2,
+  },
+};
+
+it("offers bounded recovery and verification-only retry, without rerunning coding", async () => {
+  const api = createTasksApiMock();
+  const onOpenSession = vi.fn();
+  render(
+    <TaskDetail
+      api={api}
+      task={timedOutTask}
+      onChange={vi.fn()}
+      onOpenSession={onOpenSession}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Recover report and continue delivery",
+    }),
+  );
+  await waitFor(() =>
+    expect(api.recoverVerification).toHaveBeenCalledWith(
+      timedOutTask.id,
+      timedOutTask.revision,
+    ),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry verification only" }),
+  );
+  await waitFor(() =>
+    expect(api.retryVerification).toHaveBeenCalledWith(
+      timedOutTask.id,
+      timedOutTask.revision,
+    ),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open verification session" }),
+  );
+  await waitFor(() =>
+    expect(onOpenSession).toHaveBeenCalledWith("worktree-1", "verifier-1"),
+  );
+  expect(api.run).not.toHaveBeenCalled();
+});
+
+it.each(["completed", "running"] as const)(
+  "does not expose recovery actions on %s Tasks",
+  (status) => {
+    render(
+      <TaskDetail
+        api={createTasksApiMock()}
+        task={{ ...timedOutTask, status }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Retry verification only" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: "Recover report and continue delivery",
+      }),
+    ).toBeNull();
+  },
+);
