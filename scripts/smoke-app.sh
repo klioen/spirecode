@@ -86,10 +86,12 @@ ELECTRON_RUN_AS_NODE=1 "$executable" -e '
   const check = db.prepare("PRAGMA quick_check").get();
   const names = ["tasks", "task_runs", "task_run_steps", "task_events", "task_notifications", "task_session_archives", "task_run_retention", "task_artifact_archives", "task_archive_states"];
   const tables = db.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type=? AND name IN (" + names.map(() => "?").join(",") + ")").get("table", ...names);
-  const metadata = db.prepare("PRAGMA table_info(tasks)").all().find((column) => column.name === "metadata_json");
+  const columns = db.prepare("PRAGMA table_info(tasks)").all();
+  const metadata = columns.find((column) => column.name === "metadata_json");
+  const verification = columns.find((column) => column.name === "verification_enabled");
   db.close();
-  const valid = version?.version === 6 && version?.name === "migration-v6" && check?.quick_check === "ok" && tables?.count === 9 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "\x27{}\x27";
-  if (!valid) console.error("Task schema smoke failed", { version, check, tables, metadata });
+  const valid = version?.version === 7 && version?.name === "migration-v7" && check?.quick_check === "ok" && tables?.count === 9 && metadata?.type === "TEXT" && metadata?.notnull === 1 && metadata?.dflt_value === "\x27{}\x27" && verification?.type === "INTEGER" && verification?.notnull === 1 && verification?.dflt_value === "1";
+  if (!valid) console.error("Task schema smoke failed", { version, check, tables, metadata, verification });
   process.exit(valid ? 0 : 2);
 ' "$user_data/tasks.sqlite3"
 
