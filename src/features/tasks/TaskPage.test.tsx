@@ -7,15 +7,46 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import { TaskPage } from "./TaskPage";
 import { resetTaskDrafts } from "./taskDrafts";
 import { createTasksApiMock, taskDetail } from "./tasksTestUtils";
 import { useTasksStore } from "./tasksStore";
 
 beforeEach(() => {
+  setLanguage("en");
   useTasksStore.getState().reset();
   resetTaskDrafts();
   vi.spyOn(window, "confirm").mockReturnValue(true);
+});
+
+it("opens the direct form as Quick Create Task without an AI rewrite action", async () => {
+  const api = createTasksApiMock();
+  render(<TaskPage api={api} projects={[]} />);
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Quick Create Task" }),
+  );
+
+  expect(
+    screen.getByRole("heading", { name: "Quick Create Task" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /AI optimize|rewrite/i }),
+  ).not.toBeInTheDocument();
+});
+
+it("labels the direct creation entry as 快速创建任务 in Chinese", async () => {
+  setLanguage("zh-CN");
+  const api = createTasksApiMock();
+  render(<TaskPage api={api} projects={[]} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "快速创建任务" }));
+
+  expect(
+    screen.getByRole("heading", { name: "快速创建任务" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("AI 优化")).not.toBeInTheDocument();
 });
 
 it("offers clean-only bulk cleanup for completed managed workspaces", async () => {

@@ -33,7 +33,6 @@ describe("Task background shutdown", () => {
     const state = Object.assign(Object.create(AppState.prototype), {
       terminals: { dispose: vi.fn() },
       tasks: { dispose: vi.fn(() => draining) },
-      taskRewrite: Promise.resolve({ dispose: vi.fn(async () => undefined) }),
       watchers: { dispose: watchersDispose },
       chat: { disposeAll: chatDispose },
       taskDatabase: { close: databaseClose },

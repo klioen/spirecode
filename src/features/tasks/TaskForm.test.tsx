@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import { TaskForm, type TaskProjectOption } from "./TaskForm";
 import { resetTaskDrafts } from "./taskDrafts";
 import { createTasksApiMock } from "./tasksTestUtils";
@@ -35,6 +36,7 @@ const projects: TaskProjectOption[] = [
 ];
 
 beforeEach(() => {
+  setLanguage("en");
   resetTaskDrafts();
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
@@ -47,6 +49,7 @@ describe("TaskForm", () => {
     expect(
       screen.getByRole("button", { name: "Project: SpireCode" }),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/AI optimize/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Workspace settings"));
     expect(
       screen.getByRole("radio", { name: "New managed worktree" }),
@@ -241,6 +244,7 @@ it("keeps bound workspace identity read-only while accepting fresh explicit dirt
     <TaskForm api={api} projects={projects} task={task} onCreated={vi.fn()} />,
   );
   expect(screen.getByRole("combobox", { name: "Worktree" })).toBeDisabled();
+  expect(screen.queryByText(/AI optimize/i)).not.toBeInTheDocument();
   fireEvent.click(
     screen.getByRole("checkbox", {
       name: "I understand that all existing staged, unstaged, and untracked changes will be committed and pushed together with the Agent's changes",

@@ -83,7 +83,5 @@ export const createTasksApiMock = (): TasksApi => ({
   continueForReport: vi
     .fn()
     .mockResolvedValue(taskDetail({ status: "running", revision: 2 })),
-  rewriteStart: vi.fn().mockResolvedValue({ rewriteId: "rewrite-1" }),
-  rewriteAbort: vi.fn().mockResolvedValue(undefined),
   subscribe: vi.fn().mockReturnValue(() => undefined),
 });
