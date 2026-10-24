@@ -22,4 +22,5 @@
 - Domain commands with optional or nullable fields must reuse dedicated typed parsers in both IPC validation and dispatch; do not let them fall through generic required-string validation.
 - Restricted Task intake sessions must restore their Main-owned tool/resource policy through every Chat create/open/rebind path. Never reload them as ordinary coding sessions; clear executable resource package declarations as well as disabling extension discovery.
 - Local application data may already use a schema from an unmerged feature branch. Before reinstalling an older baseline, verify database schema compatibility on a copy; never downgrade or replace live databases to make startup pass. Packaged smoke must validate Task schema/integrity, not merely window liveness.
+- In Electron Main, `process.execPath` is the application executable, not Node. Never use it as a Node shebang for Git askpass or other helpers; use a self-contained platform helper to avoid recursively launching the application.
 - Add repeated pitfalls here, not in source comments.

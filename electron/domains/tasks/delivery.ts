@@ -1,15 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import {
-  access,
-  chmod,
-  mkdtemp,
-  realpath,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   assertNoRepositoryGitCommands,
@@ -17,6 +8,7 @@ import {
   runGit,
 } from "../../core/gitProcess.js";
 import type { TaskRunReport } from "./types.js";
+import { withGitAskpass } from "./gitAskpass.js";
 
 const MAX_OUTPUT = 1024 * 1024;
 const PROVIDER_TIMEOUT_MS = 30_000;
@@ -678,25 +670,13 @@ export class TaskDeliveryService {
         `${executable} did not provide a usable Git credential`,
         true,
       );
-    const directory = await mkdtemp(path.join(tmpdir(), "spirecode-askpass-"));
-    const windows = process.platform === "win32";
-    const askpass = path.join(directory, windows ? "askpass.cmd" : "askpass");
-    const script = windows
-      ? "@echo off\r\nif not defined SPIRECODE_GIT_TOKEN exit /b 1\r\necho %SPIRECODE_GIT_TOKEN%\r\n"
-      : `#!${process.execPath}\nconst prompt = process.argv[2] ?? "";\nprocess.stdout.write(/username/i.test(prompt) ? process.env.SPIRECODE_GIT_USERNAME ?? "oauth2" : process.env.SPIRECODE_GIT_TOKEN ?? "");\n`;
-    try {
-      await writeFile(askpass, script, { mode: 0o700 });
-      if (!windows) await chmod(askpass, 0o700);
-      return await operation({
-        GIT_ASKPASS: askpass,
-        GIT_ASKPASS_REQUIRE: "force",
-        SPIRECODE_GIT_USERNAME:
-          remote.provider === "github" ? "x-access-token" : "oauth2",
-        SPIRECODE_GIT_TOKEN: token,
-      });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
+    return withGitAskpass(
+      {
+        username: remote.provider === "github" ? "x-access-token" : "oauth2",
+        token,
+      },
+      operation,
+    );
   }
 
   async #remoteBranchExists(
