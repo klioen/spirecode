@@ -24,4 +24,5 @@
 - Local application data may already use a schema from an unmerged feature branch. Before reinstalling an older baseline, verify database schema compatibility on a copy; never downgrade or replace live databases to make startup pass. Packaged smoke must validate Task schema/integrity, not merely window liveness.
 - In Electron Main, `process.execPath` is the application executable, not Node. Never use it as a Node shebang for Git askpass or other helpers; use a self-contained platform helper to avoid recursively launching the application.
 - Test Git configuration isolation with a real empty file. Node's `os.devNull` Windows device path is not a valid Git config file path.
+- Update both packaged Task smoke checks when the Task schema advances; keep version, migration name, new columns, and integrity assertions in sync with Main.
 - Add repeated pitfalls here, not in source comments.
