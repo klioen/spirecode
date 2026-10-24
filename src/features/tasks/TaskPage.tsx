@@ -563,7 +563,16 @@ export function TaskPage({
                               ? "tasks.notification.needsReview"
                               : notification.kind === "awaiting_report"
                                 ? "tasks.notification.awaitingReport"
-                                : "tasks.notification.failed",
+                                : notification.kind === "verification_started"
+                                  ? "tasks.notification.verificationStarted"
+                                  : notification.kind === "verification_pass"
+                                    ? "tasks.notification.verificationPass"
+                                    : notification.kind === "verification_fail"
+                                      ? "tasks.notification.verificationFail"
+                                      : notification.kind ===
+                                          "verification_inconclusive"
+                                        ? "tasks.notification.verificationInconclusive"
+                                        : "tasks.notification.failed",
                           )}{" "}
                           ·{" "}
                           <time

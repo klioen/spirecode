@@ -3,6 +3,8 @@ import type {
   TaskMetadata,
   TaskReviewMetadata,
   TaskRunReport,
+  TaskVerificationEvidence,
+  TaskVerificationReport,
   WorkspaceRequest,
 } from "./types.js";
 
@@ -108,11 +110,19 @@ export function validateCreateTaskInput(
       "projectId",
       "workspace",
       "automationEnabled",
+      ...(Object.prototype.hasOwnProperty.call(input, "verificationEnabled")
+        ? ["verificationEnabled"]
+        : []),
     ],
     "task input",
   );
   if (typeof input.automationEnabled !== "boolean")
     fail("automationEnabled must be boolean");
+  if (
+    input.verificationEnabled !== undefined &&
+    typeof input.verificationEnabled !== "boolean"
+  )
+    fail("verificationEnabled must be boolean");
 
   return {
     id: validateId(input.id),
@@ -126,6 +136,7 @@ export function validateCreateTaskInput(
     projectId: validateId(input.projectId, "projectId"),
     workspace: validateWorkspace(input.workspace),
     automationEnabled: input.automationEnabled,
+    verificationEnabled: input.verificationEnabled !== false,
   };
 }
 
@@ -241,6 +252,121 @@ export function validateTaskRunReport(report: TaskRunReport): TaskRunReport {
     );
   if (byteLength(JSON.stringify(normalized)) > 256 * 1024)
     fail("report exceeds 256 KiB");
+  return normalized;
+}
+
+export function validateTaskVerificationReport(
+  report: TaskVerificationReport,
+): TaskVerificationReport {
+  requireExactKeys(
+    report,
+    ["verdict", "summary", "evidence"],
+    "verification report",
+  );
+  if (!(["pass", "fail", "inconclusive"] as const).includes(report.verdict))
+    fail("verification verdict is invalid");
+  requireExactKeys(
+    report.evidence,
+    ["acceptanceCriteria", "commands", "issues"],
+    "verification evidence",
+  );
+  const acceptanceCriteria = boundedArray(
+    report.evidence.acceptanceCriteria,
+    "verification evidence.acceptanceCriteria",
+    100,
+  ).map((entry, index) => {
+    requireExactKeys(
+      entry,
+      ["criterion", "status", "evidence"],
+      `acceptanceCriteria[${index}]`,
+    );
+    const value =
+      entry as TaskVerificationEvidence["acceptanceCriteria"][number];
+    if (!(["pass", "fail", "inconclusive"] as const).includes(value.status))
+      fail(`acceptanceCriteria[${index}].status is invalid`);
+    return {
+      criterion: requireString(
+        value.criterion,
+        `acceptanceCriteria[${index}].criterion`,
+        8 * 1024,
+      ),
+      status: value.status,
+      evidence: boundedArray(
+        value.evidence,
+        `acceptanceCriteria[${index}].evidence`,
+        50,
+      ).map((item, evidenceIndex) =>
+        requireString(
+          item,
+          `acceptanceCriteria[${index}].evidence[${evidenceIndex}]`,
+          8 * 1024,
+        ),
+      ),
+    };
+  });
+  const commands = boundedArray(
+    report.evidence.commands,
+    "verification evidence.commands",
+    100,
+  ).map((entry, index) => {
+    requireExactKeys(
+      entry,
+      ["command", "status", "summary"],
+      `commands[${index}]`,
+    );
+    const value = entry as TaskVerificationEvidence["commands"][number];
+    if (!(["passed", "failed"] as const).includes(value.status))
+      fail(`commands[${index}].status is invalid`);
+    return {
+      command: requireString(
+        value.command,
+        `commands[${index}].command`,
+        4 * 1024,
+      ),
+      status: value.status,
+      summary: requireString(
+        value.summary,
+        `commands[${index}].summary`,
+        8 * 1024,
+        true,
+      ),
+    };
+  });
+  const issues = boundedArray(
+    report.evidence.issues,
+    "verification evidence.issues",
+    100,
+  ).map((entry, index) => {
+    requireExactKeys(
+      entry,
+      ["severity", "summary", "evidence"],
+      `issues[${index}]`,
+    );
+    const value = entry as TaskVerificationEvidence["issues"][number];
+    if (!(["blocker", "major", "minor"] as const).includes(value.severity))
+      fail(`issues[${index}].severity is invalid`);
+    return {
+      severity: value.severity,
+      summary: requireString(
+        value.summary,
+        `issues[${index}].summary`,
+        8 * 1024,
+      ),
+      evidence: requireString(
+        value.evidence,
+        `issues[${index}].evidence`,
+        8 * 1024,
+        true,
+      ),
+    };
+  });
+  const normalized: TaskVerificationReport = {
+    verdict: report.verdict,
+    summary: requireString(report.summary, "verification summary", 64 * 1024),
+    evidence: { acceptanceCriteria, commands, issues },
+  };
+  if (byteLength(JSON.stringify(normalized)) > 256 * 1024)
+    fail("verification report exceeds 256 KiB");
   return normalized;
 }
 

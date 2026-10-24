@@ -341,6 +341,67 @@ it("puts the latest result before collapsed history and labels a report still dr
     report.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
+it("shows verification evidence and updates the delivery gate switch", async () => {
+  const api = createTasksApiMock();
+  const onChange = vi.fn();
+  const verified = taskDetail({
+    ...reviewTask,
+    verificationEnabled: true,
+    verification: {
+      id: "verification-1",
+      codingRunId: "run-1",
+      worktreeId: "worktree-1",
+      commitSha: "abcdef1234567890",
+      verdict: "fail",
+      summary: "The invalid-input path is broken",
+      evidence: {
+        acceptanceCriteria: [
+          {
+            criterion: "Reject invalid input",
+            status: "fail",
+            evidence: ["returned exit 0"],
+          },
+        ],
+        commands: [
+          { command: "tool --invalid", status: "failed", summary: "exit 0" },
+        ],
+        issues: [
+          {
+            severity: "major",
+            summary: "Invalid input accepted",
+            evidence: "CLI output",
+          },
+        ],
+      },
+      sessionId: "verification-session",
+      createdAt: 2,
+      finishedAt: 3,
+    },
+  });
+  vi.mocked(api.update).mockResolvedValue({
+    ...verified,
+    verificationEnabled: false,
+    revision: verified.revision + 1,
+  });
+  render(<TaskDetail api={api} task={verified} onChange={onChange} />);
+
+  expect(
+    screen.getByText("The invalid-input path is broken"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Reject invalid input")).toBeInTheDocument();
+  expect(screen.getByText("tool --invalid")).toBeInTheDocument();
+  expect(screen.getByText(/Invalid input accepted/)).toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Verify before delivery" }),
+  );
+  await waitFor(() =>
+    expect(api.update).toHaveBeenCalledWith(verified.id, verified.revision, {
+      verificationEnabled: false,
+    }),
+  );
+  expect(onChange).toHaveBeenCalled();
+});
+
 it("shows session navigation errors inline", async () => {
   render(
     <TaskDetail

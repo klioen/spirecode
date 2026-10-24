@@ -21,6 +21,8 @@ import {
   type TaskRunStatus,
   type TaskRunStep,
   type TaskStatus,
+  type TaskVerification,
+  type TaskVerificationReport,
 } from "./types.js";
 import {
   TaskValidationError,
@@ -30,6 +32,7 @@ import {
   validateTaskMetadata,
   validateTaskReviewMetadata,
   validateTaskRunReport,
+  validateTaskVerificationReport,
 } from "./validation.js";
 
 export type TaskRepositoryErrorCode =
@@ -39,7 +42,9 @@ export type TaskRepositoryErrorCode =
   | "TASK_ACTIVE_RUN_EXISTS"
   | "TASK_INVALID_STATE"
   | "TASK_RESULT_INVALID"
-  | "TASK_RESULT_ALREADY_REPORTED";
+  | "TASK_RESULT_ALREADY_REPORTED"
+  | "TASK_VERIFICATION_NOT_FOUND"
+  | "TASK_VERIFICATION_ALREADY_REPORTED";
 
 export class TaskRepositoryError extends Error {
   constructor(
@@ -92,6 +97,7 @@ interface TaskRow {
   base_ref: string | null;
   allow_dirty: number;
   automation_enabled: number;
+  verification_enabled: number;
   metadata_json: string;
   status: TaskStatus;
   active_run_id: string | null;
@@ -104,6 +110,20 @@ interface TaskRow {
   created_at: number;
   updated_at: number;
   completed_at: number | null;
+}
+
+interface VerificationRow {
+  id: string;
+  task_id: string;
+  coding_run_id: string;
+  worktree_id: string;
+  commit_sha: string;
+  verdict: TaskVerification["verdict"];
+  summary: string | null;
+  evidence_json: string | null;
+  session_id: string | null;
+  created_at: number;
+  finished_at: number | null;
 }
 
 interface RunRow {
@@ -148,6 +168,7 @@ function mapTask(row: TaskRow): Task {
     projectId: row.project_id,
     workspace,
     automationEnabled: row.automation_enabled === 1,
+    verificationEnabled: row.verification_enabled === 1,
     metadata: validateTaskMetadata(JSON.parse(row.metadata_json)),
     status: row.status,
     activeRunId: row.active_run_id,
@@ -160,6 +181,24 @@ function mapTask(row: TaskRow): Task {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
+  };
+}
+
+function mapVerification(row: VerificationRow): TaskVerification {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    codingRunId: row.coding_run_id,
+    worktreeId: row.worktree_id,
+    commitSha: row.commit_sha,
+    verdict: row.verdict,
+    summary: row.summary,
+    evidence: row.evidence_json
+      ? (JSON.parse(row.evidence_json) as TaskVerification["evidence"])
+      : null,
+    sessionId: row.session_id,
+    createdAt: row.created_at,
+    finishedAt: row.finished_at,
   };
 }
 
@@ -311,11 +350,11 @@ export class TaskRepository {
         .prepare(
           `INSERT INTO tasks (
           id, title, description, project_id, workspace_mode, requested_worktree_id, base_ref,
-          allow_dirty, automation_enabled, metadata_json, status, active_run_id,
+          allow_dirty, automation_enabled, verification_enabled, metadata_json, status, active_run_id,
           resolved_worktree_id, owns_managed_worktree, workspace_cleanup_status,
           workspace_cleaned_at, workspace_cleanup_error_code,
           revision, created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 'backlog', NULL, NULL, 0, 'retained', NULL, NULL, 1, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 'backlog', NULL, NULL, 0, 'retained', NULL, NULL, 1, ?, ?, NULL)`,
         )
         .run(
           value.id,
@@ -327,6 +366,7 @@ export class TaskRepository {
           baseRef,
           allowDirty,
           value.automationEnabled ? 1 : 0,
+          value.verificationEnabled !== false ? 1 : 0,
           now,
           now,
         );
@@ -373,7 +413,7 @@ export class TaskRepository {
         .prepare(
           `UPDATE tasks SET title = ?, description = ?, workspace_mode = ?,
              requested_worktree_id = ?, base_ref = ?, allow_dirty = ?,
-             automation_enabled = ?, revision = revision + 1, updated_at = ?
+             automation_enabled = ?, verification_enabled = ?, revision = revision + 1, updated_at = ?
            WHERE id = ? AND revision = ?`,
         )
         .run(
@@ -384,6 +424,7 @@ export class TaskRepository {
           baseRef,
           allowDirty,
           value.automationEnabled ? 1 : 0,
+          value.verificationEnabled !== false ? 1 : 0,
           this.#now(),
           id,
           expectedRevision,
@@ -402,6 +443,179 @@ export class TaskRepository {
     validateId(id);
     const row = this.#runRow(id);
     return row ? mapRun(row) : null;
+  }
+
+  getVerification(id: string): TaskVerification | null {
+    validateId(id, "verificationId");
+    const row = this.connection
+      .prepare("SELECT * FROM task_verifications WHERE id = ?")
+      .get(id) as unknown as VerificationRow | undefined;
+    return row ? mapVerification(row) : null;
+  }
+
+  findVerification(
+    codingRunId: string,
+    commitSha: string,
+  ): TaskVerification | null {
+    validateId(codingRunId, "codingRunId");
+    const row = this.connection
+      .prepare(
+        "SELECT * FROM task_verifications WHERE coding_run_id = ? AND commit_sha = ?",
+      )
+      .get(codingRunId, commitSha) as unknown as VerificationRow | undefined;
+    return row ? mapVerification(row) : null;
+  }
+
+  latestVerification(taskId: string): TaskVerification | null {
+    validateId(taskId, "taskId");
+    const row = this.connection
+      .prepare(
+        "SELECT * FROM task_verifications WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+      )
+      .get(taskId) as unknown as VerificationRow | undefined;
+    return row ? mapVerification(row) : null;
+  }
+
+  listVerifications(taskId: string): TaskVerification[] {
+    validateId(taskId, "taskId");
+    return (
+      this.connection
+        .prepare(
+          "SELECT * FROM task_verifications WHERE task_id = ? ORDER BY created_at DESC, id DESC",
+        )
+        .all(taskId) as unknown as VerificationRow[]
+    ).map(mapVerification);
+  }
+
+  createVerification(input: {
+    id: string;
+    taskId: string;
+    codingRunId: string;
+    worktreeId: string;
+    commitSha: string;
+  }): TaskVerification {
+    return this.#transaction(() => {
+      validateId(input.id, "verificationId");
+      validateId(input.taskId, "taskId");
+      validateId(input.codingRunId, "codingRunId");
+      validateId(input.worktreeId, "worktreeId");
+      if (!/^[0-9a-f]{7,128}$/iu.test(input.commitSha))
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "commitSha is invalid",
+        );
+      const task = this.#requireTask(input.taskId);
+      const run = this.#requireRun(input.codingRunId);
+      if (run.task_id !== task.id || run.worktree_id !== input.worktreeId)
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "Verification binding is invalid",
+        );
+      this.connection
+        .prepare(
+          `INSERT INTO task_verifications
+         (id, task_id, coding_run_id, worktree_id, commit_sha, verdict, summary, evidence_json, session_id, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL)`,
+        )
+        .run(
+          input.id,
+          input.taskId,
+          input.codingRunId,
+          input.worktreeId,
+          input.commitSha,
+          this.#now(),
+        );
+      return this.getVerification(input.id)!;
+    });
+  }
+
+  bindVerificationSession(id: string, sessionId: string): TaskVerification {
+    return this.#transaction(() => {
+      validateId(id, "verificationId");
+      validateId(sessionId, "sessionId");
+      const result = this.connection
+        .prepare(
+          "UPDATE task_verifications SET session_id = ? WHERE id = ? AND verdict IS NULL AND session_id IS NULL",
+        )
+        .run(sessionId, id);
+      if (result.changes !== 1)
+        throw new TaskRepositoryError(
+          "TASK_VERIFICATION_ALREADY_REPORTED",
+          "Verification session is already bound or finished",
+        );
+      return this.getVerification(id)!;
+    });
+  }
+
+  finishVerification(
+    id: string,
+    report: TaskVerificationReport,
+  ): TaskVerification {
+    return this.#transaction(() => {
+      validateId(id, "verificationId");
+      const normalized = validateTaskVerificationReport(report);
+      const result = this.connection
+        .prepare(
+          `UPDATE task_verifications SET verdict = ?, summary = ?, evidence_json = ?, finished_at = ?
+         WHERE id = ? AND verdict IS NULL`,
+        )
+        .run(
+          normalized.verdict,
+          normalized.summary,
+          JSON.stringify(normalized.evidence),
+          this.#now(),
+          id,
+        );
+      if (result.changes !== 1) {
+        if (!this.getVerification(id))
+          throw new TaskRepositoryError(
+            "TASK_VERIFICATION_NOT_FOUND",
+            "Verification was not found",
+          );
+        throw new TaskRepositoryError(
+          "TASK_VERIFICATION_ALREADY_REPORTED",
+          "Verification result was already reported",
+        );
+      }
+      return this.getVerification(id)!;
+    });
+  }
+
+  updateVerificationEnabled(
+    id: string,
+    expectedRevision: number,
+    enabled: boolean,
+  ): Task {
+    return this.#transaction(() => {
+      validateId(id);
+      if (typeof enabled !== "boolean")
+        throw new TaskRepositoryError(
+          "TASK_RESULT_INVALID",
+          "verificationEnabled is invalid",
+        );
+      const current = this.#requireTask(id);
+      if (current.revision !== expectedRevision)
+        throw new TaskRepositoryError(
+          "TASK_CONFLICT",
+          "Task revision does not match",
+        );
+      if (
+        current.active_run_id ||
+        !["backlog", "failed", "cancelled", "needs_review"].includes(
+          current.status,
+        )
+      )
+        throw new TaskRepositoryError(
+          "TASK_INVALID_STATE",
+          "Verification setting cannot be edited in its current state",
+        );
+      this.connection
+        .prepare(
+          "UPDATE tasks SET verification_enabled = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?",
+        )
+        .run(enabled ? 1 : 0, this.#now(), id, expectedRevision);
+      return mapTask(this.#requireTask(id));
+    });
   }
 
   findRunBySessionId(sessionId: string): TaskRun | null {

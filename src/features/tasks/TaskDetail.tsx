@@ -13,7 +13,12 @@ import {
   useTranslation,
   type TranslationKey,
 } from "../../i18n";
-import type { TaskDetailValue, TaskRunSummary, TasksApi } from "./tasksApi";
+import type {
+  TaskDetailValue,
+  TaskRunSummary,
+  TaskVerificationValue,
+  TasksApi,
+} from "./tasksApi";
 import { formatTaskDuration, formatTaskTokens } from "./taskMetrics";
 import {
   relativeTaskTime,
@@ -132,6 +137,80 @@ function TaskReport({
     </div>
   );
 }
+function VerificationReport({
+  verification,
+}: {
+  verification: TaskVerificationValue;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section
+      className="task-detail-section task-result-card task-verification-card"
+      aria-label={t("tasks.verification.title")}
+    >
+      <div className="task-delivery-heading">
+        <h3>{t("tasks.verification.title")}</h3>
+        <span
+          className={`task-delivery-status verification-${verification.verdict ?? "running"}`}
+        >
+          {t(
+            `tasks.verification.${verification.verdict ?? "running"}` as TranslationKey,
+          )}
+        </span>
+      </div>
+      <code>{verification.commitSha.slice(0, 12)}</code>
+      {verification.summary ? <p>{verification.summary}</p> : null}
+      {verification.evidence?.acceptanceCriteria.length ? (
+        <details open>
+          <summary>{t("tasks.verification.criteria")}</summary>
+          <ul>
+            {verification.evidence.acceptanceCriteria.map((check, index) => (
+              <li key={index}>
+                <strong>
+                  {t(`tasks.verification.${check.status}` as TranslationKey)}
+                </strong>{" "}
+                {check.criterion}
+                {check.evidence.length ? (
+                  <ul>
+                    {check.evidence.map((item, evidenceIndex) => (
+                      <li key={evidenceIndex}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      {verification.evidence?.commands.length ? (
+        <details>
+          <summary>{t("tasks.verification.commands")}</summary>
+          <ul>
+            {verification.evidence.commands.map((command, index) => (
+              <li key={index}>
+                <code>{command.command}</code>: {command.summary}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      {verification.evidence?.issues.length ? (
+        <details open>
+          <summary>{t("tasks.verification.issues")}</summary>
+          <ul>
+            {verification.evidence.issues.map((issue, index) => (
+              <li key={index}>
+                <strong>{issue.severity}</strong>: {issue.summary}
+                {issue.evidence ? ` — ${issue.evidence}` : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 export function TaskDetail({
   api,
   task,
@@ -367,6 +446,32 @@ export function TaskDetail({
           ) : null}
         </div>
       </section>
+      <section
+        className="task-detail-section task-verification-setting"
+        aria-label={t("tasks.verification.title")}
+      >
+        <label>
+          <input
+            type="checkbox"
+            checked={task.verificationEnabled}
+            disabled={
+              busy || Boolean(task.activeRunId) || task.status === "completed"
+            }
+            onChange={(event) =>
+              void act(() =>
+                api.update(task.id, task.revision, {
+                  verificationEnabled: event.target.checked,
+                }),
+              )
+            }
+          />
+          <span>{t("tasks.verification.enabled")}</span>
+        </label>
+        <p>{t("tasks.verification.description")}</p>
+      </section>
+      {task.verification ? (
+        <VerificationReport verification={task.verification} />
+      ) : null}
       {latestRun?.report ? (
         <section
           className="task-detail-section task-result-card"

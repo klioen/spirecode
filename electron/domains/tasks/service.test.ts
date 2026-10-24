@@ -10,6 +10,7 @@ import {
   type TaskServiceDependencies,
   type TaskSessionBinding,
   type TaskSessionIntegration,
+  type TaskVerificationSessionIntegration,
 } from "./service.js";
 
 const ids = [
@@ -33,6 +34,8 @@ let service: TaskService;
 let uuidIndex: number;
 let eventListener: ((event: { type: string }) => void) | undefined;
 let reportResult: TaskSessionIntegration["reportResult"] | undefined;
+let verificationReportResult:
+  TaskVerificationSessionIntegration["reportVerification"] | undefined;
 
 beforeEach(() => {
   const directory = mkdtempSync(join(tmpdir(), "spire-task-service-"));
@@ -44,6 +47,7 @@ beforeEach(() => {
     now: () => 1_700_000_000_000,
   });
   uuidIndex = 0;
+  verificationReportResult = undefined;
   sessionBinding = {
     sessionId: "80000000-0000-4000-8000-000000000001",
     sessionPath: "/private/session.jsonl",
@@ -75,6 +79,10 @@ beforeEach(() => {
       reportResult = integration.reportResult;
       return sessionBinding;
     }),
+    createVerificationSession: vi.fn(async (_worktreeId, integration) => {
+      verificationReportResult = integration.reportVerification;
+      return { sessionId: integration.sessionId, sessionPath: null };
+    }),
     findSession: vi.fn(async () => null),
     renameSession: vi.fn(async () => undefined),
     attachSession: vi.fn(async (_worktreeId, _sessionId, integration) => {
@@ -98,6 +106,11 @@ beforeEach(() => {
       target: input.persistedTarget ?? "main",
     })),
     activateGitDelivery: vi.fn(async () => undefined),
+    prepareGitChanges: vi.fn(async () => ({
+      changed: false,
+      head: "a".repeat(40),
+    })),
+    validatePreparedGitChanges: vi.fn(async () => undefined),
     deliverGitChanges: vi.fn(async () => ({
       changed: false,
       head: "a".repeat(40),
@@ -128,6 +141,44 @@ async function settleAgent(): Promise<void> {
   await service.whenIdle();
 }
 
+async function settleWithVerification(
+  verdict: "pass" | "fail" | "inconclusive",
+): Promise<void> {
+  eventListener?.({ type: "agent_settled" });
+  for (let attempt = 0; attempt < 20 && !verificationReportResult; attempt += 1)
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(verificationReportResult).toBeDefined();
+  const verification = repository.latestVerification(
+    repository.listTasks({ limit: 1 }).items[0]!.id,
+  )!;
+  await verificationReportResult!({
+    verificationId: verification.id,
+    verdict,
+    summary: `Verifier returned ${verdict}`,
+    evidence: {
+      acceptanceCriteria: [
+        {
+          criterion: "Original requirement",
+          status: verdict,
+          evidence: ["checked"],
+        },
+      ],
+      commands: [{ command: "pnpm test", status: "passed", summary: "green" }],
+      issues:
+        verdict === "pass"
+          ? []
+          : [
+              {
+                severity: "major",
+                summary: "Not proven",
+                evidence: "missing behavior",
+              },
+            ],
+    },
+  });
+  await service.whenIdle();
+}
+
 function createInput(automationEnabled = true) {
   return {
     title: "Implement task service",
@@ -138,6 +189,7 @@ function createInput(automationEnabled = true) {
       baseRef: "origin/main",
     },
     automationEnabled,
+    verificationEnabled: false,
   };
 }
 
@@ -511,6 +563,103 @@ describe("TaskService", () => {
       expect.objectContaining({ kind: "needs_review", runId: run.id }),
     );
   });
+
+  it("runs an independent verifier at the prepared commit before delivery", async () => {
+    const input = { ...createInput(true), verificationEnabled: true };
+    input.description = "Acceptance: the public command works";
+    const detail = await createRunningTask(input);
+    const run = detail.runs[0]!;
+    await reportResult!({
+      runId: run.id,
+      outcome: "success",
+      summary: "SECRET CODING SUMMARY",
+      tests: [],
+    });
+
+    await settleWithVerification("pass");
+
+    const final = await service.get(detail.task.id);
+    expect(final.task.status).toBe("needs_review");
+    expect(final.verification).toMatchObject({
+      codingRunId: run.id,
+      commitSha: "a".repeat(40),
+      verdict: "pass",
+    });
+    const verificationPrompt = vi
+      .mocked(dependencies.sendPrompt)
+      .mock.calls.find(([, , prompt]) =>
+        prompt.includes("spire-task-verification"),
+      )?.[2];
+    expect(verificationPrompt).toContain(input.title);
+    expect(verificationPrompt).toContain(input.description);
+    expect(verificationPrompt).not.toContain("SECRET CODING SUMMARY");
+    expect(dependencies.createVerificationSession).toHaveBeenCalledWith(
+      managedWorktreeId,
+      expect.objectContaining({ sessionId: final.verification!.id }),
+    );
+    expect(final.verification?.sessionId).not.toBe(run.sessionId);
+    expect(dependencies.deliverGitChanges).toHaveBeenCalledTimes(1);
+    await expect(
+      verificationReportResult!({
+        verificationId: final.verification!.id,
+        verdict: "pass",
+        summary: "duplicate",
+        evidence: { acceptanceCriteria: [], commands: [], issues: [] },
+      }),
+    ).rejects.toMatchObject({ code: "TASK_RESULT_INVALID" });
+  });
+
+  it("records verifier infrastructure failures as inconclusive without delivery", async () => {
+    const detail = await createRunningTask({
+      ...createInput(true),
+      verificationEnabled: true,
+    });
+    vi.mocked(dependencies.createVerificationSession).mockRejectedValueOnce(
+      new Error("model unavailable"),
+    );
+    await reportResult!({
+      runId: detail.runs[0]!.id,
+      outcome: "success",
+      summary: "Implemented",
+      tests: [],
+    });
+
+    await settleAgent();
+
+    const final = await service.get(detail.task.id);
+    expect(final.task.status).toBe("needs_review");
+    expect(final.verification).toMatchObject({
+      verdict: "inconclusive",
+      summary: "Verifier infrastructure failed before a conclusive verdict.",
+    });
+    expect(final.verification?.evidence?.issues[0]?.summary).toBe(
+      "model unavailable",
+    );
+    expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+  });
+
+  it.each(["fail", "inconclusive"] as const)(
+    "blocks delivery for a %s verification verdict",
+    async (verdict) => {
+      const detail = await createRunningTask({
+        ...createInput(true),
+        verificationEnabled: true,
+      });
+      await reportResult!({
+        runId: detail.runs[0]!.id,
+        outcome: "success",
+        summary: "Implemented",
+        tests: [],
+      });
+
+      await settleWithVerification(verdict);
+
+      const final = await service.get(detail.task.id);
+      expect(final.task.status).toBe("needs_review");
+      expect(final.verification?.verdict).toBe(verdict);
+      expect(dependencies.deliverGitChanges).not.toHaveBeenCalled();
+    },
+  );
 
   it("replaces an Agent-reported link with a Main-verified Ready change request", async () => {
     const detail = await createRunningTask(createInput(true));
@@ -911,7 +1060,11 @@ describe("TaskService", () => {
       retryable: true,
     });
 
-    const retried = await runTask({ task: failed.task, runs: [] });
+    const retried = await runTask({
+      task: failed.task,
+      runs: [],
+      verification: null,
+    });
 
     expect(retried.runs[0]).toMatchObject({
       status: "running",

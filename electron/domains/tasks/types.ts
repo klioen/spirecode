@@ -51,6 +51,47 @@ export interface TaskMetadata {
   review?: TaskReviewMetadata;
 }
 
+export type TaskVerificationVerdict = "pass" | "fail" | "inconclusive";
+export type TaskVerificationCheckStatus = TaskVerificationVerdict;
+
+export interface TaskVerificationEvidence {
+  acceptanceCriteria: Array<{
+    criterion: string;
+    status: TaskVerificationCheckStatus;
+    evidence: string[];
+  }>;
+  commands: Array<{
+    command: string;
+    status: "passed" | "failed";
+    summary: string;
+  }>;
+  issues: Array<{
+    severity: "blocker" | "major" | "minor";
+    summary: string;
+    evidence: string;
+  }>;
+}
+
+export interface TaskVerification {
+  id: string;
+  taskId: string;
+  codingRunId: string;
+  worktreeId: string;
+  commitSha: string;
+  verdict: TaskVerificationVerdict | null;
+  summary: string | null;
+  evidence: TaskVerificationEvidence | null;
+  sessionId: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}
+
+export interface TaskVerificationReport {
+  verdict: TaskVerificationVerdict;
+  summary: string;
+  evidence: TaskVerificationEvidence;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -58,6 +99,7 @@ export interface Task {
   projectId: string;
   workspace: WorkspaceRequest;
   automationEnabled: boolean;
+  verificationEnabled: boolean;
   metadata: TaskMetadata;
   status: TaskStatus;
   activeRunId: string | null;
@@ -79,6 +121,7 @@ export interface CreateTaskInput {
   projectId: string;
   workspace: WorkspaceRequest;
   automationEnabled: boolean;
+  verificationEnabled?: boolean;
 }
 
 export interface TaskRunError {
