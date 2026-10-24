@@ -8,6 +8,7 @@ import {
   RiRestartLine,
 } from "@remixicon/react";
 import { useEffect, useState } from "react";
+import { SelectionCopyRegion } from "../../components/SelectionCopyRegion";
 import {
   formatDateTime,
   useTranslation,
@@ -276,7 +277,11 @@ export function TaskDetail({
     void act(() => api.cancel(task.id, task.revision));
   };
   return (
-    <article className="task-detail" aria-labelledby="task-detail-title">
+    <SelectionCopyRegion
+      as="article"
+      className="task-detail"
+      aria-labelledby="task-detail-title"
+    >
       <header className="task-detail-header">
         <div className="task-detail-title-row">
           {onBack ? (
@@ -697,6 +702,6 @@ export function TaskDetail({
           )}
         </section>
       ) : null}
-    </article>
+    </SelectionCopyRegion>
   );
 }

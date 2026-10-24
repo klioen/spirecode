@@ -48,6 +48,32 @@ const reviewTask = taskDetail({
 beforeEach(() => vi.spyOn(window, "confirm").mockReturnValue(true));
 
 describe("TaskDetail", () => {
+  it("copies selected Task detail text with the localized context menu", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container } = render(
+      <TaskDetail
+        api={createTasksApiMock()}
+        onChange={vi.fn()}
+        task={taskDetail({ title: "Selection copy task" })}
+      />,
+    );
+    const title = screen.getByRole("heading", { name: "Selection copy task" });
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    selection.addRange(range);
+
+    fireEvent.contextMenu(container.querySelector(".task-detail")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+
+    expect(writeText).toHaveBeenCalledWith("Selection copy task");
+  });
+
   it("keeps a previous run report accessible while a follow-up run is queued", () => {
     render(
       <TaskDetail
