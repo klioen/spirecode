@@ -21,10 +21,14 @@ describe("chat timeline layout", () => {
     expect(css).toMatch(
       /\.chat-tool-name\s*\{[^}]*color:\s*var\(--text-subtle\);/s,
     );
-    expect(css).not.toMatch(/\.chat-thinking/);
     expect(css).toMatch(/\.chat-process-list\s*\{[^}]*border:\s*0;/s);
     expect(css).toMatch(/\.chat-tool\s*\{[^}]*border:\s*0;/s);
-    expect(css).not.toMatch(/\.chat-tool-preview/);
+    expect(css).toMatch(
+      /\.chat-detail-content pre\s*\{[^}]*max-height:\s*280px;[^}]*overflow:\s*auto;[^}]*overscroll-behavior:\s*contain;/s,
+    );
+    expect(css).toMatch(
+      /\.chat-tool-preview-tabs[^{]*\{[^}]*display:\s*flex;/s,
+    );
     expect(css).toMatch(
       /summary:not\(:hover\):not\(:focus-visible\)[^{]*\.chat-disclosure-icon\s*\{[^}]*opacity:\s*0;/s,
     );

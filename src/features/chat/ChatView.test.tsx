@@ -185,7 +185,7 @@ describe("ChatView", () => {
     const work = summary.closest("details");
     expect(work).not.toHaveAttribute("open");
     expect(screen.getByText("Thinking")).not.toBeVisible();
-    expect(screen.queryByText("reasoning")).toBeNull();
+    expect(screen.getByText("reasoning")).not.toBeVisible();
     expect(screen.getByText("read")).not.toBeVisible();
     expect(screen.getByText("edit")).not.toBeVisible();
     expect(
@@ -194,7 +194,10 @@ describe("ChatView", () => {
     expect(screen.getByText("More output")).not.toBeVisible();
 
     fireEvent.click(summary);
-    expect(screen.getByText("Thinking")).toBeVisible();
+    const thinking = screen.getByText("Thinking");
+    expect(thinking).toBeVisible();
+    fireEvent.click(thinking);
+    expect(screen.getByText("reasoning")).toBeVisible();
     expect(screen.getByText("read")).toBeVisible();
     expect(screen.getByText("edit")).toBeVisible();
     expect(screen.getByRole("region", { name: "Todo progress" })).toBeVisible();

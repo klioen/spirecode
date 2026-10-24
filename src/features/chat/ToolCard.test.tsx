@@ -1,5 +1,12 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { beforeEach, expect, it, vi } from "vitest";
+import { setLanguage } from "../../i18n";
 import { ToolCard } from "./ToolCard";
 import type { ChatToolModel } from "./types";
 
@@ -11,40 +18,81 @@ const tool: ChatToolModel = {
   status: "done",
 };
 
-it("shows only the semantic tool summary", () => {
-  const { container } = render(<ToolCard tool={tool} />);
+beforeEach(() => {
+  setLanguage("en");
+  Object.assign(navigator, {
+    clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+});
+
+it("keeps the semantic summary and exposes Input and Output tabs", () => {
+  render(<ToolCard tool={tool} />);
 
   expect(screen.getByText("read")).toBeInTheDocument();
   expect(screen.getByText("chat.tsx")).toBeInTheDocument();
-  expect(container.querySelector('[data-process-icon="read"]')).not.toBeNull();
-  expect(container.querySelector("details")).toBeNull();
-  expect(container.querySelector(".chat-tool-preview")).toBeNull();
-  expect(screen.queryByText(/src\/chat\.tsx/)).toBeNull();
-  expect(screen.queryByText("file body")).toBeNull();
+  const details = screen.getByText("read").closest("details");
+  expect(details).not.toHaveAttribute("open");
+
+  fireEvent.click(screen.getByText("read"));
+  const tabs = screen.getByRole("tablist", { name: "Tool call details" });
+  const input = within(tabs).getByRole("tab", { name: "input" });
+  const output = within(tabs).getByRole("tab", { name: "output" });
+  expect(input).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tabpanel")).toHaveTextContent(
+    '"path": "src/chat.tsx"',
+  );
+
+  fireEvent.click(output);
+  expect(output).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tabpanel")).toHaveTextContent("file body");
 });
 
-it("shows a command without exposing its output", () => {
-  const { container } = render(
+it("defaults to Output without input and keeps the selected tab across updates", () => {
+  const { rerender } = render(
     <ToolCard
       tool={{
-        toolCallId: "bash-1",
-        name: "bash",
-        arguments: { command: "pnpm test", timeout: 120_000 },
-        result: "all tests passed",
+        toolCallId: "tool-2",
+        name: "custom",
+        result: "partial",
+        status: "running",
+      }}
+    />,
+  );
+  const details = screen.getByText("custom").closest("details");
+  expect(details).toHaveAttribute("open");
+  expect(screen.getByRole("tab", { name: "output" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  rerender(
+    <ToolCard
+      tool={{
+        toolCallId: "tool-2",
+        name: "custom",
+        result: "complete output",
         status: "done",
       }}
     />,
   );
-
-  expect(screen.getByText("bash")).toBeInTheDocument();
-  expect(screen.getByText("pnpm test")).toBeInTheDocument();
-  expect(screen.queryByText("all tests passed")).toBeNull();
-  expect(screen.queryByText(/120000/)).toBeNull();
-  expect(container.querySelector(".chat-tool-preview")).toBeNull();
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText("custom"));
+  expect(screen.getByRole("tabpanel")).toHaveTextContent("complete output");
 });
 
-it("shows errors as status without exposing the raw error payload", () => {
-  const { container } = render(
+it("keeps a manual disclosure choice across ordinary rerenders", () => {
+  const { rerender } = render(<ToolCard tool={tool} />);
+  const details = screen.getByText("read").closest("details");
+  fireEvent.click(screen.getByText("read"));
+  expect(details).toHaveAttribute("open");
+
+  rerender(<ToolCard tool={{ ...tool, result: "updated" }} />);
+  expect(details).toHaveAttribute("open");
+  expect(screen.getByRole("tabpanel")).toHaveTextContent("src/chat.tsx");
+});
+
+it("shows error output instead of hiding it behind the summary", () => {
+  render(
     <ToolCard
       tool={{
         toolCallId: "bash-2",
@@ -55,8 +103,57 @@ it("shows errors as status without exposing the raw error payload", () => {
       }}
     />,
   );
+  fireEvent.click(screen.getByText("bash"));
+  fireEvent.click(screen.getByRole("tab", { name: "output" }));
+  expect(screen.getByRole("tabpanel")).toHaveTextContent(
+    "private stderr details",
+  );
+});
 
-  expect(container.querySelector(".chat-tool-error")).not.toBeNull();
-  expect(screen.getByText("pnpm test")).toBeInTheDocument();
-  expect(screen.queryByText("private stderr details")).toBeNull();
+it("truncates display and copied text at 16,000 characters with feedback", async () => {
+  const longOutput = "x".repeat(16_005);
+  render(
+    <ToolCard
+      tool={{
+        toolCallId: "long",
+        name: "custom",
+        result: longOutput,
+        status: "done",
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByText("custom"));
+  const panel = screen.getByRole("tabpanel");
+  expect(panel.querySelector("pre")?.textContent).toHaveLength(16_000);
+  expect(
+    within(panel).getByText("Content truncated after 16,000 characters."),
+  ).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "Copy output" }));
+  await waitFor(() =>
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "x".repeat(16_000),
+    ),
+  );
+  expect(screen.getByRole("button", { name: "Output copied" })).toBeVisible();
+});
+
+it("supports arrow-key tab navigation and an explicit empty state", () => {
+  render(
+    <ToolCard
+      tool={{
+        toolCallId: "empty",
+        name: "custom",
+        arguments: "",
+        result: "done",
+        status: "done",
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByText("custom"));
+  const input = screen.getByRole("tab", { name: "input" });
+  fireEvent.keyDown(input, { key: "ArrowRight" });
+  expect(screen.getByRole("tab", { name: "output" })).toHaveFocus();
+  fireEvent.click(input);
+  expect(screen.getByRole("tabpanel")).toHaveTextContent("No content");
 });
