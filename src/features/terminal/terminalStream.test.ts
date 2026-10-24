@@ -12,7 +12,10 @@ describe("terminal stream", () => {
       terminalId: "t1",
       data: "shell ready\r\n",
     });
-    terminalStream.subscribe("t1", (message) => received.push(message));
+    const subscription = terminalStream.subscribe("t1", (message) =>
+      received.push(message),
+    );
+    received.push(...subscription.replay);
     expect(received).toEqual([
       { type: "output", terminalId: "t1", data: "shell ready\r\n" },
     ]);
@@ -20,18 +23,22 @@ describe("terminal stream", () => {
 
   it("replays output after the xterm view remounts", () => {
     const first: TerminalMessage[] = [];
-    const unsubscribe = terminalStream.subscribe("t1", (message) =>
+    const firstSubscription = terminalStream.subscribe("t1", (message) =>
       first.push(message),
     );
+    first.push(...firstSubscription.replay);
     terminalStream.push({
       type: "output",
       terminalId: "t1",
       data: "before project switch\r\n",
     });
-    unsubscribe();
+    firstSubscription.unsubscribe();
 
     const remounted: TerminalMessage[] = [];
-    terminalStream.subscribe("t1", (message) => remounted.push(message));
+    const remountedSubscription = terminalStream.subscribe("t1", (message) =>
+      remounted.push(message),
+    );
+    remounted.push(...remountedSubscription.replay);
 
     expect(first).toHaveLength(1);
     expect(remounted).toEqual(first);
@@ -49,8 +56,7 @@ describe("terminal stream", () => {
       data: "b".repeat(700_000),
     });
 
-    const replayed: TerminalMessage[] = [];
-    terminalStream.subscribe("t1", (message) => replayed.push(message));
+    const replayed = terminalStream.subscribe("t1", () => {}).replay;
 
     expect(replayed).toHaveLength(1);
     expect(replayed[0]).toMatchObject({ type: "output" });
@@ -58,11 +64,20 @@ describe("terminal stream", () => {
       expect(String(replayed[0].data).startsWith("b")).toBe(true);
   });
 
+  it("replays the latest lifecycle status after output", () => {
+    terminalStream.push({ type: "output", terminalId: "t1", data: "done" });
+    terminalStream.push({ type: "exit", terminalId: "t1", exitCode: 0 });
+
+    expect(terminalStream.subscribe("t1", () => {}).replay).toEqual([
+      { type: "output", terminalId: "t1", data: "done" },
+      { type: "exit", terminalId: "t1", exitCode: 0 },
+    ]);
+  });
+
   it("clears replay history when the terminal closes", () => {
     terminalStream.push({ type: "output", terminalId: "t1", data: "gone" });
     terminalStream.close("t1");
-    const replayed: TerminalMessage[] = [];
-    terminalStream.subscribe("t1", (message) => replayed.push(message));
+    const replayed = terminalStream.subscribe("t1", () => {}).replay;
     expect(replayed).toEqual([]);
   });
 
