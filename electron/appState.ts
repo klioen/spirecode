@@ -1,5 +1,4 @@
 import { dialog, Notification, shell, type BrowserWindow } from "electron";
-import { mkdirSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -56,12 +55,6 @@ import { TaskIntakeService } from "./domains/tasks/intake.js";
 import { taskSessionName } from "./domains/tasks/prompt.js";
 import { verificationSessionName } from "./domains/tasks/verification.js";
 import { TaskDeliveryService } from "./domains/tasks/delivery.js";
-import {
-  createDefaultTaskRewriteService,
-  TaskRewriteError,
-  TaskRewriteService,
-  type TaskRewriteDraft,
-} from "./domains/tasks/piRewrite.js";
 
 export interface SubscriptionEvent<T> {
   subscriptionId: string;
@@ -89,8 +82,6 @@ export class AppState {
   readonly taskIntake: TaskIntakeService;
   readonly taskUnavailableReason: string | null;
   readonly taskUnavailableCode: TaskDatabaseErrorCode | null;
-  readonly taskRewrite: Promise<TaskRewriteService>;
-  private activeTaskRewriteId: string | null = null;
 
   private constructor(
     readonly projects: ProjectService,
@@ -410,26 +401,6 @@ export class AppState {
         onChanged: (event) => this.send("task://event", event),
       },
     );
-
-    const rewriteDirectory = path.join(dataDirectory, "task-rewrite");
-    try {
-      mkdirSync(rewriteDirectory, { recursive: true });
-      this.taskRewrite = createDefaultTaskRewriteService({
-        controlledCwd: rewriteDirectory,
-      });
-    } catch (error) {
-      console.warn("Task rewrite service is unavailable", error);
-      this.taskRewrite = Promise.resolve(
-        new TaskRewriteService({
-          create: async () => {
-            throw new TaskRewriteError(
-              "TASK_REWRITE_UNAVAILABLE",
-              "Task rewrite service is unavailable",
-            );
-          },
-        }),
-      );
-    }
   }
 
   static async create(
@@ -823,44 +794,6 @@ export class AppState {
     );
   }
 
-  startTaskRewrite(rewriteId: string, input: TaskRewriteDraft): void {
-    if (this.activeTaskRewriteId)
-      throw new TaskRewriteError(
-        "TASK_REWRITE_BUSY",
-        "A task rewrite is already active",
-      );
-    this.activeTaskRewriteId = rewriteId;
-    void this.taskRewrite
-      .then((service) => service.rewrite(input))
-      .then(
-        (payload) => {
-          if (this.activeTaskRewriteId !== rewriteId) return;
-          this.send("task://event", {
-            kind: "rewrite_result",
-            rewriteId,
-            payload,
-          });
-        },
-        (error: unknown) => {
-          if (this.activeTaskRewriteId !== rewriteId) return;
-          this.send("task://event", {
-            kind: "rewrite_failed",
-            rewriteId,
-            payload: { message: taskRewriteErrorMessage(error) },
-          });
-        },
-      )
-      .finally(() => {
-        if (this.activeTaskRewriteId === rewriteId)
-          this.activeTaskRewriteId = null;
-      });
-  }
-
-  async abortTaskRewrite(rewriteId: string): Promise<void> {
-    if (this.activeTaskRewriteId !== rewriteId) return;
-    await (await this.taskRewrite).abort();
-  }
-
   async dispose(): Promise<void> {
     this.terminals.dispose();
     await this.taskIntake?.dispose();
@@ -868,7 +801,6 @@ export class AppState {
       this.tasks?.dispose() ?? Promise.resolve(),
     ]);
     const cleanup = await Promise.allSettled([
-      this.taskRewrite.then((service) => service.dispose()),
       this.watchers.dispose(),
       withTimeout(this.chat.disposeAll(), 5_000),
     ]);
@@ -1308,25 +1240,6 @@ function taskReportTool(integration: TaskSessionIntegration) {
       }
     },
   };
-}
-
-function taskRewriteErrorMessage(error: unknown): string {
-  if (!(error instanceof TaskRewriteError))
-    return "Unable to optimize the task description.";
-  switch (error.code) {
-    case "TASK_REWRITE_BUSY":
-      return "Another task description is already being optimized.";
-    case "TASK_REWRITE_ABORTED":
-      return "Task description optimization was canceled.";
-    case "TASK_REWRITE_TIMEOUT":
-      return "Task description optimization timed out.";
-    case "TASK_RESULT_INVALID":
-      return "The optimized task description was invalid.";
-    case "TASK_REWRITE_NO_RESULT":
-      return "The agent did not return an optimized task description.";
-    case "TASK_REWRITE_UNAVAILABLE":
-      return "Task description optimization is unavailable.";
-  }
 }
 
 export function applyMemoryConfig(config: MemoryConfig | null): void {

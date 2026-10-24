@@ -614,7 +614,7 @@ describe("Task IPC validation", () => {
     ).toThrow("statuses is invalid");
   });
 
-  it("validates revisions and restricted rewrite input", () => {
+  it("validates task revisions", () => {
     expect(
       validateCommandArgs("task_run", {
         taskId: "task-1",
@@ -627,25 +627,6 @@ describe("Task IPC validation", () => {
         expectedRevision: 0,
       }),
     ).toThrow("expectedRevision must be a safe integer");
-    expect(
-      validateCommandArgs("task_rewrite_start", {
-        rewriteId: "rewrite-1",
-        input: {
-          title: "Fix scrolling",
-          description: "Clarify this",
-        },
-      }),
-    ).toBeDefined();
-    expect(() =>
-      validateCommandArgs("task_rewrite_start", {
-        rewriteId: "rewrite-1",
-        input: {
-          title: "Fix scrolling",
-          description: "Clarify this",
-          projectPath: "/tmp/repository",
-        },
-      }),
-    ).toThrow("unexpected fields");
   });
 });
 

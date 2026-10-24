@@ -24,7 +24,6 @@ describe("Electron host allowlists", () => {
         "task_list",
         "task_dashboard",
         "task_create",
-        "task_rewrite_start",
         "settings_memory_read",
         "settings_memory_models_list",
         "settings_memory_config_get",
@@ -40,6 +39,8 @@ describe("Electron host allowlists", () => {
         "settings_skill_set_enabled",
       ]),
     );
+    expect(isCommand("task_rewrite_start")).toBe(false);
+    expect(isCommand("task_rewrite_abort")).toBe(false);
     expect(isCommand("chat_session_invoke")).toBe(false);
     expect(isCommand("pi_command")).toBe(false);
     expect(isCommand("fs_read_absolute")).toBe(false);

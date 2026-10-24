@@ -173,29 +173,13 @@ export interface TaskNotificationValue {
   createdAt: number;
 }
 
-export interface TaskRewriteInput {
-  title: string;
-  description: string;
+export interface TaskEvent {
+  kind: "changed" | "notification";
+  taskId?: string;
+  runId?: string;
+  revision?: number;
+  payload?: { navigate?: boolean };
 }
-
-export type TaskEvent =
-  | {
-      kind: "changed" | "notification";
-      taskId?: string;
-      runId?: string;
-      revision?: number;
-      payload?: { navigate?: boolean };
-    }
-  | {
-      kind: "rewrite_result";
-      rewriteId: string;
-      payload: TaskRewriteInput;
-    }
-  | {
-      kind: "rewrite_failed";
-      rewriteId: string;
-      payload?: { message?: string };
-    };
 
 export interface TasksApi {
   list(input: {
@@ -241,11 +225,6 @@ export interface TasksApi {
     taskId: string,
     expectedRevision: number,
   ): Promise<TaskDetailValue>;
-  rewriteStart(
-    input: TaskRewriteInput,
-    rewriteId?: string,
-  ): Promise<{ rewriteId: string }>;
-  rewriteAbort(rewriteId: string): Promise<void>;
   subscribe(listener: (event: TaskEvent) => void): () => void;
 }
 
@@ -292,8 +271,6 @@ export interface TaskHostBindings {
     taskId: string;
     expectedRevision: number;
   }): Promise<TaskDetailValue>;
-  taskRewriteStart: TasksApi["rewriteStart"];
-  taskRewriteAbort(input: { rewriteId: string }): Promise<void>;
   subscribeTaskEvents(listener: (event: TaskEvent) => void): () => void;
 }
 
@@ -319,8 +296,6 @@ export const createHostTasksApi = (host: TaskHostBindings): TasksApi => ({
     host.taskRequestChanges({ taskId, expectedRevision, note }),
   continueForReport: (taskId, expectedRevision) =>
     host.taskContinueForReport({ taskId, expectedRevision }),
-  rewriteStart: (input) => host.taskRewriteStart(input),
-  rewriteAbort: (rewriteId) => host.taskRewriteAbort({ rewriteId }),
   subscribe: (listener) => host.subscribeTaskEvents(listener),
 });
 
@@ -369,14 +344,5 @@ export const tasksApi: TasksApi = {
       taskId,
       expectedRevision,
     ) as Promise<TaskDetailValue>,
-  async rewriteStart(input, requestedRewriteId) {
-    const rewriteId = requestedRewriteId ?? crypto.randomUUID();
-    await commands.taskRewriteStart(
-      rewriteId,
-      input as unknown as Record<string, unknown>,
-    );
-    return { rewriteId };
-  },
-  rewriteAbort: (rewriteId) => commands.taskRewriteAbort(rewriteId),
   subscribe: (listener) => subscribeTaskEvent(listener),
 };

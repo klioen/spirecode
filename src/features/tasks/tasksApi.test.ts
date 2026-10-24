@@ -14,8 +14,6 @@ it("adapts future host bindings without importing unavailable generated commands
     taskComplete: vi.fn(),
     taskRequestChanges: vi.fn(),
     taskContinueForReport: vi.fn(),
-    taskRewriteStart: vi.fn(),
-    taskRewriteAbort: vi.fn(),
     subscribeTaskEvents: vi.fn().mockReturnValue(unsubscribe),
   } as unknown as TaskHostBindings;
   const api = createHostTasksApi(host);

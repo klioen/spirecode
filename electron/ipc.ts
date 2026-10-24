@@ -5,7 +5,6 @@ import { KeyedQueue } from "./core/asyncQueue.js";
 import { serializeError } from "./core/errors.js";
 import { AppState } from "./appState.js";
 import type { ChatThinkingLevel } from "./domains/chat/types.js";
-import type { TaskRewriteDraft } from "./domains/tasks/piRewrite.js";
 import { validateId } from "./domains/tasks/validation.js";
 import { MAX_TEXT_BYTES } from "./domains/filesystem/service.js";
 import type {
@@ -473,11 +472,6 @@ async function invoke(
         input.kind,
       );
     }
-    case "task_rewrite_start":
-      state.startTaskRewrite(text(args, "rewriteId"), taskRewriteInput(args));
-      return undefined;
-    case "task_rewrite_abort":
-      return state.abortTaskRewrite(text(args, "rewriteId"));
     case "settings_extensions_list": {
       const worktreeId = text(args, "worktreeId", true);
       return state.settings.list(
@@ -638,8 +632,6 @@ const ALLOWED_FIELDS: Record<CommandName, readonly string[]> = {
   task_notifications_list: ["cursor", "limit"],
   task_notifications_mark_all_read: [],
   task_notification_mark_read: ["taskId", "runId", "kind"],
-  task_rewrite_start: ["rewriteId", "input"],
-  task_rewrite_abort: ["rewriteId"],
   settings_extensions_list: ["worktreeId"],
   settings_extension_catalog_list: ["query", "sort", "page"],
   settings_extension_package_install: ["packageName"],
@@ -861,20 +853,6 @@ function taskNotificationReadInput(args: Args): {
   };
 }
 
-function taskRewriteInput(args: Args): TaskRewriteDraft {
-  const input = strictRecord(args.input, "input");
-  exactKeys(input, ["title", "description"]);
-  return {
-    title: boundedString(input.title, "title", 200),
-    description: boundedString(
-      input.description,
-      "description",
-      64 * 1024,
-      true,
-    ),
-  };
-}
-
 function taskWorkspace(
   value: unknown,
 ): import("./domains/tasks/types.js").WorkspaceRequest {
@@ -963,12 +941,6 @@ export function validateCommandArgs(command: CommandName, args: Args): Args {
     taskUpdateInput(args);
     return args;
   }
-  if (command === "task_rewrite_start") {
-    text(args, "rewriteId");
-    taskRewriteInput(args);
-    return args;
-  }
-
   for (const key of allowed) {
     if (
       (command === "settings_memory_models_list" ||

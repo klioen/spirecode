@@ -5,7 +5,7 @@
 
 ## Intent
 
-Implement the user's approved UI/interaction review: actionable execution states, searchable scoped lists, current-result-first detail, recognizable notifications, safe draft handling, lazy project configuration, rewrite comparison, and responsive/readable layouts. Preserve the existing Main-owned Task execution and safety boundaries.
+Implement the user's approved UI/interaction review: actionable execution states, searchable scoped lists, current-result-first detail, recognizable notifications, safe draft handling, lazy project configuration, and responsive/readable layouts. Preserve the existing Main-owned Task execution and safety boundaries. The rewrite comparison delivered in this historical change was subsequently removed by `docs/task-quick-create-without-rewrite/`.
 
 ## Spec
 
@@ -16,14 +16,14 @@ Implement the user's approved UI/interaction review: actionable execution states
 - Bulk clean-only cleanup moves under More and requires an explanation/confirmation. Notification reads/errors have visible feedback and retry.
 - Form submission distinguishes Create and queue from Create only. Project defaults use current/recent context; branch/status configuration loads only for the selected project and errors are isolated. Existing-workspace dirty authorization is never persisted in drafts. First-bound Task workspaces are read-only in the editor.
 - Unsaved form drafts are transient Renderer memory only, bounded, and cleared on submit/explicit confirmed discard. Switching to Chat/Settings retains drafts during the app session; application close warns for unsaved changes. No form bodies enter the paged Zustand store, localStorage or project files.
-- AI rewrite compares the captured original with the suggestion; edits made while optimization runs invalidate applying the stale suggestion. Apply and Undo remain explicit.
+- Task Rewrite / AI optimization is no longer current behavior; the direct form now exposes user-editable title and description only.
 - Detail requests are coalesced/fenced; stale navigation/refresh responses cannot overwrite a newer task/revision, and refresh errors remain visible in detail. Fonts, semantic status colors and keyboard focus are consistent with the existing theme.
 
 ## Delivery and verification
 
 Implementation status: implemented and installed on macOS arm64; screenshot-level visual acceptance remains pending.
 
-1. Add regressions for filters/validation, readable DTOs, actionable states, retained reports, request fencing, pagination preservation, draft restoration, lazy projects and rewrite staleness.
+1. Add regressions for filters/validation, readable DTOs, actionable states, retained reports, request fencing, pagination preservation, draft restoration and lazy projects. Historical rewrite-staleness coverage was removed with that capability.
 2. Implement bounded Main read-model/IPC additions and Renderer state-driven surfaces without altering the execution saga.
 3. Run focused tests, formatting/brand/i18n/security/license/lint/typecheck, full tests and build. Record actual gate outcomes, including the existing macOS watcher issue; do not suppress unrelated failures.
 4. Native packaging/installation remains a separate user action unless requested.
@@ -37,7 +37,7 @@ Risk: high for the narrow IPC additions and Main read-model boundary; the user's
 - `pnpm lint`, `pnpm typecheck`, `pnpm build` and `pnpm release:test` passed (exit 0; 19 release tests). Build retained `node:sqlite` and sandboxed preload contracts.
 - Formatting, brand, i18n, secret and production-license gates passed. Licenses used the existing installed user store via `npm_config_store_dir=/Users/bytedance/Library/pnpm/store`; no dependency, lockfile or repository config was changed.
 - Full `pnpm check` failed only in the unchanged native macOS watcher suite: 3 filesystem-event assertions timed out; the run had 92 passing files/702 passing tests and 1 failing file/3 failing tests. These failures were not suppressed or repaired in unrelated code.
-- Coverage includes durable search beyond page one and literal wildcard/SQL text, narrow IPC validation, dispatch/capacity/workspace-lease distinctions, report-before-settled invalidation, read-all notification idempotence, cancellation confirmation, retained/ordered reports, selected-task event refresh, stale navigation, paged refresh depth/scroll/order, transient draft restoration/limit/close-guard metadata, fresh dirty consent with locked identity, lazy project error retry, stale rewrite rejection and canonical Changes navigation.
+- Coverage includes durable search beyond page one and literal wildcard/SQL text, narrow IPC validation, dispatch/capacity/workspace-lease distinctions, report-before-settled invalidation, read-all notification idempotence, cancellation confirmation, retained/ordered reports, selected-task event refresh, stale navigation, paged refresh depth/scroll/order, transient draft restoration/limit/close-guard metadata, fresh dirty consent with locked identity, lazy project error retry and canonical Changes navigation. Historical stale-rewrite coverage was removed with that capability.
 - Draft storage caps at 20 transient drafts and refuses overflow rather than evicting unsaved content. Dirty-workspace authorization is not stored in drafts. Successful submission after leaving a form clears its draft without redirecting the new navigation target.
 - No SQLite migration, new npm dependency, generic Renderer capability, raw path/SQL parameter or automatic ready/approve/merge action was introduced.
 - No native reinstallation, Windows/Linux packaging or screenshot-level visual acceptance was performed in this UI iteration. Native UI tools were unavailable in this thread; interaction verification used the Renderer/Main regression suites.

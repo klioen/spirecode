@@ -18,7 +18,6 @@ import {
   taskDraftCount,
   TASK_DRAFT_LIMIT,
 } from "./taskDrafts";
-import { TaskRewriteControl } from "./TaskRewriteControl";
 
 export interface TaskProjectOption {
   id: string;
@@ -487,15 +486,6 @@ export function TaskForm({
           onChange={(event) => setDescription(event.target.value)}
         />
       </label>
-      <TaskRewriteControl
-        api={api}
-        value={{ title, description }}
-        onApply={(next) => {
-          setTitle(next.title);
-          setDescription(next.description);
-        }}
-        disabled={submitting || draftBlocked}
-      />
       {loadingProject ? (
         <p className="task-form-hint" role="status">
           {t("tasks.form.loadingProject")}

@@ -5,6 +5,8 @@
 
 Status: implemented and verified。 Implements: `docs/task-module/spec.md`。
 
+> **Task Rewrite removal amendment:** `docs/task-quick-create-without-rewrite/` removes the former rewrite runtime, IPC, Renderer control and verification steps. Rewrite references retained in this historical delivery plan describe the original implementation only and are not current product behavior.
+
 > 用户已批准高风险实现；本计划记录已采用的交付顺序与验证门禁。
 
 ## 1. Risk gate and delivery strategy
@@ -15,7 +17,7 @@ Status: implemented and verified。 Implements: `docs/task-module/spec.md`。
 
 1. 先锁定纯类型、状态机、schema 和 security contract。
 2. 再实现 repository/migration，随后实现无 Pi 的可恢复 saga。
-3. 再接 worktree，最后接 Pi execution/rewrite，避免同时调试三种副作用。
+3. 再接 worktree，最后接 Pi execution；原 rewrite 阶段已由后续移除变更废止。
 4. IPC 在 Main domain 稳定后接入；UI 最后消费已验证 DTO。
 5. 通知、性能、artifact smoke 和恢复 fault injection 是发布 gate，不是 polish。
 6. 任一阶段发现需要改变 `spec.md` 的产品语义，先更新三件套并重新确认，不在代码中隐式改设计。
@@ -93,17 +95,9 @@ Tests in `electron/domains/tasks/piExecution.test.ts` use an SDK fake to prove:
 
 Reuse safe model/runtime initialization primitives from `electron/domains/chat/piAdapter.ts`, but do not couple Task status to `ChatService` records or Renderer events. If common extraction is necessary, add a narrowly named Main helper with unchanged Chat tests before switching either caller。
 
-### 2.6 Restricted rewrite runtime
+### 2.6 Removed rewrite runtime
 
-Add `electron/domains/tasks/piRewrite.ts` and `piRewrite.test.ts`:
-
-- use `SessionManager.inMemory` with controlled empty cwd；
-- construct resource loader with coding tools/context/MCP/extensions/skills/templates/themes disabled；
-- register only `submit_task_rewrite`；
-- one successful submission, timeout/abort/dispose and bounded event routing；
-- never call persistent SessionManager create/open/list and never write repository。
-
-Tests inspect the fake SDK options/tool registry rather than only asserting UI behavior. Add a filesystem assertion that rewrite leaves no Pi JSONL under the test session root。
+The original restricted rewrite runtime has been deleted. Current source must not contain `piRewrite.ts`, rewrite IPC commands, rewrite AppState lifecycle, or Renderer rewrite controls. See `docs/task-quick-create-without-rewrite/`.
 
 ### 2.7 Notifications
 
@@ -129,7 +123,6 @@ Add `src/features/tasks/`:
 - `TaskPage.tsx` — list/detail routing and empty/error/loading states。
 - `TaskList.tsx` — paginated accessible status list/filter。
 - `TaskForm.tsx` — approved fields, dependent project/workspace data, single-flight submit and dirty confirmation；不包含 criteria。
-- `TaskRewriteControl.tsx` — start/cancel/apply/reject/undo in local component state。
 - `TaskDetail.tsx` — saga timeline、awaiting-report warning、report/review actions and links。
 - focused `*.test.ts(x)` for each behavior。
 
@@ -215,21 +208,16 @@ Exit proof: workspace side effects are safely identifiable and recoverable。
 
 Exit proof: no Pi event other than a validated report tool can create needs_review。
 
-### Phase 6 — Restricted AI rewrite
+### Phase 6 — Removed by follow-up
 
-1. Write a failing capability test that detects any coding tool、MCP、extension、skill、template、theme、context loader or persistent SessionManager use。
-2. Implement in-memory adapter with only `submit_task_rewrite`。
-3. Test tool validation、single submit、no-result settle、timeout、abort、window destruction and no filesystem/session persistence。
-4. Add Renderer control tests for apply/reject/undo and loss of undo after submit/close。
-
-Exit proof: rewrite isolation is structural and SDK-option tested, not prompt-only。
+The original AI rewrite phase is historical. The follow-up removes the runtime and proves absence across Renderer, bindings, IPC, AppState and Main.
 
 ### Phase 7 — IPC routing and AppState lifecycle
 
 1. Write failing AppState tests for construct/recover/degraded mode/dispose order。
 2. Wire task repository/orchestrator/notifications into AppState。
 3. Route commands in `electron/ipc.ts`; test all ownership/state/revision failures。
-4. Implement `task://event` as bounded invalidation/rewrite channel with sender/window cleanup。
+4. Implement `task://event` as a bounded invalidation channel with sender/window cleanup。
 5. Re-run preload/contracts/security suites。
 
 Exit proof: Renderer can perform only the listed Task operations and Task failure does not break existing domains。
@@ -294,11 +282,11 @@ Additional deterministic checks:
 
 ```bash
 rg -n "task_(ready|approve|merge)|pull request.*ready|merge request.*ready" electron src
-rg -n "SessionManager\.(create|open|list)" electron/domains/tasks/piRewrite.ts
-rg -n "tasks\.sqlite3|task_report_result|submit_task_rewrite" electron src
+rg -n "tasks\.sqlite3|task_report_result" electron src
+rg -n "task_rewrite_start|task_rewrite_abort|TaskRewriteControl" electron src
 ```
 
-第一条预期不出现产品 automation command/tool；第二条预期不出现持久 SessionManager API（只允许 `inMemory`）。静态搜索只是辅助，不能替代 runtime capability tests。
+第一条预期不出现产品 automation command/tool；最后一条预期无结果，证明 rewrite capability 已删除。静态搜索只是辅助，不能替代 runtime tests。
 
 ## 5. Manual acceptance
 
@@ -310,7 +298,7 @@ rg -n "tasks\.sqlite3|task_report_result|submit_task_rewrite" electron src
 6. Request changes；确认 attempt +1 且沿用 workspace/session策略，无并行 active Run。
 7. existing clean/dirty worktree 各执行一次；dirty 必须二次确认，取消/失败均不删除 workspace。
 8. 在 saga 每个 fault hook 强制退出应用并重启；确认不重复 worktree/session/prompt。
-9. AI 优化 Apply → Undo、Reject、Cancel、timeout；确认只改 title/description，且 Chat History/磁盘/SQLite 无 rewrite session 或正文。
+9. 确认 Quick Create Task 与 Edit Task 均无 AI 优化、rewrite 建议或 Undo，且 bindings/IPC/AppState/Main 无 rewrite API/service。
 10. 在宽屏调整 Projects rail 宽度，确认 Task list/form/detail 相对应用窗口居中；在 Task 页面点击同一或不同 worktree 的 Pi session，确认退出 Task surface 并打开对应 Chat。
 11. 后台窗口触发 needs_review/failed；确认系统通知通用且点击定位 Task；前台仅应用内提醒。
 12. 报告 Draft PR/MR link；确认 UI 无 ready/approve/merge 控件，Main 无对应 IPC/tool。

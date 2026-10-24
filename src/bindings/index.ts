@@ -150,11 +150,6 @@ export const commands = {
     runId: string | null,
     kind: string,
   ) => command<void>("task_notification_mark_read", { taskId, runId, kind }),
-  taskRewriteStart: (rewriteId: string, input: Record<string, unknown>) =>
-    command<void>("task_rewrite_start", { rewriteId, input }),
-  taskRewriteAbort: (rewriteId: string) =>
-    command<void>("task_rewrite_abort", { rewriteId }),
-
   settingsLanguageGet: () => command<AppLanguage>("settings_language_get"),
   settingsAgentReadiness: () =>
     command<AgentReadiness>("settings_agent_readiness"),

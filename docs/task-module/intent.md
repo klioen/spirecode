@@ -7,6 +7,7 @@ Author: user。 Status: accepted。
 
 Current queue admission and report-visibility behavior is amended by `docs/task-background-dispatch/change.md`; lifecycle/session/cleanup behavior is amended by `docs/task-lifecycle-cleanup/spec.md`.
 Current state-driven UI and bounded read-model filters are amended by `docs/task-ui-workbench/change.md`.
+The direct form is now named “Quick Create Task / 快速创建任务”, and the former Task Rewrite / AI optimization capability has been removed across Renderer and Main; see `docs/task-quick-create-without-rewrite/`.
 
 ## Problem
 
@@ -17,7 +18,6 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 - 待办分散在 Chat 与用户记忆中，无法从全局视角查看进度；
 - worktree 创建、session 创建和首个 prompt 提交是多个独立动作，任一步失败或应用崩溃后都缺少一致的恢复语义；
 - `agent_settled` 只表示 Agent 当前 idle，不能证明需求、验收项或测试已经完成；
-- 任务描述优化若复用普通 Chat，会错误获得 coding、MCP 或 extension tool 能力，并产生不必要的持久 transcript；
 - 自动化若触及 PR/MR 状态、审批或合并，会越过应由人负责的发布控制边界。
 
 ## Approved outcome
@@ -35,21 +35,15 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 - 自动化最多创建 Draft PR/MR；不得自动标记 ready、approve 或 merge。
 - Renderer 只通过 allowlist 中的窄 typed IPC 使用 Task 能力，不获得 SQLite、路径、Git、Pi SDK、Notification 或通用 IPC 权限。
 
-## Task description optimization
+## Direct task creation
 
-“AI 优化”是与任务执行完全不同的临时能力：
-
-- 使用 Pi SDK `SessionManager.inMemory`；
-- 只注册受控 custom tool `submit_task_rewrite`；
-- 不加载 coding tools、MCP、extensions、skills、prompt templates 或项目 context files；
-- 不创建 JSONL transcript，不写入 `tasks.sqlite3`，不把优化对话写入日志；
-- 优化结果先作为可撤销的表单草稿应用，用户提交 Task 前始终可以恢复原值。
+全局 Task 模块的直接表单入口名为“Quick Create Task / 快速创建任务”。它保留原有 title、description、project、workspace 和 automation 字段及草稿、校验、队列行为。原 Task Rewrite / “AI 优化”能力已移除，用户直接编辑 title 和 description。编辑器工具栏中的对话式 New Task intake 不受影响。
 
 ## Users and systems affected
 
 - 用户：获得跨项目任务列表、自动执行进度、恢复提示、结果报告与人工验收入口。
 - Renderer：新增 `src/features/tasks/`，左侧 rail 与 workbench 增加 Task 导航/页面，但仍保持 sandboxed。
-- Electron Main：新增 Task repository、orchestrator、Pi execution/rewrite adapters、notification service 与 IPC handler。
+- Electron Main：包含 Task repository、orchestrator、Pi execution adapter、notification service 与 IPC handler；不再包含 rewrite adapter。
 - Project/Worktree/Chat：复用其 identity 和受信任 Main 服务，但 TaskRun 生命周期不由普通 Chat UI 的 idle 状态推导。
 - 发布与兼容：新增 SQLite 持久格式；旧版本不会读取它，回滚必须保留数据库且不得破坏现有 `state.json` 或 Pi JSONL。
 
@@ -75,7 +69,7 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 - 应用在每个 saga 边界崩溃后可恢复或进入明确可重试状态，不重复创建 worktree/session/prompt。
 - `agent_settled` 无报告时显示等待报告/可恢复状态；只有有效 `task_report_result` 进入 `needs_review`。
 - 用户人工验收后才能标记 completed；Draft PR/MR 不被自动 ready、approve 或 merge。
-- AI 优化只改写 title 和 description，无持久 session、无 coding/MCP/extension tools，结果可撤销。
+- Quick Create Task 直接编辑 title 和 description，不暴露 AI 优化或 rewrite runtime。
 - 在 Task 页面点击 Projects 树中的 Pi session 会退出 Task surface，并打开对应 workspace 的 Chat。
 - Task 数据不进入 Zustand 大对象或项目目录，窄 IPC、安全校验、migrations 和通知均有自动化测试。
 
@@ -85,4 +79,4 @@ SpireCode 当前以 Project、Worktree 和 Chat session 为中心：用户必须
 - 定时任务、并行子任务 DAG、依赖管理或批量无人值守执行。
 - 自动 approve、ready、merge、release 或部署。
 - 在 V1 自动删除 managed worktree、branch、Pi transcript 或 Task 历史。
-- 将通用 Chat 替换为 Task，或让 Task rewrite session 出现在 Chat History。
+- 将通用 Chat 或编辑器工具栏中的对话式 New Task intake 替换为直接表单。

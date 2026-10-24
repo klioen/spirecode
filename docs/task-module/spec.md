@@ -9,6 +9,7 @@ Current queue admission and report-visibility behavior is amended by `docs/task-
 Current state-driven UI and bounded read-model filters are amended by `docs/task-ui-workbench/change.md`.
 Conversational New Task intake and approved-commit workspace provisioning are defined by `docs/task-intake/change.md`; existing TaskRun orchestration and manual review remain unchanged.
 Known additive Task schema v5 compatibility and initialization diagnostics are defined by `docs/task-schema-v5-compat/change.md`; existing v5 data is preserved, and unknown newer schemas remain rejected.
+The direct form is now “Quick Create Task / 快速创建任务”; Task Rewrite / AI optimization has been removed. `docs/task-quick-create-without-rewrite/` supersedes every rewrite contract and UI statement below.
 
 ## 1. V1 scope
 
@@ -19,7 +20,7 @@ Known additive Task schema v5 compatibility and initialization diagnostics are d
 - workspace 二选一：
   - `new_managed`：从 project 的 origin `baseRef` 新建 managed worktree，默认选项；
   - `existing`：绑定该 project 已登记的 main/managed/external worktree。
-- Main 中的 SQLite repository、migration、WAL、saga orchestrator、Pi execution adapter、rewrite adapter 和通知。
+- Main 中的 SQLite repository、migration、WAL、saga orchestrator、Pi execution adapter 和通知。
 - automation 开启后自动 provision、创建 Pi session、发送首个 prompt；关闭时 Task 留在 backlog，用户点击 Run 才创建 TaskRun。
 - 失败重试、应用重启恢复、取消 active Agent、人工“完成”与“请求修改”。
 - Agent 可使用正常受信任 coding session 的能力完成代码任务，并额外获得唯一结果上报工具 `task_report_result`。
@@ -31,7 +32,7 @@ Known additive Task schema v5 compatibility and initialization diagnostics are d
 - 多个 active Run、同一 Task 的并行 workspace、跨 project Task。
 - 自动清理 branch/worktree/transcript；Git Task 有交付变化时，自动 push 并创建或复用 Ready PR/MR 是进入 needs_review 的必要条件。
 - 自动 ready/approve/merge、CI 绕过、部署与 release。
-- Task rewrite 历史、rewrite transcript、rewrite 后台运行。
+- Task Rewrite / AI 优化能力及其 session、transcript 或后台运行。
 - 将完整 Pi transcript、diff、文件正文或 tool output复制进 SQLite。
 
 ## 2. Architecture and ownership
@@ -47,7 +48,6 @@ Electron Main / AppState
   ├─ TaskRepository (tasks.sqlite3)
   ├─ TaskOrchestrator (durable saga + recovery)
   ├─ TaskExecutionAdapter (persistent Pi coding session)
-  ├─ TaskRewriteAdapter (in-memory restricted Pi session)
   ├─ TaskNotificationService
   └─ existing ProjectService / WorktreeService / Chat/Pi services
              ├─ Git/worktree filesystem
@@ -372,7 +372,7 @@ AppState 创建顺序为 ProjectService → TaskRepository/migrations → TaskSe
 - `new_managed` 资源标记 `ownsManagedWorktree=true` 仅用于 UI 和未来显式 cleanup；V1 不据此自动删除。
 - existing worktree 永不由 Task delete/rename；关闭 project 不删除 Task。关闭 project 时可 detach live runtime，Task 标记可恢复；重新打开/启动时恢复。
 
-## 7. Pi execution and rewrite isolation
+## 7. Pi execution
 
 ### 7.1 Task execution session
 
@@ -388,19 +388,9 @@ Execution 使用持久 `SessionManager.create/open` 和当前共享 `ModelRuntim
 
 V1 不承诺阻止 coding Agent 通过 bash 调用所有外部 CLI；Main-verified Ready delivery 是 prompt + 结果 schema + UI/host orchestration 的产品边界，SpireCode 自身绝不提供 ready/approve/merge IPC/tool。若未来需要强制阻断，必须增加命令策略/OS sandbox，另立高风险设计。
 
-### 7.2 AI optimization session
+### 7.2 Removed Task Rewrite capability
 
-Task form 的“AI 优化”由独立 `TaskRewriteAdapter` 执行：
-
-- `SessionManager.inMemory(cwd)`；cwd 使用 userData 内空的受控 rewrite 目录，不使用 project/worktree cwd；
-- 创建专用 AgentSession，禁止默认 coding tools；
-- resource loader 设置 no extensions、no skills、no prompt templates、no themes、no context files、no MCP；
-- 仅注册 `submit_task_rewrite`，参数只能是 title 和 description；project、workspace、automation 不允许由模型改变；
-- custom tool 至多成功一次，必须通过与 Task 相同的长度/条数校验；普通文本输出不能直接改表单；
-- 单次请求 60 秒超时、同一窗口仅一个 active rewrite，可 abort；settled 未调用 tool 视为失败；
-- session 在 apply/reject/cancel/关闭表单后 dispose；无 JSONL、无 SQLite、无日志正文。
-
-Renderer 在调用前保存一份原始字段 snapshot。Apply 只更新本地 form draft 并展示 Undo；Undo 恢复 snapshot。再次优化会以当前 draft 为新 snapshot。提交 Task、关闭表单或刷新页面后 undo history 消失，符合“不持久化”。
+Task form 不再提供 AI 优化。Renderer 不暴露 rewrite 控件或事件，Main 不创建受控 rewrite 目录、in-memory Pi session 或 rewrite service。用户在 Quick Create Task 和 Edit Task 表单中直接编辑 title 与 description。
 
 ## 8. IPC contract
 
@@ -418,8 +408,6 @@ task_complete({taskId, expectedRevision}) -> TaskDetail
 task_continue_for_report({taskId, expectedRevision}) -> TaskDetail
 task_notifications_list({cursor?, limit}) -> NotificationPage
 task_notification_mark_read({taskId, runId?, kind}) -> void
-task_rewrite_start({input}) -> {rewriteId}
-task_rewrite_abort({rewriteId}) -> void
 ```
 
 新增 topic：
@@ -429,8 +417,7 @@ task://event -> {
   taskId?: string;
   runId?: string;
   revision?: number;
-  kind: "changed" | "notification" | "rewrite_result" | "rewrite_failed";
-  rewriteId?: string;
+  kind: "changed" | "notification";
   payload?: bounded DTO;
 }
 ```
@@ -440,7 +427,6 @@ task://event -> {
 - 所有 command/topic 进入 `electron/contracts.ts` allowlist、`electron/ipc.ts` exact-field validation 和 sender/main-frame/location validation。
 - Task create input 总计上限 96 KiB；分页 limit 1–100；cursor 是 opaque `(updatedAt,id)` token；列表不返回 description/report/event history。
 - `task_get` 返回一个 Task、runs 的分页摘要、当前 report；不返回 transcript。
-- rewrite event 用 renderer-generated subscription/rewrite ID 关联，窗口销毁自动 abort/dispose；其他 Renderer 不能 attach。
 - 错误继续使用 `{code,message,details?}`，details 不含绝对 session path、prompt、tool 参数、credentials 或 provider body。
 - preload 仍只暴露 `invoke/subscribe`，没有 SQLite/Notification/Pi/Git 原语。
 
@@ -455,7 +441,7 @@ task://event -> {
 
 ### 9.2 New Task form
 
-字段顺序：title → description → AI 优化 → project → workspace → automation。
+Quick Create Task 保留现有直接表单。字段包括 title、description、project、workspace 和 automation；无 AI 优化或 rewrite 控件。
 
 - project 选择后加载其 worktree 与 origin branches。
 - workspace 默认 `New managed worktree` + default origin ref；用户可切为 existing worktree。
@@ -514,9 +500,6 @@ TASK_SESSION_RECOVERY_CONFLICT
 TASK_PROMPT_FAILED
 TASK_RESULT_INVALID
 TASK_RESULT_ALREADY_REPORTED
-TASK_REWRITE_BUSY
-TASK_REWRITE_TIMEOUT
-TASK_REWRITE_NO_RESULT
 TASK_DATABASE_UNAVAILABLE
 TASK_MIGRATION_FAILED
 TASK_FAILED
@@ -533,7 +516,6 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 - 一个 Task 一个 active Run；一个 worktree 一个 active TaskRun；全局最多 3 个 running automated Runs，其余 queued，避免 Main/provider 资源失控。
 - event payload 最大 64 KiB，report JSON 最大 256 KiB，Task detail 不返回原始 audit 全量；timeline 分页。
 - SQLite 不存 transcript/diff/file body，避免数据库与 IPC 无界增长。
-- rewrite 每窗口单飞、全局最多 2 个，60 秒 timeout；窗口销毁立即 abort。
 - Main 中 SQLite 同步调用只做索引查询和短事务；性能基准若显示 event loop stall > 50 ms，实施必须移到 utility process/worker，并保持 IPC DTO 不变，不能以 UI spinner 掩盖。
 
 ## 14. Compatibility, backup and rollback
@@ -558,7 +540,7 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 6. `agent_end`/`agent_settled` 均不能完成 Task；settled 无报告进入 awaiting_report。
 7. 只有有效 `task_report_result` 进入 needs_review，只有用户 Accept 进入 completed。
 8. needs_review/awaiting_report/failed 生成去重应用内通知；窗口不活跃时尽力发送系统通知。
-9. AI 优化只能由 `submit_task_rewrite` 改写 title 和 description，可 Undo，不产生持久 session/DB 记录。
+9. Quick Create Task 和 Edit Task 均不提供 AI 优化、rewrite 建议或 Undo；title 和 description 由用户直接编辑。
 10. PR/MR report 只接受 `draft: boolean`；产品无 ready/approve/merge action。
 
 ### Recovery and data
@@ -566,12 +548,12 @@ Diagnostics 可记录 task/run ID、phase、稳定 code、duration 和 recovery 
 11. 在每个 saga intent/done 边界模拟崩溃，重启后不重复 worktree、session 或首个 prompt。
 12. WAL crash recovery 保留已提交事务；migration 失败保留原库与 backup，不创建空库覆盖。
 13. 资源 identity 冲突进入明确 failed/requires-attention，不猜测或删除。
-14. SQLite 不含 transcript、file body、diff 或 rewrite 内容；Task list IPC 有分页和大小限制。
+14. SQLite 不含 transcript、file body 或 diff；Task list IPC 有分页和大小限制。
 
 ### Security and quality
 
 15. 非主 frame、非 allowlisted command/topic、额外字段、越权 project/worktree/session、任意 path 与 oversized payload 全部拒绝。
-16. rewrite runtime 的测试证明 coding/MCP/extensions/skills/templates/context 均未加载，只有一个 custom tool。
+16. contracts、IPC、AppState 和 Main task domain 不暴露或初始化 Task Rewrite API/service。
 17. Git 仍使用 hardened argument-array runner；Renderer 仍 sandboxed 且 preload 接口不扩权。
 18. focused tests、migration/recovery tests、Renderer accessibility tests、`pnpm check` 全部退出 0；目标平台 bundle/smoke 验证 `node:sqlite` 可在最终 artifact 中打开 WAL 数据库。
 19. Task surface 在宽屏相对应用窗口居中；从 Task 页面点击 Projects 中的 session 会切换到对应 Chat。
