@@ -154,6 +154,54 @@ describe("ChatComposer", () => {
     expect(onThinkingLevelChange).toHaveBeenCalledWith("xhigh");
   });
 
+  it("orders selectors, byte count, and submit within the right action group", () => {
+    const { container } = render(
+      <ChatComposer
+        running={false}
+        initialValue={"x".repeat(52_429)}
+        config={{
+          model: { provider: "traex", id: "reasoning-model" },
+          models: [
+            {
+              provider: "traex",
+              id: "reasoning-model",
+              label: "Reasoning Model",
+              reasoning: true,
+            },
+          ],
+          thinkingLevel: "medium",
+          availableThinkingLevels: ["off", "medium"],
+          commands: [],
+        }}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const actions = container.querySelector<HTMLElement>(
+      ".chat-composer-actions",
+    );
+    const rightActions = container.querySelector<HTMLElement>(
+      ".chat-composer-right-actions",
+    );
+    const config = container.querySelector<HTMLElement>(
+      ".chat-composer-config",
+    );
+    const count = container.querySelector<HTMLElement>(".chat-composer-count");
+    const submit = screen.getByRole("button", { name: "Send" });
+
+    expect(actions).toContainElement(rightActions);
+    expect(rightActions).toContainElement(config);
+    expect(config?.querySelectorAll('[role="combobox"]')).toHaveLength(2);
+    expect(rightActions).toContainElement(count);
+    expect(rightActions).toContainElement(submit);
+    expect(Array.from(rightActions?.children ?? [])).toEqual([
+      config,
+      count,
+      submit,
+    ]);
+  });
+
   it("filters and completes runtime slash commands with keyboard controls", async () => {
     render(
       <ChatComposer
@@ -223,17 +271,24 @@ describe("ChatComposer", () => {
     const actions = container.querySelector<HTMLElement>(
       ".chat-composer-actions",
     );
+    const rightActions = container.querySelector<HTMLElement>(
+      ".chat-composer-right-actions",
+    );
     const config = container.querySelector<HTMLElement>(
       ".chat-composer-config",
     );
-    expect(actions).toContainElement(config);
+    expect(actions).toContainElement(rightActions);
+    expect(rightActions).toContainElement(config);
     expect(config?.querySelectorAll('[role="combobox"]')).toHaveLength(2);
-    expect(actions?.lastElementChild).toHaveClass("chat-composer-submit");
+    expect(rightActions?.lastElementChild).toHaveClass("chat-composer-submit");
 
     const css = readFileSync("src/styles/index.css", "utf8");
     expect(css).toMatch(/\.chat-composer-actions\s*\{[^}]*flex-wrap:\s*wrap;/s);
     expect(css).toMatch(
-      /\.chat-composer-config\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 [^;]+;/s,
+      /\.chat-composer-right-actions\s*\{[^}]*max-width:\s*100%;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*flex-end;/s,
+    );
+    expect(css).toMatch(
+      /\.chat-composer-config\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*0 1 auto;/s,
     );
     expect(css).toMatch(
       /\.chat-composer-config \.searchable-select\s*\{[^}]*max-width:\s*min\(220px, 100%\);[^}]*flex:\s*0 1 auto;/s,

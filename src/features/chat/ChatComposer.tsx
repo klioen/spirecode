@@ -272,80 +272,82 @@ export function ChatComposer({
           </div>
         )}
         <div className="chat-composer-actions">
-          <div className="chat-composer-config">
-            <SearchableSelect
-              ariaLabel={t("chat.composer.model")}
-              value={modelValue}
-              disabled={controlsDisabled}
-              options={
-                modelValue
-                  ? modelOptions
-                  : [
-                      {
-                        value: "",
-                        label: t("chat.composer.noModel"),
-                      },
-                      ...modelOptions,
-                    ]
-              }
-              onChange={(value) => {
-                const separator = value.indexOf("/");
-                if (separator < 1 || !onModelChange) return;
-                void runMutation(() =>
-                  onModelChange(
-                    value.slice(0, separator),
-                    value.slice(separator + 1),
-                  ),
-                );
-              }}
-            />
-            <SearchableSelect
-              ariaLabel={t("chat.composer.thinkingLevel")}
-              value={config?.thinkingLevel ?? "off"}
-              disabled={controlsDisabled}
-              options={(config?.availableThinkingLevels ?? ["off"]).map(
-                (level) => ({
-                  value: level,
-                  label: t(THINKING_KEYS[level]),
-                }),
-              )}
-              onChange={(value) => {
-                if (!onThinkingLevelChange) return;
-                void runMutation(() =>
-                  onThinkingLevelChange(value as ChatThinkingLevel),
-                );
-              }}
-            />
+          <div className="chat-composer-right-actions">
+            <div className="chat-composer-config">
+              <SearchableSelect
+                ariaLabel={t("chat.composer.model")}
+                value={modelValue}
+                disabled={controlsDisabled}
+                options={
+                  modelValue
+                    ? modelOptions
+                    : [
+                        {
+                          value: "",
+                          label: t("chat.composer.noModel"),
+                        },
+                        ...modelOptions,
+                      ]
+                }
+                onChange={(value) => {
+                  const separator = value.indexOf("/");
+                  if (separator < 1 || !onModelChange) return;
+                  void runMutation(() =>
+                    onModelChange(
+                      value.slice(0, separator),
+                      value.slice(separator + 1),
+                    ),
+                  );
+                }}
+              />
+              <SearchableSelect
+                ariaLabel={t("chat.composer.thinkingLevel")}
+                value={config?.thinkingLevel ?? "off"}
+                disabled={controlsDisabled}
+                options={(config?.availableThinkingLevels ?? ["off"]).map(
+                  (level) => ({
+                    value: level,
+                    label: t(THINKING_KEYS[level]),
+                  }),
+                )}
+                onChange={(value) => {
+                  if (!onThinkingLevelChange) return;
+                  void runMutation(() =>
+                    onThinkingLevelChange(value as ChatThinkingLevel),
+                  );
+                }}
+              />
+            </div>
+            {(byteLength > MAX_INPUT_BYTES * 0.8 || tooLarge) && (
+              <span className="chat-composer-count">
+                {formatNumber(byteLength)} / {formatNumber(MAX_INPUT_BYTES)}
+              </span>
+            )}
+            {showStop && (
+              <button
+                className="chat-composer-submit chat-composer-stop"
+                type="button"
+                aria-label={t("chat.composer.stop")}
+                title={t("chat.composer.stop")}
+                disabled={pending || disabled}
+                onClick={() => void stop()}
+              >
+                <RiStopMiniFill aria-hidden="true" />
+              </button>
+            )}
+            {(!running || hasDraft) && (
+              <button
+                className="chat-composer-submit"
+                type="button"
+                aria-label={actionLabel}
+                title={actionLabel}
+                disabled={sendDisabled}
+                onClick={() => void submit()}
+              >
+                <RiSendPlane2Fill aria-hidden="true" />
+              </button>
+            )}
           </div>
-          {(byteLength > MAX_INPUT_BYTES * 0.8 || tooLarge) && (
-            <span className="chat-composer-count">
-              {formatNumber(byteLength)} / {formatNumber(MAX_INPUT_BYTES)}
-            </span>
-          )}
-          {showStop && (
-            <button
-              className="chat-composer-submit chat-composer-stop"
-              type="button"
-              aria-label={t("chat.composer.stop")}
-              title={t("chat.composer.stop")}
-              disabled={pending || disabled}
-              onClick={() => void stop()}
-            >
-              <RiStopMiniFill aria-hidden="true" />
-            </button>
-          )}
-          {(!running || hasDraft) && (
-            <button
-              className="chat-composer-submit"
-              type="button"
-              aria-label={actionLabel}
-              title={actionLabel}
-              disabled={sendDisabled}
-              onClick={() => void submit()}
-            >
-              <RiSendPlane2Fill aria-hidden="true" />
-            </button>
-          )}
         </div>
       </div>
     </div>
