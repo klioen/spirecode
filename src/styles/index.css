@@ -4221,16 +4221,26 @@ details[open] > summary > .chat-disclosure-icon {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
   padding-top: 7px;
+}
+.chat-composer-right-actions {
+  max-width: 100%;
+  margin-left: auto;
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .chat-composer-config {
   min-width: 0;
-  margin-right: auto;
+  max-width: 100%;
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
 }
 .chat-composer-config .searchable-select {
