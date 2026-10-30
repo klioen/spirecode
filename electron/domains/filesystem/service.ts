@@ -3,7 +3,6 @@ import {
   lstat,
   mkdir,
   open,
-  readFile as fsReadFile,
   readdir,
   readlink,
   realpath,
@@ -15,7 +14,6 @@ import {
 import { constants as fsConstants, type Stats } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import ignore, { type Ignore } from "ignore";
 import { CommandError, toCommandError } from "../../core/errors.js";
 import { KeyedLock } from "../../core/keyedLock.js";
 import { resolveProjectPath } from "./pathGuard.js";
@@ -160,69 +158,6 @@ async function syncDirectory(directory: string): Promise<void> {
   } finally {
     await handle.close();
   }
-}
-
-async function readIgnoreFile(filePath: string): Promise<string | undefined> {
-  try {
-    return await fsReadFile(filePath, "utf8");
-  } catch (error) {
-    const value = error as NodeJS.ErrnoException;
-    if (value.code === "ENOENT" || value.code === "ENOTDIR") return undefined;
-    throw error;
-  }
-}
-
-interface IgnoreMatcher {
-  base: string;
-  rules: Ignore;
-}
-
-async function buildIgnoreMatchers(
-  root: string,
-  directory: string,
-): Promise<IgnoreMatcher[]> {
-  const ancestors = [root];
-  const relativeDirectory = path.relative(root, directory);
-  if (relativeDirectory) {
-    let current = root;
-    for (const component of relativeDirectory.split(path.sep)) {
-      current = path.join(current, component);
-      ancestors.push(current);
-    }
-  }
-
-  const matchers: IgnoreMatcher[] = [];
-  const repositoryExclude = await readIgnoreFile(
-    path.join(root, ".git", "info", "exclude"),
-  );
-  if (repositoryExclude) {
-    matchers.push({ base: root, rules: ignore().add(repositoryExclude) });
-  }
-  for (const ancestor of ancestors) {
-    const contents = await readIgnoreFile(path.join(ancestor, ".gitignore"));
-    if (contents) {
-      matchers.push({ base: ancestor, rules: ignore().add(contents) });
-    }
-  }
-  return matchers;
-}
-
-function isIgnored(
-  matchers: readonly IgnoreMatcher[],
-  entryPath: string,
-  isDirectory: boolean,
-): boolean {
-  let ignored = false;
-  for (const matcher of matchers) {
-    const relative = path
-      .relative(matcher.base, entryPath)
-      .split(path.sep)
-      .join("/");
-    const result = matcher.rules.test(isDirectory ? `${relative}/` : relative);
-    if (result.ignored) ignored = true;
-    if (result.unignored) ignored = false;
-  }
-  return ignored;
 }
 
 function entryKind(metadata: Stats): EntryKind {
@@ -516,7 +451,6 @@ export class FilesystemService {
         throw new CommandError("INVALID_ARGUMENT", "path is not a directory");
       }
 
-      const matchers = await buildIgnoreMatchers(root, directory);
       const directoryEntries = await readdir(directory, {
         withFileTypes: true,
       });
@@ -524,11 +458,7 @@ export class FilesystemService {
       for (const entry of directoryEntries) {
         const entryPath = path.join(directory, entry.name);
         const projectRelative = path.relative(root, entryPath);
-        if (
-          entry.name === ".git" ||
-          isIgnored(matchers, entryPath, entry.isDirectory())
-        )
-          continue;
+        if (entry.name === ".git") continue;
 
         try {
           await resolveProjectPath(root, projectRelative, true);

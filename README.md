@@ -42,7 +42,7 @@ formally signed releases.
 ## What it includes
 
 - Projects and managed Git worktrees
-- File browsing and conflict-safe editing with explicit saves
+- File browsing, including hidden and Git-ignored entries, and conflict-safe editing with explicit saves
 - Git status and diff views
 - Integrated terminals backed by `node-pty`
 - Persistent, multi-tab pi Agent chat sessions
@@ -50,6 +50,11 @@ formally signed releases.
 - Standard Pi packages, extensions, skills, prompts, and themes explicitly configured by the user
 
 The React Renderer is sandboxed, has no Node.js access, and communicates through a narrow preload bridge. Filesystem requests use a worktree ID and relative path validated by Electron Main. This does **not** sandbox the Agent, terminals, extensions, or other processes running as your operating-system user.
+
+The Files tree includes hidden files and directories and entries matched by
+`.gitignore` or Git exclude rules. Git metadata (`.git`) and symlinks that escape
+the worktree remain inaccessible. Directories load one level at a time when
+expanded.
 
 ## New Task
 

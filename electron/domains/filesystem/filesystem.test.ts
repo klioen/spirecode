@@ -203,15 +203,18 @@ describe("FilesystemService", () => {
     );
   });
 
-  it("lists one level, honors gitignore, skips escapes, and sorts directories naturally first", async () => {
+  it("lists hidden and ignored entries one level at a time, skips escapes, and sorts directories naturally first", async () => {
     const root = await temporaryDirectory();
     await mkdir(path.join(root, ".git"));
+    await mkdir(path.join(root, ".cache"));
+    await writeFile(path.join(root, ".cache/.state"), "cached");
+    await writeFile(path.join(root, ".env"), "LOCAL_VALUE=test");
     await mkdir(path.join(root, "dir10"));
     await mkdir(path.join(root, "dir2"));
     await writeFile(path.join(root, "file10.txt"), "ten");
     await writeFile(path.join(root, "file2.txt"), "two");
     await writeFile(path.join(root, "ignored.log"), "ignored");
-    await writeFile(path.join(root, ".gitignore"), "*.log\n");
+    await writeFile(path.join(root, ".gitignore"), "*.log\n.env\n.cache/\n");
     if (process.platform !== "win32") {
       const outside = await temporaryDirectory("spirecode-outside-");
       await symlink(outside, path.join(root, "escape"));
@@ -220,16 +223,32 @@ describe("FilesystemService", () => {
 
     const entries = await service.readDir("worktree-1", "");
     expect(entries.map(({ name, kind }) => ({ name, kind }))).toEqual([
+      { name: ".cache", kind: "directory" },
       { name: "dir2", kind: "directory" },
       { name: "dir10", kind: "directory" },
+      { name: ".env", kind: "file" },
       { name: ".gitignore", kind: "file" },
       { name: "file2.txt", kind: "file" },
       { name: "file10.txt", kind: "file" },
+      { name: "ignored.log", kind: "file" },
     ]);
     expect(entries.find((entry) => entry.name === "file2.txt")?.size).toBe(3);
+    await expect(service.readDir("worktree-1", ".cache")).resolves.toEqual([
+      {
+        name: ".state",
+        relativePath: path.join(".cache", ".state"),
+        kind: "file",
+        size: 6,
+      },
+    ]);
+    await expect(service.readFile("worktree-1", ".env")).resolves.toMatchObject(
+      {
+        content: "LOCAL_VALUE=test",
+      },
+    );
   });
 
-  it("applies repository exclude plus parent and nested gitignore files", async () => {
+  it("does not filter repository exclude or parent and nested gitignore matches", async () => {
     const root = await temporaryDirectory();
     await mkdir(path.join(root, ".git/info"), { recursive: true });
     await mkdir(path.join(root, "src"));
@@ -250,7 +269,10 @@ describe("FilesystemService", () => {
     const entries = await service.readDir("worktree-1", "src");
     expect(entries.map((entry) => entry.name)).toEqual([
       ".gitignore",
+      "excluded.ts",
       "generated-keep.ts",
+      "generated.ts",
+      "hidden.tmp",
       "root-only.ts",
       "visible.ts",
     ]);
