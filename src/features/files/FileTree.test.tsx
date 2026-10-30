@@ -56,6 +56,42 @@ beforeEach(() => {
 });
 
 describe("FileTree accessibility", () => {
+  it("displays hidden files and expands ignored directories returned by Main", async () => {
+    useFileTreeStore.setState({
+      expandedByWorktree: { w1: [] },
+      directories: {},
+    });
+    vi.mocked(commands.fsReadDir).mockImplementation(
+      async (_worktreeId, relativePath) =>
+        relativePath === ""
+          ? [
+              { name: ".cache", relativePath: ".cache", kind: "directory" },
+              { name: ".env", relativePath: ".env", kind: "file" },
+              {
+                name: "ignored.log",
+                relativePath: "ignored.log",
+                kind: "file",
+              },
+            ]
+          : [{ name: ".state", relativePath: ".cache/.state", kind: "file" }],
+    );
+    render(<FileTree worktreeId="w1" />);
+
+    const cache = await screen.findByRole("treeitem", { name: ".cache" });
+    expect(screen.getByRole("treeitem", { name: ".env" })).toBeVisible();
+    expect(screen.getByRole("treeitem", { name: "ignored.log" })).toBeVisible();
+    fireEvent.keyDown(cache, { key: "ArrowRight" });
+    expect(
+      await screen.findByRole("treeitem", { name: ".state" }),
+    ).toBeVisible();
+    expect(commands.fsReadDir).toHaveBeenCalledWith("w1", ".cache");
+
+    fireEvent.keyDown(screen.getByRole("treeitem", { name: ".env" }), {
+      key: "Enter",
+    });
+    expect(useEditorStore.getState().views.w1.activeTabId).toBe("file:w1:.env");
+  });
+
   it("exposes tree semantics and one roving tab stop", async () => {
     render(<FileTree worktreeId="w1" />);
 

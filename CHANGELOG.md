@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Files now displays hidden files and entries matched by `.gitignore` or Git exclude rules, while preserving `.git` metadata and worktree boundary protections.
 - Kept Task workspaces leased until their Pi Agent session settles, reused the resolved workspace across retries and the idle session across requested changes, and attributed shared-session token usage per Run.
 - Added persistent Pi session renaming from Projects and Chat History, and aligned both surfaces on accessible context menus for Rename and direct Move to Trash actions.
 - Simplified Chat transcripts to show final answers directly while folding thinking, tool calls, todos, and intermediate updates into a Codex-style `Working for…` / `Worked for…` summary.
