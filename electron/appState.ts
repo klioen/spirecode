@@ -139,6 +139,23 @@ export class AppState {
             )
           : undefined;
       },
+      onSessionEvent: ({ sessionId, kind, title, event }) => {
+        if (
+          kind !== "chat" ||
+          event.type !== "agent_settled" ||
+          this.taskRepository?.findRunBySessionId(sessionId)
+        )
+          return;
+        void this.notifyChatCompletion(title).catch((error: unknown) =>
+          this.diagnostics.log({
+            level: "error",
+            code: "CHAT_COMPLETION_NOTIFICATION_FAILED",
+            safeContext: {
+              errorType: error instanceof Error ? error.name : "UnknownError",
+            },
+          }),
+        );
+      },
       trashItem: (sessionPath) => shell.trashItem(sessionPath),
     });
     this.worktrees = new WorktreeService(projects, this.terminals);
@@ -1014,6 +1031,25 @@ export class AppState {
         settledAt: run.settledAt,
       })),
     };
+  }
+
+  private async notifyChatCompletion(title: string): Promise<void> {
+    if (
+      !Notification.isSupported() ||
+      (this.window.isFocused() && !this.window.isMinimized())
+    )
+      return;
+    const chinese = (await this.settings.language()) === "zh-CN";
+    const notification = new Notification({
+      title: title.slice(0, 120),
+      body: chinese ? "Pi 已完成回复。" : "Pi finished responding.",
+    });
+    notification.on("click", () => {
+      if (this.window.isMinimized()) this.window.restore();
+      this.window.show();
+      this.window.focus();
+    });
+    notification.show();
   }
 
   private async notifyTask(request: {

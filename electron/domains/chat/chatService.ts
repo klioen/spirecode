@@ -53,6 +53,13 @@ export interface ChatServiceOptions {
   selectSkills?: PiAdapterOptions["selectSkills"];
   maxBufferedEvents?: number;
   trashItem?: (sessionPath: string) => Promise<void>;
+  onSessionEvent?: (context: {
+    worktreeId: string;
+    sessionId: string;
+    kind: NonNullable<ChatSessionSummary["kind"]>;
+    title: string;
+    event: Record<string, unknown>;
+  }) => void;
   resolveSessionOptions?: (
     worktreeId: string,
     sessionId: string,
@@ -67,6 +74,7 @@ export class ChatService {
   private readonly adapterFactory: () => Promise<PiAdapter>;
   private readonly maxBufferedEvents: number;
   private readonly trashItem?: (sessionPath: string) => Promise<void>;
+  private readonly onSessionEvent?: ChatServiceOptions["onSessionEvent"];
   private readonly deleting = new Set<string>();
   private readonly lifecycleTails = new Map<string, Promise<void>>();
 
@@ -81,6 +89,7 @@ export class ChatService {
       );
     this.maxBufferedEvents = options.maxBufferedEvents ?? MAX_BUFFERED_EVENTS;
     this.trashItem = options.trashItem;
+    this.onSessionEvent = options.onSessionEvent;
     this.resolveSessionOptions = options.resolveSessionOptions;
   }
 
@@ -884,6 +893,17 @@ export class ChatService {
       } catch {
         record.observers.delete(observer);
       }
+    }
+    try {
+      this.onSessionEvent?.({
+        worktreeId: record.worktreeId,
+        sessionId: record.sessionId,
+        kind: record.kind,
+        title: record.title,
+        event,
+      });
+    } catch {
+      // Product-level observers must not interrupt Chat event delivery.
     }
   }
 
