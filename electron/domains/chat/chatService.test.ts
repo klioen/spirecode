@@ -399,6 +399,32 @@ describe("ChatService", () => {
     expect(second).toHaveLength(1);
   });
 
+  it("reports normalized session events with current presentation metadata", async () => {
+    const { root, records, adapter } = await fixture();
+    const onSessionEvent = vi.fn();
+    const service = new ChatService(() => root, { adapter, onSessionEvent });
+    const created = await service.create("w1", { kind: "chat" });
+    await service.nameLoadedSession(
+      "w1",
+      created.sessionId,
+      "Notification title",
+    );
+    const session = records.get(created.sessionId)?.session as FakeSession;
+
+    session.emit({ type: "agent_end", messages: [{ content: "private" }] });
+    session.emit({ type: "agent_settled" });
+
+    expect(onSessionEvent).toHaveBeenCalledTimes(2);
+    expect(onSessionEvent).toHaveBeenLastCalledWith({
+      worktreeId: "w1",
+      sessionId: created.sessionId,
+      kind: "chat",
+      title: "Notification title",
+      event: { type: "agent_settled" },
+    });
+    expect(JSON.stringify(onSessionEvent.mock.calls)).not.toContain("private");
+  });
+
   it("loads an internal session without occupying the Renderer subscriber", async () => {
     const { root, records, adapter } = await fixture();
     const seed = await adapter.create(root);
