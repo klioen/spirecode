@@ -3,7 +3,7 @@
 ## Behavior
 
 1. Electron Main observes normalized events for every loaded Pi session.
-2. When a session with presentation kind `chat` emits `agent_settled`, Main shows a system notification if notifications are supported and the SpireCode window is minimized or unfocused.
+2. When a session with presentation kind `chat` emits `agent_settled`, Main shows a system notification whenever notifications are supported, regardless of whether the SpireCode window is focused, unfocused, or minimized.
 3. `agent_end` does not notify because Pi may still continue work after that event.
 4. Sessions owned by a Task run, Task intake, or Task verification do not use this notification path; their lifecycle owns its own attention notifications.
 5. The notification title is the current Chat session title, limited to 120 characters.

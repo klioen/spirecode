@@ -4,6 +4,7 @@ import {
   AppState,
   applyMemoryConfig,
   createTaskSession,
+  shouldNotifyChatCompletion,
   taskVerificationSessionOptions,
 } from "./appState.js";
 
@@ -24,6 +25,28 @@ afterEach(() => {
   if (originalPhase2Thinking === undefined)
     delete process.env.PI_MEMORY_PHASE2_THINKING;
   else process.env.PI_MEMORY_PHASE2_THINKING = originalPhase2Thinking;
+});
+
+describe("Chat completion notifications", () => {
+  it("notifies after completion even while the app window is focused", () => {
+    expect(
+      shouldNotifyChatCompletion({
+        supported: true,
+        focused: true,
+        minimized: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not notify when system notifications are unsupported", () => {
+    expect(
+      shouldNotifyChatCompletion({
+        supported: false,
+        focused: false,
+        minimized: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("Task background shutdown", () => {

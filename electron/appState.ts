@@ -63,6 +63,14 @@ export interface SubscriptionEvent<T> {
   payload: T;
 }
 
+export function shouldNotifyChatCompletion(input: {
+  supported: boolean;
+  focused: boolean;
+  minimized: boolean;
+}): boolean {
+  return input.supported;
+}
+
 export class AppState {
   readonly filesystem: FilesystemService;
   readonly git: GitService;
@@ -1035,8 +1043,11 @@ export class AppState {
 
   private async notifyChatCompletion(title: string): Promise<void> {
     if (
-      !Notification.isSupported() ||
-      (this.window.isFocused() && !this.window.isMinimized())
+      !shouldNotifyChatCompletion({
+        supported: Notification.isSupported(),
+        focused: this.window.isFocused(),
+        minimized: this.window.isMinimized(),
+      })
     )
       return;
     const chinese = (await this.settings.language()) === "zh-CN";
