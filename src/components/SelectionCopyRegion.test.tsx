@@ -28,6 +28,28 @@ beforeEach(() => {
 });
 
 describe("SelectionCopyRegion", () => {
+  it("keeps the forwarded element ref attached across ordinary rerenders", () => {
+    const elementRef = vi.fn();
+    const { rerender } = render(
+      <SelectionCopyRegion data-testid="region" elementRef={elementRef}>
+        first
+      </SelectionCopyRegion>,
+    );
+    const region = screen.getByTestId("region");
+
+    expect(elementRef).toHaveBeenCalledTimes(1);
+    expect(elementRef).toHaveBeenLastCalledWith(region);
+
+    rerender(
+      <SelectionCopyRegion data-testid="region" elementRef={elementRef}>
+        second
+      </SelectionCopyRegion>,
+    );
+
+    expect(elementRef).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("region")).toBe(region);
+  });
+
   it("returns the exact non-empty selection only when both ends are in the region", () => {
     const { container } = render(
       <>
