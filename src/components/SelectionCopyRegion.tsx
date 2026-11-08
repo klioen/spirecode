@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -51,6 +52,13 @@ export function SelectionCopyRegion({
   const regionRef = useRef<HTMLElement | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<CopyMenuState | null>(null);
+  const setRegionRef = useCallback(
+    (node: HTMLElement | null) => {
+      regionRef.current = node;
+      elementRef?.(node);
+    },
+    [elementRef],
+  );
 
   useEffect(() => {
     if (!menu) return;
@@ -99,14 +107,7 @@ export function SelectionCopyRegion({
 
   return (
     <>
-      <Tag
-        {...props}
-        ref={(node) => {
-          regionRef.current = node;
-          elementRef?.(node);
-        }}
-        onContextMenu={handleContextMenu}
-      >
+      <Tag {...props} ref={setRegionRef} onContextMenu={handleContextMenu}>
         {children}
       </Tag>
       {menu
