@@ -500,9 +500,10 @@ export const en = {
   "worktree.rename": "Rename",
   "worktree.delete.title": "Delete {name}?",
   "worktree.inspecting": "Inspecting worktree…",
-  "worktree.branchPreserved": "The local branch {branch} will be preserved.",
+  "worktree.branchDeleted": "The local branch {branch} will also be deleted.",
   "worktree.forceRequired": "This worktree requires force deletion.",
   "worktree.uncommittedLost": "Uncommitted changes will be lost.",
+  "worktree.unmergedLost": "Unmerged commits on the branch will be lost.",
   "worktree.runningTerminals.one": "{count} running terminal will be stopped.",
   "worktree.runningTerminals.other":
     "{count} running terminals will be stopped.",

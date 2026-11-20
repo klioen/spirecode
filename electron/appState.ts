@@ -351,7 +351,10 @@ export class AppState {
           await this.chat.abort(worktreeId, sessionId);
         },
         isWorktreeBusy: async (worktreeId) => {
-          const inspection = await this.worktrees.inspectDelete(worktreeId);
+          const inspection = await this.worktrees.inspectDelete(
+            worktreeId,
+            false,
+          );
           return (
             inspection.terminalCount > 0 || this.chat.worktreeBusy(worktreeId)
           );
@@ -674,7 +677,7 @@ export class AppState {
         "TASK_WORKSPACE_BUSY",
         "Cancel the active Task before deleting its workspace.",
       );
-    const inspection = await this.worktrees.inspectDelete(worktreeId);
+    const inspection = await this.worktrees.inspectDelete(worktreeId, !force);
     if (!force && this.chat.worktreeBusy(worktreeId))
       throw new CommandError(
         "WORKTREE_BUSY",

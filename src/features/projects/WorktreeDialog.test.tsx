@@ -261,6 +261,7 @@ describe("worktree dialogs", () => {
       dirty: false,
       terminalCount: 0,
       branch: "feature",
+      hasUnmergedCommits: false,
     });
     vi.mocked(projectsApi.deleteWorktree).mockReturnValue(
       new Promise(() => {}),
@@ -337,12 +338,16 @@ describe("worktree dialogs", () => {
       dirty: true,
       terminalCount: 2,
       branch: "feature/raw-name",
+      hasUnmergedCommits: true,
     });
 
     render(<DeleteWorktreeDialog worktree={managed} onClose={vi.fn()} />);
 
     expect(
-      await screen.findByText("本地分支 feature/raw-name 将被保留。"),
+      await screen.findByText("本地分支 feature/raw-name 也将被删除。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/该分支中未合并的提交将会丢失/),
     ).toBeInTheDocument();
     expect(screen.getByText("2 个运行中的终端将被停止。")).toBeInTheDocument();
     expect(
@@ -355,6 +360,7 @@ describe("worktree dialogs", () => {
       dirty: true,
       terminalCount: 2,
       branch: "feature",
+      hasUnmergedCommits: false,
     });
     vi.mocked(projectsApi.deleteWorktree).mockResolvedValue({ ok: true });
 
@@ -369,7 +375,7 @@ describe("worktree dialogs", () => {
         Boolean(
           element?.tagName === "P" &&
           element.textContent?.includes(
-            "The local branch feature will be preserved.",
+            "The local branch feature will also be deleted.",
           ),
         ),
       ),

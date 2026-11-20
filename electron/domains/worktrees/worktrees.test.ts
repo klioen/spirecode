@@ -217,7 +217,7 @@ describe("WorktreeService", () => {
     });
   });
 
-  it("creates, renames, and deletes a managed worktree while preserving its local branch", async () => {
+  it("creates, renames, and deletes a managed worktree and its local branch", async () => {
     const value = await fixture();
     const created = await value.service.create(
       value.project.id,
@@ -252,7 +252,7 @@ describe("WorktreeService", () => {
         "--verify",
         "refs/heads/release-fix",
       ]),
-    ).resolves.toContain("refs/heads/release-fix");
+    ).rejects.toBeDefined();
     expect(value.worktrees).toHaveLength(0);
   });
 
@@ -304,6 +304,7 @@ describe("WorktreeService", () => {
       dirty: true,
       terminalCount: 2,
       branch: "worktree1",
+      hasUnmergedCommits: false,
     });
     await expect(value.service.delete(created.id, false)).rejects.toMatchObject(
       {
@@ -316,7 +317,117 @@ describe("WorktreeService", () => {
     expect(value.terminals.closed).toEqual([created.id]);
     await expect(
       git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
-    ).resolves.toContain("refs/heads/worktree1");
+    ).rejects.toBeDefined();
+  });
+
+  it("requires force before deleting a branch with unmerged commits", async () => {
+    const value = await fixture();
+    const created = await value.service.create(
+      value.project.id,
+      "worktree1",
+      "origin/main",
+    );
+    await writeFile(path.join(created.path, "committed.txt"), "committed\n");
+    await git(created.path, ["add", "committed.txt"]);
+    await git(created.path, ["commit", "-qm", "worktree commit"]);
+
+    await expect(value.service.inspectDelete(created.id)).resolves.toEqual({
+      dirty: false,
+      terminalCount: 0,
+      branch: "worktree1",
+      hasUnmergedCommits: true,
+    });
+    await expect(value.service.delete(created.id, false)).rejects.toMatchObject(
+      { code: "WORKTREE_UNMERGED" },
+    );
+    await expect(value.service.delete(created.id, true)).resolves.toEqual({
+      ok: true,
+    });
+    await expect(
+      git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
+    ).rejects.toBeDefined();
+  });
+
+  it("deletes through the managed checkout when the catalog main path is stale", async () => {
+    const value = await fixture();
+    const created = await value.service.create(
+      value.project.id,
+      "worktree1",
+      "origin/main",
+    );
+    value.project.path = value.root;
+
+    await expect(value.service.inspectDelete(created.id)).resolves.toEqual({
+      dirty: false,
+      terminalCount: 0,
+      branch: "worktree1",
+      hasUnmergedCommits: false,
+    });
+    await expect(value.service.delete(created.id, true)).resolves.toEqual({
+      ok: true,
+    });
+    expect(value.worktrees).toHaveLength(0);
+  });
+
+  it("force deletes an unregistered checkout left behind without Git metadata", async () => {
+    const value = await fixture();
+    const created = await value.service.create(
+      value.project.id,
+      "worktree1",
+      "origin/main",
+    );
+    await rm(path.join(created.path, ".git"));
+    await git(value.project.path, ["worktree", "prune", "--expire", "now"]);
+
+    await expect(value.service.inspectDelete(created.id)).resolves.toEqual({
+      dirty: true,
+      terminalCount: 0,
+      branch: "worktree1",
+      hasUnmergedCommits: false,
+      orphaned: true,
+    });
+    await expect(value.service.delete(created.id, false)).rejects.toMatchObject(
+      { code: "WORKTREE_DIRTY" },
+    );
+    await expect(value.service.delete(created.id, true)).resolves.toEqual({
+      ok: true,
+    });
+    await expect(realpath(created.path)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      git(value.project.path, ["worktree", "list", "--porcelain"]),
+    ).resolves.not.toContain(created.path);
+    await expect(
+      git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
+    ).rejects.toBeDefined();
+  });
+
+  it("force deletes a prunable registration after its checkout disappears", async () => {
+    const value = await fixture();
+    const created = await value.service.create(
+      value.project.id,
+      "worktree1",
+      "origin/main",
+    );
+    await rm(created.path, { recursive: true });
+
+    await expect(value.service.inspectDelete(created.id)).resolves.toEqual({
+      dirty: true,
+      terminalCount: 0,
+      branch: "worktree1",
+      hasUnmergedCommits: false,
+      orphaned: true,
+    });
+    await expect(value.service.delete(created.id, true)).resolves.toEqual({
+      ok: true,
+    });
+    await expect(
+      git(value.project.path, ["worktree", "list", "--porcelain"]),
+    ).resolves.not.toContain(created.path);
+    await expect(
+      git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
+    ).rejects.toBeDefined();
   });
 
   it("rejects a managed checkout replaced by a symbolic link", async () => {
@@ -356,6 +467,7 @@ describe("WorktreeService", () => {
       dirty: false,
       terminalCount: 0,
       branch: "worktree1",
+      hasUnmergedCommits: false,
       missing: true,
     });
     await expect(value.service.delete(created.id, false)).resolves.toEqual({
@@ -364,7 +476,7 @@ describe("WorktreeService", () => {
     expect(value.worktrees).toHaveLength(0);
     await expect(
       git(value.project.path, ["show-ref", "--verify", "refs/heads/worktree1"]),
-    ).resolves.toContain("refs/heads/worktree1");
+    ).rejects.toBeDefined();
   });
 
   it("rolls back both checkout and branch after post-create failure", async () => {
