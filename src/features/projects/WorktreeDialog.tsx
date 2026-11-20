@@ -405,7 +405,11 @@ export function DeleteWorktreeDialog({
       disposed = true;
     };
   }, [worktree.id]);
-  const destructive = Boolean(inspection?.dirty || inspection?.terminalCount);
+  const destructive = Boolean(
+    inspection?.dirty ||
+    inspection?.terminalCount ||
+    inspection?.hasUnmergedCommits,
+  );
   const remove = async () => {
     if (!inspection) return;
     setDeleting(true);
@@ -433,12 +437,15 @@ export function DeleteWorktreeDialog({
       {!inspection && !error && <p>{t("worktree.inspecting")}</p>}
       {inspection && (
         <>
-          <p>{t("worktree.branchPreserved", { branch: inspection.branch })}</p>
+          <p>{t("worktree.branchDeleted", { branch: inspection.branch })}</p>
           {destructive && (
             <div className="destructive-warning">
               {t("worktree.forceRequired")}
               {inspection.dirty && (
                 <span> {t("worktree.uncommittedLost")}</span>
+              )}
+              {inspection.hasUnmergedCommits && (
+                <span> {t("worktree.unmergedLost")}</span>
               )}
               {inspection.terminalCount > 0 && (
                 <span>

@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -40,7 +41,9 @@ export interface DeleteInspection {
   dirty: boolean;
   terminalCount: number;
   branch: string;
+  hasUnmergedCommits: boolean;
   missing?: boolean;
+  orphaned?: boolean;
 }
 
 export interface DeleteResult {
@@ -309,22 +312,21 @@ export class WorktreeService {
     )
       throw ownerConflict("managed worktree identity changed");
     const managedRoot = this.managedRoot(project);
-    await this.ensureOwner(managedRoot, project);
+    const owner = await this.ensureOwner(managedRoot, project, worktree.path);
     const metadata = await lstat(worktree.path);
     if (metadata.isSymbolicLink())
       throw ownerConflict("managed worktree checkout is a symbolic link");
-    const [actualPath, canonicalRoot, branch, worktreeCommon, projectCommon] =
+    const [actualPath, canonicalRoot, branch, worktreeCommon] =
       await Promise.all([
         realpath(worktree.path),
         realpath(managedRoot),
         gitText(worktree.path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
         gitText(worktree.path, ["rev-parse", "--git-common-dir"]),
-        gitText(project.path, ["rev-parse", "--git-common-dir"]),
       ]);
-    const [actualCommon, expectedCommon] = await Promise.all([
-      realpath(path.resolve(worktree.path, worktreeCommon.trim())),
-      realpath(path.resolve(project.path, projectCommon.trim())),
-    ]);
+    const actualCommon = await realpath(
+      path.resolve(worktree.path, worktreeCommon.trim()),
+    );
+    const expectedCommon = await realpath(owner.gitCommonDir);
     if (
       actualPath !== path.join(canonicalRoot, expectedName) ||
       path.dirname(actualPath) !== canonicalRoot ||
@@ -335,13 +337,15 @@ export class WorktreeService {
     return worktree;
   }
 
-  async inspectDelete(worktreeId: string): Promise<DeleteInspection> {
+  async inspectDelete(
+    worktreeId: string,
+    inspectDirty = true,
+  ): Promise<DeleteInspection> {
     const worktree = await this.projects.worktree(worktreeId);
     const project = await this.projects.project(worktree.projectId);
     gitOnly(project);
     managedOnly(worktree);
     const managedRoot = this.managedRoot(project);
-    await this.ensureOwner(managedRoot, project);
     if (
       path.resolve(worktree.path) !== path.resolve(managedRoot, worktree.name)
     )
@@ -350,18 +354,62 @@ export class WorktreeService {
       await lstat(worktree.path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await this.ensureOwner(managedRoot, project);
       const listed = await gitText(project.path, [
         "worktree",
         "list",
         "--porcelain",
       ]);
-      if (listed.includes(`worktree ${worktree.path}\n`))
+      const registration = await this.worktreeRegistration(
+        listed,
+        worktree.path,
+      );
+      if (registration && !/^prunable(?: |$)/mu.test(registration))
         throw ownerConflict("missing managed checkout is still registered");
       return {
-        dirty: false,
+        dirty: Boolean(registration),
         terminalCount: await this.terminals.countWorktree(worktreeId),
         branch: worktree.branch,
-        missing: true,
+        hasUnmergedCommits: await this.hasUnmergedCommits(
+          project,
+          project.path,
+          worktree.branch,
+          worktree.baseRef,
+        ),
+        ...(registration ? { orphaned: true } : { missing: true }),
+      };
+    }
+    if (!(await metadata(path.join(worktree.path, ".git")))) {
+      await this.ensureOwner(managedRoot, project);
+      const listed = await gitText(project.path, [
+        "worktree",
+        "list",
+        "--porcelain",
+      ]);
+      const actualPath = await realpath(worktree.path);
+      const canonicalRoot = await realpath(managedRoot);
+      if (
+        actualPath !== path.join(canonicalRoot, worktree.name) ||
+        path.dirname(actualPath) !== canonicalRoot
+      )
+        throw ownerConflict("managed worktree checkout changed");
+      const registration = await this.worktreeRegistration(
+        listed,
+        worktree.path,
+      );
+      if (registration && !/^prunable(?: |$)/mu.test(registration))
+        throw ownerConflict("managed checkout Git metadata is inconsistent");
+      return {
+        dirty: true,
+        terminalCount: await this.terminals.countWorktree(worktreeId),
+        branch: worktree.branch,
+        hasUnmergedCommits: await this.hasUnmergedCommits(
+          project,
+          project.path,
+          worktree.branch,
+          worktree.baseRef,
+        ),
+        orphaned: true,
       };
     }
     await this.validateManagedIdentity(
@@ -369,16 +417,24 @@ export class WorktreeService {
       worktree.name,
       worktree.baseRef,
     );
-    const output = await runGit(worktree.path, [
-      "status",
-      "--porcelain=v2",
-      "-z",
-      "--untracked-files=all",
-    ]);
+    const output = inspectDirty
+      ? await runGit(worktree.path, [
+          "status",
+          "--porcelain=v2",
+          "-z",
+          "--untracked-files=normal",
+        ])
+      : undefined;
     return {
-      dirty: output.stdout.length > 0,
+      dirty: (output?.stdout.length ?? 0) > 0,
       terminalCount: await this.terminals.countWorktree(worktreeId),
       branch: worktree.branch,
+      hasUnmergedCommits: await this.hasUnmergedCommits(
+        project,
+        worktree.path,
+        worktree.branch,
+        worktree.baseRef,
+      ),
     };
   }
 
@@ -389,8 +445,13 @@ export class WorktreeService {
     return this.mutate(initial.projectId, async () => {
       const current = await this.projects.worktree(worktreeId);
       const project = await this.projects.project(current.projectId);
-      await this.ensureOwner(this.managedRoot(project), project);
-      const inspection = await this.inspectDelete(worktreeId);
+      const inspection = await this.inspectDelete(worktreeId, !force);
+      const managedRoot = this.managedRoot(project);
+      const owner = await this.ensureOwner(
+        managedRoot,
+        project,
+        inspection.missing || inspection.orphaned ? project.path : current.path,
+      );
       if (!force && inspection.dirty) {
         throw new CommandError(
           "WORKTREE_DIRTY",
@@ -403,14 +464,47 @@ export class WorktreeService {
           "worktree has running terminals",
         );
       }
+      if (!force && inspection.hasUnmergedCommits) {
+        throw new CommandError(
+          "WORKTREE_UNMERGED",
+          "worktree branch has commits that are not merged into its base",
+        );
+      }
       if (force) await this.terminals.closeWorktree(worktreeId);
-      if (!inspection.missing)
-        await runGit(project.path, [
+      if (inspection.orphaned) {
+        await rm(current.path, { recursive: true, force: true });
+        await runGit(managedRoot, [
+          "--git-dir",
+          owner.gitCommonDir,
           "worktree",
-          "remove",
-          ...(force ? ["--force"] : []),
-          current.path,
+          "prune",
+          "--expire",
+          "now",
         ]);
+      } else if (!inspection.missing) {
+        await runGit(
+          current.path,
+          ["worktree", "remove", ...(force ? ["--force"] : []), current.path],
+          { timeoutMs: 5 * 60_000 },
+        );
+      }
+      const branchRemoval = await runGit(
+        managedRoot,
+        ["--git-dir", owner.gitCommonDir, "branch", "-D", "--", current.branch],
+        { allowFailure: true },
+      );
+      if (
+        await this.repositoryBranchExists(
+          managedRoot,
+          owner.gitCommonDir,
+          current.branch,
+        )
+      )
+        throw new CommandError(
+          "GIT_FAILED",
+          branchRemoval.stderr.toString("utf8").trim() ||
+            "Unable to remove worktree branch",
+        );
       try {
         await this.projects.removeWorktree(worktreeId);
       } catch (error) {
@@ -518,6 +612,92 @@ export class WorktreeService {
     }
   }
 
+  private async worktreeRegistration(
+    listed: string,
+    target: string,
+  ): Promise<string | undefined> {
+    const canonicalTarget = await canonicalPath(target);
+    for (const entry of listed.split(/\r?\n\r?\n/u)) {
+      const registeredPath = entry.split(/\r?\n/u, 1)[0]?.slice(9);
+      if (!registeredPath) continue;
+      try {
+        if ((await canonicalPath(registeredPath)) === canonicalTarget)
+          return entry;
+      } catch {
+        // Ignore unrelated registrations whose parents no longer exist.
+      }
+    }
+    return undefined;
+  }
+
+  private async hasUnmergedCommits(
+    project: ProjectSummary,
+    repositoryPath: string,
+    branch: string,
+    baseRef: string,
+  ): Promise<boolean> {
+    const root = this.managedRoot(project);
+    const owner = await this.ensureOwner(root, project, repositoryPath);
+    const branchRef = `refs/heads/${branch}`;
+    if (!(await this.repositoryBranchExists(root, owner.gitCommonDir, branch)))
+      return false;
+    const base = baseRef.startsWith("origin/")
+      ? `refs/remotes/${baseRef}`
+      : `refs/heads/${baseRef}`;
+    const baseExists = await runGit(
+      root,
+      [
+        "--git-dir",
+        owner.gitCommonDir,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        base,
+      ],
+      { allowFailure: true },
+    );
+    if (baseExists.exitCode !== 0) return true;
+    const merged = await runGit(
+      root,
+      [
+        "--git-dir",
+        owner.gitCommonDir,
+        "merge-base",
+        "--is-ancestor",
+        branchRef,
+        base,
+      ],
+      { allowFailure: true },
+    );
+    if (merged.exitCode === 0) return false;
+    if (merged.exitCode === 1) return true;
+    throw new CommandError(
+      "GIT_FAILED",
+      merged.stderr.toString("utf8").trim() ||
+        "Unable to inspect worktree branch ancestry",
+    );
+  }
+
+  private async repositoryBranchExists(
+    cwd: string,
+    gitCommonDir: string,
+    name: string,
+  ): Promise<boolean> {
+    const output = await runGit(
+      cwd,
+      [
+        "--git-dir",
+        gitCommonDir,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        `refs/heads/${name}`,
+      ],
+      { allowFailure: true },
+    );
+    return output.exitCode === 0;
+  }
+
   private async localBranchExists(
     root: string,
     name: string,
@@ -537,12 +717,13 @@ export class WorktreeService {
   private async ensureOwner(
     root: string,
     project: ProjectSummary,
-  ): Promise<void> {
+    repositoryPath = project.path,
+  ): Promise<OwnerMarker> {
     const rootStat = await metadata(root);
     if (rootStat?.isSymbolicLink()) {
       throw ownerConflict("managed project root must not be a symlink");
     }
-    const commonText = await gitText(project.path, [
+    const commonText = await gitText(repositoryPath, [
       "rev-parse",
       "--path-format=absolute",
       "--git-common-dir",
@@ -574,7 +755,7 @@ export class WorktreeService {
       if (existing.projectId !== expected.projectId) {
         await saveAtomic(markerPath, expected);
       }
-      return;
+      return expected;
     }
     if (rootStat && (await readdir(root)).length > 0) {
       throw ownerConflict("non-empty managed root has no ownership marker");
@@ -586,10 +767,11 @@ export class WorktreeService {
       });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        return this.ensureOwner(root, project);
+        return this.ensureOwner(root, project, repositoryPath);
       }
       throw toCommandError(error);
     }
+    return expected;
   }
 
   private async mutate<T>(
@@ -655,6 +837,18 @@ function advanceSequence(project: ProjectSummary, name: string): number {
 
 async function exists(candidate: string): Promise<boolean> {
   return (await metadata(candidate)) !== null;
+}
+
+async function canonicalPath(candidate: string): Promise<string> {
+  try {
+    return await realpath(candidate);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return path.join(
+      await realpath(path.dirname(candidate)),
+      path.basename(candidate),
+    );
+  }
 }
 
 async function metadata(

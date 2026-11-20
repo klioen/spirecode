@@ -94,6 +94,7 @@ export interface WorktreeDeleteInspection {
   dirty: boolean;
   terminalCount: number;
   branch: string;
+  hasUnmergedCommits: boolean;
 }
 
 export interface OkResponse {
